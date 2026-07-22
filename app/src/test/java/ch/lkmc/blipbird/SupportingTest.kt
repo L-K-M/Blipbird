@@ -69,6 +69,26 @@ class GreatCircleTest {
         assertTrue(kotlin.math.abs(left.lat - right.lat) < 1.0,
             "dateline crossing latitude should match across the split: ${left.lat} vs ${right.lat}")
     }
+
+    @Test fun `pole-to-pole route stays finite`() {
+        val north = GreatCircle.Point(89.5, 10.0)
+        val south = GreatCircle.Point(-89.5, -170.0)
+        for (segment in GreatCircle.routeSegments(north, south)) {
+            for (p in segment) {
+                assertFalse(p.lat.isNaN() || p.lon.isNaN(), "pole route produced NaN: $p")
+            }
+        }
+    }
+
+    @Test fun `vertices exactly on the dateline do not divide by zero`() {
+        val a = GreatCircle.Point(10.0, 180.0)
+        val b = GreatCircle.Point(20.0, -180.0)
+        for (segment in GreatCircle.routeSegments(a, b)) {
+            for (p in segment) {
+                assertFalse(p.lat.isNaN() || p.lon.isNaN(), "dateline endpoints produced NaN: $p")
+            }
+        }
+    }
 }
 
 class CadencePolicyTest {
