@@ -161,13 +161,15 @@ private fun fractionOf(event: SunEvent, daylight: DaylightEngine.Result): Double
     return ((event.at.epochSecond - first).toDouble() / (last - first)).coerceIn(0.0, 1.0)
 }
 
-/** Continuous color from solar elevation: warm day → orange dusk → deep night. */
+/** Continuous color from solar elevation: warm day → orange dusk → civil twilight → night. */
 private fun bandColor(elevationDeg: Double, day: Color, dusk: Color, night: Color): Color = when {
     elevationDeg >= 10.0 -> day
     elevationDeg >= DaylightEngine.SUNRISE_SET_DEG ->
         lerp(dusk, day, ((elevationDeg - DaylightEngine.SUNRISE_SET_DEG) / (10.0 - DaylightEngine.SUNRISE_SET_DEG)).toFloat())
+    elevationDeg >= DaylightEngine.CIVIL_DEG ->
+        lerp(night, dusk, ((elevationDeg - DaylightEngine.CIVIL_DEG) / (DaylightEngine.SUNRISE_SET_DEG - DaylightEngine.CIVIL_DEG)).toFloat())
     elevationDeg >= DaylightEngine.NAUTICAL_DEG ->
-        lerp(night, dusk, ((elevationDeg - DaylightEngine.NAUTICAL_DEG) / (DaylightEngine.SUNRISE_SET_DEG - DaylightEngine.NAUTICAL_DEG)).toFloat())
+        lerp(night, dusk, ((elevationDeg - DaylightEngine.NAUTICAL_DEG) / (DaylightEngine.CIVIL_DEG - DaylightEngine.NAUTICAL_DEG)).toFloat())
     else -> night
 }
 
