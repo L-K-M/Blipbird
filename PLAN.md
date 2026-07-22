@@ -933,7 +933,9 @@ ribbon/card carries its required linked attribution beside the display.
 
 The ribbon appears in detail item 5 and, after readability/performance testing, may condense
 to the daylight gradient behind list/widget progress. The same projected light bands tint
-the route guide on the map (§11).
+the route guide on the map (§11). The ribbon is inherently visual; it must ship with a text
+alternative (ordered, TalkBack-readable summary of the bands and events) per the §18
+accessibility requirement — never the only representation of its data.
 
 ---
 
@@ -1182,6 +1184,10 @@ Nav3/adaptive shell, Daylight + Cockpit theme engine, reproducible bundled refer
 pipeline, add-flight parser/normalizer using synthetic providers, and the app-icon asset
 pipeline from `media-sources/icon.png` (§10.1: adaptive foreground/background layers,
 monochrome themed-icon layer, legacy mipmaps, notification silhouette).
+**Accessibility is designed in from M0, not audited at M4** (§18): the type scale, 48 dp
+touch-target scaffold, Compose `semantics` conventions, and reduce-motion wiring land with
+the first screen so later milestones verify rather than retrofit.
+
 **Exit:** provider/asset decision records exist; `CA861`, `CA 861`, and `CCA861/CA861`
 deduplicate correctly; ambiguous fixture flights require date/leg selection; the launcher
 shows the adaptive Blipbird icon on a masked and a themed launcher; no restricted
@@ -1231,7 +1237,9 @@ conditions.
 ### M4 — Polish & release (week 12–15)
 Launch themes locked to **three** (Daylight incl. Dynamic, Cockpit, High Contrast), haptics
 and themed pull-to-refresh, **"Next flight" Glance widget** (cheap once the state layer
-exists), accessibility audit (TalkBack, contrast, touch targets), quota ledger UI,
+exists), accessibility **verification pass** (TalkBack focus order, contrast AA/AAA, touch
+targets, ribbon text alternative, 200 % font scale — confirming the a11y designed in from
+M0; nothing structural retrofit here), quota ledger UI,
 About/attribution + privacy screens, user-authored Export/Import, erase and retention
 controls, Play privacy policy/Data Safety/listing, F-Droid metadata/submission for a tagged
 source release, and a `:benchmark` module with baseline profiles.
@@ -1413,12 +1421,37 @@ Concerns that touch every screen and don't fit cleanly into one section above.
   Disclose that enabled OS cloud backup uploads the user-authored subset to the user's
   backup provider. Restore clears stale `selectedInstanceId` links, re-resolves flights, and
   cannot resurrect expired provider data.
+- **Accessibility is a cross-cutting requirement, not an M4 audit.** Travelers use this app
+  stressed, in bright sunlight, one-handed, sometimes with assistive tech. It is designed in
+  from M0 and verified every milestone, not retrofitted at the end:
+  - **Structure:** minimum 48 dp touch targets; full TalkBack focus order with semantic
+    `Role`/`StateDescription`/`LiveMode` on every interactive node; phase changes announced
+    via `LiveRegion` (polite) so a status flip is spoken; explicit `contentDescription` for
+    the map, ribbon, progress bar, and any purely decorative element.
+  - **Vision:** WCAG-AA contrast minimum (AAA where the type is small or the user picked High
+    Contrast); full support for 200 % font scale without horizontal scroll or overlap; support
+    high-contrast-text and the system reduce-motion intent (not just animator-duration scale);
+    never encode meaning by color alone (the §9 status word + glyph pattern).
+  - **Motor/cognitive:** generous swipe regions; confirm-before-archive with an Undo snackbar
+    (§9.1); plain-language summaries ahead of raw METAR; consistent back behavior.
+  - **The ribbon has a text alternative.** The §9.4 ribbon is information-dense visual art;
+    for users who cannot perceive it, the same data renders as an ordered text/Compose
+    `semantics` list ("Departure 14:10 daylight; sunset at 17:52 about 3 h 42 min in; night
+    until sunrise at 05:41 about 1 h 19 min before landing; arrival 06:30 daylight") that
+    TalkBack reads. The visual ribbon is never the *only* representation of its data.
 - **Performance budgets.** Targets enforced in CI: cold start to first frame < 1.5 s on a
   named mid-range test device (Baseline Profile + androidx Startup), map marker tween with
   p95 frame time within a 60 Hz frame and no frozen frames, a measured AAB budget set after
   the reference-data spike (no invented ~1 MB assumption), bounded track-database growth,
   and `macrobenchmark` regressions gating release. Generated monograms require no runtime
-  logo downloads.
+  logo downloads. **Jank and recomposition budgets** (added): list fling at p95 frame time ≤
+  16 ms / p99 ≤ 1 frozen frame over a 50-flight scroll; detail first-content paint < 500 ms;
+  ribbon first-draw < 150 ms on the named low-end device with incremental recompute on
+  milestone change < 30 ms, off the UI thread and cancellable; Compose recomposition counts
+  asserted in UI tests (rows must not recompose when an unrelated `State` changes — the
+  classic "mid Android app" tell). Baseline Profiles are generated from M1 onward (as soon as
+  there is a runnable app), not deferred to M4, so measurements through M2/M3 are on a
+  profiled path.
 - **First-run onboarding.** A single linear flow ties the pieces from across sections
   together: concise value/privacy explanation → optional release-cleared BYO-key setup →
   add a sample or real flight → optional theme pick. Notification permission is deferred
