@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.MovementTimes
@@ -84,6 +85,12 @@ fun FlightDetailScreen(
     viewModel: FlightDetailViewModel = hiltViewModel(key = "flight-$flightId"),
 ) {
     LaunchedEffect(flightId) { viewModel.setFlightId(flightId) }
+    // Gate the ViewModel's live-position polling on this screen actually being
+    // started: stops on navigation away AND when the app goes to background.
+    LifecycleStartEffect(flightId, viewModel) {
+        viewModel.setScreenVisible(true)
+        onStopOrDispose { viewModel.setScreenVisible(false) }
+    }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(

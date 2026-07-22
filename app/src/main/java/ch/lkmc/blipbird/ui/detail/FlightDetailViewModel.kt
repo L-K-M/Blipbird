@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.shareIn
@@ -99,6 +100,19 @@ class FlightDetailViewModel @Inject constructor(
     private val clock: SharedFlow<Instant> = flow {
         while (isActive) { emit(Instant.now()); delay(15_000) }
     }.distinctUntilChanged().shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
+    /**
+     * Whether this flight's screen is started (visible or behind a dialog).
+     * Under the hand-rolled navigation the ViewModel is Activity-scoped and never
+     * cleared, so the poll loop must gate on this instead of the ViewModel's own
+     * lifetime — otherwise every detail screen ever opened keeps hitting the
+     * ADS-B APIs (every 10 s while airborne) until the process dies.
+     */
+    private val screenVisible = MutableStateFlow(false)
+
+    fun setScreenVisible(visible: Boolean) {
+        screenVisible.value = visible
+    }
 
     fun setFlightId(id: Long) {
         if (flightId.value == id) return
@@ -266,22 +280,27 @@ class FlightDetailViewModel @Inject constructor(
     private fun startPolling(id: Long) {
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
-            while (isActive) {
-                val snap = snapshot.value
-                val view = FlightPhaseMachine.derive(snap, lastFix.value, Instant.now())
-                val interval = when (view.status) {
-                    FlightStatus.DEPARTED, FlightStatus.EN_ROUTE, FlightStatus.APPROACHING -> 10_000L
-                    FlightStatus.ON_TIME, FlightStatus.DELAYED, FlightStatus.SCHEDULED -> {
-                        val dep = snap?.depTimes?.best
-                        if (dep != null && Duration.between(Instant.now(), dep).abs() < Duration.ofHours(2)) 60_000L else 0L
+            // collectLatest cancels the inner loop the moment the screen hides,
+            // so not even an idle delay() timer outlives visibility.
+            screenVisible.collectLatest { visible ->
+                if (!visible) return@collectLatest
+                while (isActive) {
+                    val snap = snapshot.value
+                    val view = FlightPhaseMachine.derive(snap, lastFix.value, Instant.now())
+                    val interval = when (view.status) {
+                        FlightStatus.DEPARTED, FlightStatus.EN_ROUTE, FlightStatus.APPROACHING -> 10_000L
+                        FlightStatus.ON_TIME, FlightStatus.DELAYED, FlightStatus.SCHEDULED -> {
+                            val dep = snap?.depTimes?.best
+                            if (dep != null && Duration.between(Instant.now(), dep).abs() < Duration.ofHours(2)) 60_000L else 0L
+                        }
+                        else -> 0L
                     }
-                    else -> 0L
-                }
-                if (interval > 0) {
-                    repository.pollPosition(id)
-                    delay(interval)
-                } else {
-                    delay(120_000L)
+                    if (interval > 0) {
+                        repository.pollPosition(id)
+                        delay(interval)
+                    } else {
+                        delay(120_000L)
+                    }
                 }
             }
         }
