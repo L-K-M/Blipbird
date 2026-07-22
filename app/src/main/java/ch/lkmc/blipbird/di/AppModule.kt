@@ -1,6 +1,7 @@
 package ch.lkmc.blipbird.di
 
 import android.content.Context
+import ch.lkmc.blipbird.core.data.BackgroundRefreshController
 import ch.lkmc.blipbird.core.data.NotificationSink
 import ch.lkmc.blipbird.core.data.ProviderKeyProvider
 import ch.lkmc.blipbird.core.database.OpsDatabase
@@ -14,6 +15,7 @@ import ch.lkmc.blipbird.core.network.AeroDataBoxApi
 import ch.lkmc.blipbird.core.network.AviationWeatherApi
 import ch.lkmc.blipbird.core.network.OpenMeteoApi
 import ch.lkmc.blipbird.platform.NotificationEmitter
+import ch.lkmc.blipbird.platform.WorkManagerRefreshController
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Binds
 import dagger.Module
@@ -106,4 +108,5 @@ class KeyProviderImpl @Inject constructor(
 abstract class BindsModule {
     @Binds abstract fun keyProvider(impl: KeyProviderImpl): ProviderKeyProvider
     @Binds abstract fun notificationSink(impl: NotificationEmitter): NotificationSink
+    @Binds abstract fun backgroundRefresh(impl: WorkManagerRefreshController): BackgroundRefreshController
 }

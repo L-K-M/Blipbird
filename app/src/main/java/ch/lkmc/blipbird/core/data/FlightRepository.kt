@@ -29,6 +29,15 @@ interface NotificationSink {
     suspend fun post(flightId: Long, designator: String, event: NotificationPlanner.Event)
 }
 
+/**
+ * Lets the data layer (re)start background refreshes without depending on
+ * WorkManager directly; implemented by the platform layer. The worker cancels
+ * itself when no active flights remain, so tracking a flight must re-arm it.
+ */
+interface BackgroundRefreshController {
+    fun ensureScheduled()
+}
+
 @Singleton
 class FlightRepository @Inject constructor(
     private val userDb: UserDatabase,
@@ -39,6 +48,7 @@ class FlightRepository @Inject constructor(
     private val identity: IdentityResolver,
     private val referenceDao: ReferenceDao,
     private val notificationSink: NotificationSink,
+    private val backgroundRefresh: BackgroundRefreshController,
 ) {
     private val trackedDao get() = userDb.trackedFlightDao()
     private val snapshotDao get() = opsDb.statusSnapshotDao()
@@ -67,6 +77,8 @@ class FlightRepository @Inject constructor(
                 createdAt = Instant.now().toEpochMilli(),
             )
         )
+        // The periodic worker cancels itself when the list empties; re-arm it.
+        backgroundRefresh.ensureScheduled()
         return id
     }
 
