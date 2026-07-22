@@ -98,4 +98,5 @@
     <string name="notif_boarding_soon">Boarding around %1$s (estimate)</string>
     <string name="notif_landing_soon">Landing in about %1$d min</string>
     <string name="notif_projected_suffix">projected · status not refreshed</string>
+    <string name="key_facts">Flight facts</string>
 </resources>

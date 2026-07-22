@@ -32,6 +32,9 @@ interface TrackedFlightDao {
     @Query("UPDATE tracked_flight SET alias = :alias WHERE id = :id")
     suspend fun setAlias(id: Long, alias: String?)
 
+    @Query("UPDATE tracked_flight SET dateLocal = :date WHERE id = :id")
+    suspend fun pinDate(id: Long, date: String)
+
     @Query("SELECT * FROM tracked_flight WHERE archived = 0 AND alias IS NOT NULL")
     suspend fun aliased(): List<TrackedFlightEntity>
 }

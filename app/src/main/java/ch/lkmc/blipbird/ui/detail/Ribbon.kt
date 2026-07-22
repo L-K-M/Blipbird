@@ -38,6 +38,8 @@ fun FlightRibbon(
     depCode: String,
     arrCode: String,
     modifier: Modifier = Modifier,
+    /** 0..1 flight progress; >0 draws the aircraft position marker on the strip. */
+    progress: Float = 0f,
 ) {
     val ext = LocalExtendedColors.current
 
@@ -85,6 +87,14 @@ fun FlightRibbon(
                     center = Offset(x, h / 2),
                 )
             }
+
+            // Aircraft position marker
+            if (progress in 0.01f..0.995f) {
+                val x = progress * w
+                drawCircle(Color.White, radius = h * 0.34f, center = Offset(x, h / 2))
+                drawCircle(Color(0xFF1667D9), radius = h * 0.34f, center = Offset(x, h / 2),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = h * 0.09f))
+            }
         }
 
         Spacer(Modifier.height(4.dp))
@@ -122,22 +132,25 @@ private fun bandColor(elevationDeg: Double, day: Color, dusk: Color, night: Colo
     else -> night
 }
 
-/** WMO weather code → glyph; cloud cover fallback. */
+/**
+ * WMO weather code → glyph; cloud cover fallback. Restricted to widely-supported
+ * emoji — 🌤/🌫/🌨-style compound glyphs render as tofu boxes on several OEM fonts.
+ */
 fun weatherGlyph(code: Int?, cloudPct: Int?): String = when (code) {
-    0 -> "☀"
-    1, 2 -> "🌤"
-    3 -> "☁"
-    45, 48 -> "🌫"
-    in 51..57 -> "🌦"
-    in 61..67 -> "🌧"
-    in 71..77 -> "🌨"
-    in 80..82 -> "🌧"
-    85, 86 -> "🌨"
-    in 95..99 -> "⛈"
+    0 -> "☀️"
+    1, 2 -> "⛅"
+    3 -> "☁️"
+    45, 48 -> "☁️"
+    in 51..57 -> "🌧️"
+    in 61..67 -> "🌧️"
+    in 71..77 -> "❄️"
+    in 80..82 -> "🌧️"
+    85, 86 -> "❄️"
+    in 95..99 -> "⚡"
     else -> when {
         cloudPct == null -> "·"
-        cloudPct >= 80 -> "☁"
-        cloudPct >= 40 -> "🌤"
-        else -> "☀"
+        cloudPct >= 80 -> "☁️"
+        cloudPct >= 40 -> "⛅"
+        else -> "☀️"
     }
 }

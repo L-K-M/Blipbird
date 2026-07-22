@@ -93,6 +93,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     implementation(libs.suncalc)
+    implementation(libs.maplibre.compose)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)

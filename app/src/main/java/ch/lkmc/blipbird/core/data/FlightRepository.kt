@@ -101,7 +101,21 @@ class FlightRepository @Inject constructor(
 
         val designator = flight.designator()
         val date = flight.dateLocal?.let { java.time.LocalDate.parse(it) }
-        val snapshot = statusProviders.fetch(designator, date) ?: return null
+        val candidates = statusProviders.fetchCandidates(designator, date)
+        val snapshot = ch.lkmc.blipbird.domain.InstanceSelector.select(candidates, Instant.now())
+            ?: return null
+
+        // Pin the resolved instance's departure-local date onto the tracked flight so
+        // later dateless refreshes can never drift to the next day's instance
+        // (PLAN.md §5 step 3 — this was the "departs in 22 h but it already left" bug).
+        if (flight.dateLocal == null) {
+            snapshot.depTimes.scheduled?.let { schedDep ->
+                val zone = snapshot.departure?.tz
+                    ?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() }
+                    ?: java.time.ZoneOffset.UTC
+                trackedDao.pinDate(flightId, schedDep.atZone(zone).toLocalDate().toString())
+            }
+        }
 
         val entity = snapshot.toEntity(flightId)
         snapshotDao.insert(entity)
@@ -263,7 +277,8 @@ class FlightRepository @Inject constructor(
 
 /**
  * Ordered status-provider failover with quota gating: AeroDataBox first (bigger
- * free window), AeroAPI second. Never routes around a rejected key.
+ * free window), AeroAPI second. Never routes around a rejected key. Returns ALL
+ * candidate instances; the caller selects via [ch.lkmc.blipbird.domain.InstanceSelector].
  */
 @Singleton
 class StatusProviderChain @Inject constructor(
@@ -271,20 +286,19 @@ class StatusProviderChain @Inject constructor(
     private val aeroApi: AeroApiProvider,
     private val quota: QuotaLedger,
 ) {
-    suspend fun fetch(designator: Designator, date: java.time.LocalDate?): StatusSnapshot? {
+    suspend fun fetchCandidates(designator: Designator, date: java.time.LocalDate?): List<StatusSnapshot> {
         for (provider in listOf<FlightStatusProvider>(aeroDataBox, aeroApi)) {
             if (!quota.canSpend(provider.name, provider.unitsPerLookup)) continue
             when (val result = provider.fetch(designator, date)) {
                 is StatusResult.Found -> {
                     quota.record(provider.name, provider.unitsPerLookup)
-                    // Prefer the operating (non-codeshare) record when several return.
-                    return result.flights.firstOrNull { it.codeshareOf == null } ?: result.flights.first()
+                    return result.flights
                 }
                 is StatusResult.NotFound -> { quota.record(provider.name, provider.unitsPerLookup); continue }
                 is StatusResult.NoKey -> continue
-                is StatusResult.Error -> { if (result.retryable) continue else continue }
+                is StatusResult.Error -> continue
             }
         }
-        return null
+        return emptyList()
     }
 }

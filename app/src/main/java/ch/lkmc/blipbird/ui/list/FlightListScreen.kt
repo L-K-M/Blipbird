@@ -27,7 +27,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -49,6 +48,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.FlightStatus
+import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.monogramColor
@@ -123,9 +123,9 @@ private fun FlightRowCard(row: FlightRow, onClick: () -> Unit) {
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(22.dp),
     ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Monogram(row.airlineIata ?: row.title.take(2))
                 Spacer(Modifier.width(10.dp))
@@ -137,35 +137,41 @@ private fun FlightRowCard(row: FlightRow, onClick: () -> Unit) {
                 }
                 StatusWord(row.view.status)
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(row.depCode, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    row.depCode,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                )
                 Icon(
                     Icons.Filled.Flight, contentDescription = null,
-                    modifier = Modifier.padding(horizontal = 6.dp).size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 6.dp).size(15.dp),
+                    tint = MaterialTheme.colorScheme.primary,
                 )
-                Text(row.arrCode, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    row.arrCode,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                )
                 Spacer(Modifier.weight(1f))
                 Text(
                     phaseTime(row),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = { row.view.progress },
-                modifier = Modifier.fillMaxWidth().height(4.dp),
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            FlightProgressBar(
+                progress = row.view.progress,
                 color = ext.statusEnRoute,
+                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.13f),
             )
             val gateLine = listOfNotNull(
-                row.terminal?.let { "T$it" },
+                row.terminal?.let { "${stringResource(R.string.terminal)} $it" },
                 row.gate?.let { "${stringResource(R.string.gate)} $it" },
-            ).joinToString(" · ")
+            ).joinToString("  ·  ")
             if (gateLine.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
                 Text(gateLine, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
