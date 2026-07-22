@@ -901,6 +901,32 @@ class; granularity-shifting countdown; subtle contrail confetti on "Landed on ti
 Animations obey the system animator-duration scale and an in-app reduce-motion toggle;
 haptics/confetti are independently disableable and absent from High Contrast by default.
 
+### 10.1 App icon & brand
+
+The canonical app-icon artwork is **`media-sources/icon.png`** (1254×1254 RGB, provided by
+the project owner): a white bird in flight over a blue radar sweep with concentric range
+rings and blips — the "blip" and the "bird." All launcher/store assets derive from this
+source at build/design time; the 1.5 MB master itself is never packaged into the APK.
+
+M0 asset-generation tasks (standard Android icon pipeline):
+
+- **Adaptive icon** (required since Android 8): re-layer the artwork into a foreground
+  layer (bird, transparent background, sized to the 66×66 dp safe zone of the 108 dp
+  canvas so no OEM mask clips the wings) and a background layer (the blue radar-gradient
+  with rings). If clean layer separation from the flat PNG proves too lossy, recreate the
+  two layers as vector drawables matching the artwork — visually identical, and it makes
+  the radar rings crisp at every density.
+- **Monochrome layer** for Android 13+ themed icons (bird-with-ring silhouette, single
+  color) so the icon participates in Material You theming.
+- **Legacy mipmaps** (round + square, all densities) generated from the same layers.
+- **Play Store 512×512** listing asset and feature-graphic crops from the master.
+- The bird mark also seeds in-app brand moments: the empty-state illustration, the
+  about-screen logo, and the notification small icon (flat white silhouette, as Android
+  requires alpha-only small icons).
+
+Accent colors sampled from the icon (radar cyan ≈ `#19D3F3`-family, deep blue field)
+inform the Daylight theme's seed palette so launcher icon and app UI feel related.
+
 ---
 
 ## 11. Live map
@@ -1048,9 +1074,12 @@ candidates. Decide the app-code license; select and spike a rights-cleared time/
 en-route weather source; record API cost/coverage on the representative-flight matrix. In
 parallel: project scaffolding, version catalog, CI (build, unit tests, and lint), Hilt graph,
 Nav3/adaptive shell, Daylight + Cockpit theme engine, reproducible bundled reference-data
-pipeline, and add-flight parser/normalizer using synthetic providers.
+pipeline, add-flight parser/normalizer using synthetic providers, and the app-icon asset
+pipeline from `media-sources/icon.png` (§10.1: adaptive foreground/background layers,
+monochrome themed-icon layer, legacy mipmaps, notification silhouette).
 **Exit:** provider/asset decision records exist; `CA861`, `CA 861`, and `CCA861/CA861`
-deduplicate correctly; ambiguous fixture flights require date/leg selection; no restricted
+deduplicate correctly; ambiguous fixture flights require date/leg selection; the launcher
+shows the adaptive Blipbird icon on a masked and a themed launcher; no restricted
 runtime response is persisted.
 
 ### M1 — Status MVP (week 3–5)
