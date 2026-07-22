@@ -187,8 +187,15 @@ fun FlightListScreen(
             error = state.addError,
             onDismiss = { showAddSheet = false; viewModel.clearAddError() },
             onAdd = { input, date, alias ->
-                viewModel.addFlights(input, date, alias, onFirstTrack)
-                showAddSheet = false
+                // Close only when every token parsed; otherwise the sheet stays
+                // open showing the error (it used to close immediately, so parse
+                // errors were never visible).
+                viewModel.addFlights(input, date, alias, onFirstTrack) { allAccepted ->
+                    if (allAccepted) {
+                        showAddSheet = false
+                        viewModel.clearAddError()
+                    }
+                }
             },
         )
     }
