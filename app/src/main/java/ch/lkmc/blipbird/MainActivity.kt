@@ -5,10 +5,12 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -71,6 +73,17 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val theme by settings.theme.collectAsStateWithLifecycle(initialValue = AppTheme.DAYLIGHT_DYNAMIC)
+            // Cockpit forces dark regardless of the OS setting, so system-bar
+            // icon styling must follow the resolved app theme, not the system
+            // (a plain enableEdgeToEdge() left dark icons on the near-black
+            // Cockpit background whenever the OS was in light mode).
+            val darkTheme = theme == AppTheme.COCKPIT || isSystemInDarkTheme()
+            LaunchedEffect(darkTheme) {
+                val transparent = android.graphics.Color.TRANSPARENT
+                val style = if (darkTheme) SystemBarStyle.dark(transparent)
+                else SystemBarStyle.light(transparent, transparent)
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            }
             BlipbirdTheme(theme = theme) {
                 BlipbirdNav(
                     deepLinkFlights = deepLinkFlights,
