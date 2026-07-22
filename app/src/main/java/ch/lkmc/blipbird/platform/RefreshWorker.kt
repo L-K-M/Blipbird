@@ -9,14 +9,18 @@ import androidx.work.Constraints
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import ch.lkmc.blipbird.core.data.BackgroundRefreshController
 import ch.lkmc.blipbird.core.data.FlightRepository
 import ch.lkmc.blipbird.domain.CadencePolicy
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * The single background refresher (PLAN.md §8): one unique 15-minute periodic
@@ -36,7 +40,15 @@ class RefreshWorker @AssistedInject constructor(
         val now = Instant.now()
         repository.prune()
 
-        for (flight in repository.activeFlights()) {
+        val flights = repository.activeFlights()
+        if (flights.isEmpty()) {
+            // Nothing to watch: stop waking the device every 15 minutes.
+            // FlightRepository.track() re-arms via BackgroundRefreshController.
+            WorkManager.getInstance(applicationContext).cancelUniqueWork(UNIQUE_NAME)
+            return Result.success()
+        }
+
+        for (flight in flights) {
             val snapshot = repository.latestSnapshot(flight.id)
             val view = FlightPhaseMachine.derive(snapshot, null, now)
             val interval = CadencePolicy.nextInterval(
@@ -76,4 +88,12 @@ class RefreshWorker @AssistedInject constructor(
             )
         }
     }
+}
+
+/** Data-layer hook so tracking a flight re-arms the (self-cancelling) worker. */
+@Singleton
+class WorkManagerRefreshController @Inject constructor(
+    @ApplicationContext private val context: Context,
+) : BackgroundRefreshController {
+    override fun ensureScheduled() = RefreshWorker.schedule(context)
 }

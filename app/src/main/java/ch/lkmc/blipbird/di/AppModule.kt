@@ -106,4 +106,5 @@ class KeyProviderImpl @Inject constructor(
 abstract class BindsModule {
     @Binds abstract fun keyProvider(impl: KeyProviderImpl): ProviderKeyProvider
     @Binds abstract fun notificationSink(impl: NotificationEmitter): NotificationSink
+    @Binds abstract fun backgroundRefresh(impl: WorkManagerRefreshController): BackgroundRefreshController
 }
