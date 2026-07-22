@@ -13,6 +13,9 @@ import ch.lkmc.blipbird.core.model.MovementTimes
 import ch.lkmc.blipbird.core.model.PositionFix
 import ch.lkmc.blipbird.core.model.StatusSnapshot
 import ch.lkmc.blipbird.core.model.TrackRequest
+import ch.lkmc.blipbird.core.database.ReferenceDao
+import ch.lkmc.blipbird.domain.FlightDates
+import ch.lkmc.blipbird.domain.InstanceSelector
 import ch.lkmc.blipbird.domain.NotificationPlanner
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -34,6 +37,7 @@ class FlightRepository @Inject constructor(
     private val positionProvider: PositionProvider,
     private val quota: QuotaLedger,
     private val identity: IdentityResolver,
+    private val referenceDao: ReferenceDao,
     private val notificationSink: NotificationSink,
 ) {
     private val trackedDao get() = userDb.trackedFlightDao()
@@ -103,26 +107,48 @@ class FlightRepository @Inject constructor(
         val date = flight.dateLocal?.let { java.time.LocalDate.parse(it) }
         var candidates = statusProviders.fetchCandidates(designator, date)
 
-        // Dateless lookups may resolve "nearest" to tomorrow while today's flight
-        // is mid-air; double-check today (departure-airport local) when suspicious.
-        if (date == null) {
-            val provisional = ch.lkmc.blipbird.domain.InstanceSelector.select(candidates, Instant.now())
-            ch.lkmc.blipbird.domain.InstanceSelector.secondLookupDate(provisional, Instant.now())?.let { today ->
+        if (date != null) {
+            // Providers with UTC-window queries can return neighbouring instances;
+            // keep only candidates whose scheduled departure falls on the requested
+            // DEPARTURE-AIRPORT-LOCAL date (lenient when schedule/zone unknown).
+            val filtered = candidates.filter { FlightDates.matchesDepartureLocalDate(it, date) }
+            if (filtered.isNotEmpty()) candidates = filtered
+        } else {
+            // Dateless lookups may resolve "nearest" to tomorrow while today's
+            // flight is mid-air; double-check today (departure-airport local), and
+            // for overnight departures (still airborne past dep-local midnight)
+            // also yesterday.
+            val now = Instant.now()
+            val provisional = InstanceSelector.select(candidates, now)
+            InstanceSelector.secondLookupDate(provisional, now)?.let { today ->
                 candidates = candidates + statusProviders.fetchCandidates(designator, today)
+                val stillSuspicious = InstanceSelector.secondLookupDate(
+                    InstanceSelector.select(candidates, now), now,
+                ) != null
+                if (stillSuspicious) {
+                    candidates = candidates + statusProviders.fetchCandidates(designator, today.minusDays(1))
+                }
             }
         }
 
-        val snapshot = ch.lkmc.blipbird.domain.InstanceSelector.select(candidates, Instant.now())
+        val snapshot = InstanceSelector.select(candidates, Instant.now())
             ?: return null
 
         // Pin the resolved instance's departure-local date onto the tracked flight so
         // later dateless refreshes can never drift to the next day's instance
         // (PLAN.md §5 step 3 — this was the "departs in 22 h but it already left" bug).
+        // Only pin when the departure zone is actually known: a UTC-guessed date can
+        // be off by one for departures near local midnight, and a wrong pin is
+        // stickier than no pin.
         if (flight.dateLocal == null) {
-            snapshot.depTimes.scheduled?.let { schedDep ->
-                val zone = snapshot.departure?.tz
-                    ?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() }
-                    ?: java.time.ZoneOffset.UTC
+            val schedDep = snapshot.depTimes.scheduled
+            val zone = FlightDates.zoneOf(snapshot.departure?.tz)
+                ?: snapshot.departure?.let { dep ->
+                    val row = dep.icao?.let { referenceDao.airportByIcao(it) }
+                        ?: dep.iata?.let { referenceDao.airportByIata(it) }
+                    FlightDates.zoneOf(row?.tz)
+                }
+            if (schedDep != null && zone != null) {
                 trackedDao.pinDate(flightId, schedDep.atZone(zone).toLocalDate().toString())
             }
         }

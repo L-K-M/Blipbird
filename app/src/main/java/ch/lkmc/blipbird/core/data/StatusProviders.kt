@@ -130,8 +130,11 @@ class AeroApiProvider @Inject constructor(
         val key = keys.aeroApiKey() ?: return StatusResult.NoKey
         val ident = designator.icao ?: designator.iata ?: return StatusResult.NotFound
         return try {
+            // The requested date is departure-airport-LOCAL but this endpoint
+            // filters by UTC. Pad a full day each side (offsets span UTC-12..+14)
+            // and let the repository post-filter by departure-local date.
             val (start, end) = dateLocal?.let {
-                "${it}T00:00:00Z" to "${it.plusDays(1)}T23:59:59Z"
+                "${it.minusDays(1)}T00:00:00Z" to "${it.plusDays(2)}T00:00:00Z"
             } ?: (null to null)
             val resp = api.flights(key, ident, start, end)
             if (resp.flights.isEmpty()) StatusResult.NotFound

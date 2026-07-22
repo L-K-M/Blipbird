@@ -10,6 +10,11 @@ import retrofit2.http.Query
 /**
  * FlightAware AeroAPI v4, Personal tier (PLAN.md §4.1). $0.005 per result set;
  * query window −10 d … +2 d. Each user brings their own key.
+ *
+ * Date queries: a "flight date" is DEPARTURE-AIRPORT-LOCAL, but this endpoint
+ * filters by UTC instants. Callers must pass a window padded by a full day on
+ * each side (any local date D spans up to D−1 10:00Z … D+1 12:00Z across the
+ * UTC−12…+14 offset range) and post-filter results by departure-local date.
  */
 interface AeroApi {
 

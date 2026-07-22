@@ -230,6 +230,12 @@ private fun Hero(state: DetailUiState) {
                 zone = state.arrAirport?.tz,
                 modifier = Modifier.weight(1f),
                 alignEnd = true,
+                // "+1" for red-eyes, "−1" when local clocks say you land before
+                // you left (westbound across the date line) — display only.
+                dayOffset = ch.lkmc.blipbird.domain.FlightDates.arrivalDayOffset(
+                    snapshot?.depTimes?.best, state.depAirport?.tz,
+                    snapshot?.arrTimes?.best, state.arrAirport?.tz,
+                ),
             )
         }
         Spacer(Modifier.height(6.dp))
@@ -277,6 +283,7 @@ private fun AirportColumn(
     zone: String?,
     modifier: Modifier = Modifier,
     alignEnd: Boolean = false,
+    dayOffset: Int? = null,
 ) {
     Column(modifier, horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
         Text(
@@ -289,11 +296,22 @@ private fun AirportColumn(
             Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         time?.let {
-            Text(
-                localTime(it, zoneOf(zone)),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Medium,
-            )
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    localTime(it, zoneOf(zone)),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Medium,
+                )
+                if (dayOffset != null && dayOffset != 0) {
+                    Text(
+                        if (dayOffset > 0) "+$dayOffset" else "$dayOffset",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 2.dp, top = 2.dp),
+                    )
+                }
+            }
         }
     }
 }
