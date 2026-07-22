@@ -73,6 +73,10 @@
     <string name="settings_key_hint">Paste API key</string>
     <string name="settings_key_saved">Key saved</string>
     <string name="settings_key_none">Not configured — flight status disabled</string>
+    <string name="settings_key_clear">Remove key</string>
+    <string name="settings_granted">Granted</string>
+    <string name="settings_allow_precise">Allow precise alerts</string>
+    <string name="save">Save</string>
     <string name="settings_notifications">Notifications</string>
     <string name="settings_precise_alerts">Precise alerts</string>
     <string name="settings_precise_alerts_desc">Uses exact alarms for boarding and landing reminders. Requires special access.</string>

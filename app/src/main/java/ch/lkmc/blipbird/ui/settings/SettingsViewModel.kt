@@ -6,6 +6,7 @@ import ch.lkmc.blipbird.core.data.QuotaLedger
 import ch.lkmc.blipbird.core.datastore.AppTheme
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
 import ch.lkmc.blipbird.core.datastore.SettingsRepository
+import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +33,7 @@ class SettingsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val keyStore: ProviderKeyStore,
     private val quotaLedger: QuotaLedger,
+    private val reminders: ReminderScheduler,
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = combine(
@@ -57,7 +59,15 @@ class SettingsViewModel @Inject constructor(
     fun setTheme(theme: AppTheme) = viewModelScope.launch { settings.setTheme(theme) }
     fun saveAdbKey(key: String) = viewModelScope.launch { keyStore.setAeroDataBoxKey(key) }
     fun saveAeroApiKey(key: String) = viewModelScope.launch { keyStore.setAeroApiKey(key) }
+    fun clearAdbKey() = viewModelScope.launch { keyStore.setAeroDataBoxKey(null) }
+    fun clearAeroApiKey() = viewModelScope.launch { keyStore.setAeroApiKey(null) }
     fun setNotifCritical(v: Boolean) = viewModelScope.launch { settings.setNotifCritical(v) }
     fun setNotifStatus(v: Boolean) = viewModelScope.launch { settings.setNotifStatus(v) }
-    fun setNotifReminders(v: Boolean) = viewModelScope.launch { settings.setNotifReminders(v) }
+
+    fun setNotifReminders(v: Boolean) = viewModelScope.launch {
+        settings.setNotifReminders(v)
+        // Apply immediately: cancels scheduled exact alarms when disabling,
+        // re-schedules them when enabling (previously deferred to next refresh).
+        reminders.reconcileAll()
+    }
 }
