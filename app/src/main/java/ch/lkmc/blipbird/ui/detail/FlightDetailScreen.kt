@@ -508,22 +508,26 @@ private fun Timeline(state: DetailUiState) {
         )
     }
 
-    val entries = listOf(
-        TimelineEntry(
-            stringResource(R.string.check_in), NodeState.DERIVED,
-            null, state.view.derivedCheckInAt, depTz, derived = true,
-        ),
-        TimelineEntry(
-            "Boarding", NodeState.DERIVED,
-            null, state.view.derivedBoardingAt, depTz, derived = true,
-        ),
-        entry("Pushback", s.depTimes, useRunway = false, zone = depTz),
-        entry("Takeoff", s.depTimes, useRunway = true, zone = depTz),
-        entry("Landing", s.arrTimes, useRunway = true, zone = arrTz),
-        entry("Gate arrival", s.arrTimes, useRunway = false, zone = arrTz),
-    )
+    val entries = buildList {
+        val departed = s.depTimes.actual != null || s.depTimes.runwayActual != null
+        if (!departed) {
+            add(TimelineEntry(
+                stringResource(R.string.check_in), NodeState.DERIVED,
+                null, state.view.derivedCheckInAt, depTz, derived = true,
+            ))
+            add(TimelineEntry(
+                "Boarding", NodeState.DERIVED,
+                null, state.view.derivedBoardingAt, depTz, derived = true,
+            ))
+        }
+        add(entry("Pushback", s.depTimes, useRunway = false, zone = depTz))
+        add(entry("Takeoff", s.depTimes, useRunway = true, zone = depTz))
+        add(entry("Landing", s.arrTimes, useRunway = true, zone = arrTz))
+        add(entry("Gate arrival", s.arrTimes, useRunway = false, zone = arrTz))
+    }
     val now = Instant.now()
     val nextIdx = entries.indexOfFirst { it.state != NodeState.DONE && (it.shown?.isAfter(now) != false) }
+    val hasDerived = entries.any { it.derived }
 
     SectionCard(stringResource(R.string.timeline)) {
         entries.forEachIndexed { i, e ->
@@ -535,12 +539,14 @@ private fun Timeline(state: DetailUiState) {
                 doneAbove = i > 0 && entries[i - 1].state == NodeState.DONE,
             )
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            stringResource(R.string.derived_note),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (hasDerived) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.derived_note),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

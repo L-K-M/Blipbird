@@ -172,7 +172,7 @@ private fun fractionOf(event: SunEvent, daylight: DaylightEngine.Result): Double
     return ((event.at.epochSecond - first).toDouble() / (last - first)).coerceIn(0.0, 1.0)
 }
 
-/** Continuous color from solar elevation: warm day → orange dusk → deep night. */
+/** Continuous color from solar elevation: warm day → orange dusk → civil twilight → night. */
 private fun bandColor(elevationDeg: Double, day: Color, dusk: Color, night: Color): Color = when {
     elevationDeg >= 10.0 -> day
     elevationDeg >= DaylightEngine.SUNRISE_SET_DEG ->
