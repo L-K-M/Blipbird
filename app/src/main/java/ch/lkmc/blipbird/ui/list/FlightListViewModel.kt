@@ -14,6 +14,7 @@ import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -128,8 +129,14 @@ class FlightListViewModel @Inject constructor(
         }
     }
 
-    /** Kept for the snackbar's undo after a swipe-delete. */
+    /**
+     * Single-slot undo for the snackbar after a swipe-delete (a replaced snackbar
+     * forfeits the older undo, like most inbox-style apps). [deleteJob] lets
+     * undoDelete wait out an in-flight delete so a fast Undo tap can't observe
+     * a not-yet-captured entity.
+     */
     private var lastDeleted: TrackedFlightEntity? = null
+    private var deleteJob: Job? = null
 
     fun archive(id: Long) = viewModelScope.launch {
         reminders.cancel(id)
@@ -141,17 +148,21 @@ class FlightListViewModel @Inject constructor(
         reminders.reconcile(id)
     }
 
-    fun delete(id: Long) = viewModelScope.launch {
-        lastDeleted = repository.flight(id)
-        reminders.cancel(id)
-        repository.delete(id)
+    fun delete(id: Long) {
+        deleteJob = viewModelScope.launch {
+            lastDeleted = repository.flight(id)
+            reminders.cancel(id)
+            repository.delete(id)
+        }
     }
 
     fun undoDelete() = viewModelScope.launch {
+        deleteJob?.join()
         val flight = lastDeleted ?: return@launch
         lastDeleted = null
         val id = repository.restore(flight)
         repository.refreshStatus(id, force = true)
+        reminders.reconcile(id)
     }
 
     fun clearAddError() { addError.value = null }
