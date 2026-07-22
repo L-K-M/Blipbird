@@ -19,6 +19,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
+import kotlin.math.pow
 
 /** Status word chip — always word + color, never color alone (accessibility). */
 @Composable
@@ -39,13 +40,27 @@ fun StatusWord(status: FlightStatus) {
     }
     Text(
         text.uppercase(),
-        color = Color.White,
+        color = onColorFor(color),
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,
         modifier = Modifier
             .background(color, RoundedCornerShape(6.dp))
             .padding(horizontal = 8.dp, vertical = 3.dp),
     )
+}
+
+/**
+ * Pick black or white foreground for a colored chip background by relative
+ * luminance. White-on-everything failed WCAG AA for the small bold label on the
+ * amber (#B26A00 ~ 3.0:1) and neutral (#5F6368 ~ 4.6:1) status colors.
+ */
+private fun onColorFor(bg: Color): Color {
+    fun linear(c: Float): Double {
+        val v = c.toDouble()
+        return if (v <= 0.03928) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
+    }
+    val l = 0.2126 * linear(bg.red) + 0.7152 * linear(bg.green) + 0.0722 * linear(bg.blue)
+    return if (l > 0.45) Color.Black else Color.White
 }
 
 /**
