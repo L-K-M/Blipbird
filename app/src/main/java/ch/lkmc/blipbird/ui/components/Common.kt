@@ -48,17 +48,17 @@ fun StatusWord(status: FlightStatus) {
     )
 }
 
-/** Countdown with adaptive granularity: days → h m → m. */
+/**
+ * Countdown with adaptive granularity: days → h m → m. Past-due targets clamp to
+ * "0m" — "Lands in -2h 15m" (stale data) is never shown to the user.
+ */
 fun countdownText(d: Duration): String {
-    val total = d.seconds
-    val neg = total < 0
-    val s = abs(total)
-    val text = when {
+    val s = d.seconds.coerceAtLeast(0)
+    return when {
         s >= 172_800 -> "${s / 86_400}d ${(s % 86_400) / 3600}h"
         s >= 3_600 -> "${s / 3600}h ${(s % 3600) / 60}m"
         else -> "${s / 60}m"
     }
-    return if (neg) "-$text" else text
 }
 
 private val TIME_FMT = DateTimeFormatter.ofPattern("HH:mm")

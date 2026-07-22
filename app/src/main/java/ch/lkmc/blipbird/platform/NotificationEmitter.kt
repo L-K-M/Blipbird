@@ -112,8 +112,12 @@ class NotificationEmitter @Inject constructor(
             .setContentIntent(pending)
             .setAutoCancel(true)
             .build()
-        NotificationManagerCompat.from(context)
-            .notify(stableId(flightId, channel), notification)
+        try {
+            NotificationManagerCompat.from(context)
+                .notify(stableId(flightId, channel), notification)
+        } catch (_: SecurityException) {
+            // Permission revoked between the check above and the call.
+        }
     }
 
     /**
