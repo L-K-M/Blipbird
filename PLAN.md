@@ -3,13 +3,15 @@
 > **Blipbird** is an open-source Android flight tracker. Enter one or more flight numbers
 > (`CA861`, `CCA861`, or a saved name like *"Mom's flight home"*) and optionally a date;
 > Blipbird shows a beautiful, glanceable list of your flights, a rich detail view with a
-> live-updating map, and sends notifications for the moments that matter — boarding,
+> live-updating map and a **flight ribbon** visualizing daylight/darkness and weather along
+> the whole route, and sends notifications for the moments that matter — boarding,
 > departure, delays, gate changes, landing.
 >
-> This plan is the output of a structured research phase (July 2026): five parallel research
+> This plan is the output of a structured research phase (July 2026): seven research
 > tracks (flight-status APIs, live-position APIs, Android stack, aviation metadata/assets,
-> competitor UX), each followed by an adversarial fact-check of its load-bearing claims
-> against current official sources. Verified facts below are cited inline.
+> competitor UX, en-route weather sources, day/night solar math), each followed by an
+> adversarial fact-check of its load-bearing claims against current official sources.
+> Verified facts below are cited inline.
 
 ---
 
@@ -111,6 +113,7 @@ Decisions verified against current versions and 2026 Play policy (all fact-check
 | Background | WorkManager | 2.11.x | Periodic refresh (≥15-min floor) + one-time delayed jobs for notification lead-ups |
 | Images | Coil (`coil-compose`, `coil-network-okhttp`, `coil-svg`) | 3.5.x | Airline logos with shared OkHttp cache |
 | Pull-to-refresh | material3 `PullToRefreshBox` | in material3 | The settled M3 API (still `@ExperimentalMaterial3Api`-annotated but stable in practice) |
+| Solar math | commons-suncalc (`org.shredzone.commons:commons-suncalc`) | 3.11 | Apache-2.0, zero runtime deps, API 26+ (verified) — offline solar elevation/twilight/azimuth for the flight ribbon & map terminator (§9.4); Kastro is the Kotlin-multiplatform alternative |
 | Map | **MapLibre Native** via `org.maplibre.compose:maplibre-compose` | 0.13.x / native 11.x | Open-source, **no API key, no billing**, F-Droid-friendly. Compose wrapper is pre-1.0 → pin the version; classic `MapView` in `AndroidView` is the proven fallback |
 | Map tiles | **OpenFreeMap** (primary); failover: project-hosted Protomaps PMTiles, then BYO-key MapTiler | — | OpenFreeMap: no key, no registration, no request limits, commercial use allowed (verified on openfreemap.org); donation-funded/no SLA → tile-source URL remotely configurable. Fallbacks carry real constraints (verified): MapTiler free tier = per-user API key, 100k tiles/mo, non-commercial/evaluation, hard-stops when exceeded; Protomaps hosted free tier = non-commercial ≤1M tiles/mo. The keyless failover is therefore a PMTiles archive self-hosted by the project on static hosting — never a shared key |
 | Widgets | Jetpack Glance | current | Home-screen "next flight" + "in-flight" widgets |
@@ -241,13 +244,43 @@ logo source**; logos are trademarks and the free CDNs grant no license. Strategy
 3. **Never** bundle scraped logo packs in the repo. About screen carries a "logos are
    trademarks of their respective owners, used for identification only" notice.
 
-### 4.4 Airport weather — `WeatherProvider`
+### 4.4 Weather — `WeatherProvider` (airports) + `RouteWeatherProvider` (en route)
 
-**aviationweather.gov data API** (NOAA): free, **no API key**, worldwide METAR + TAF as
-JSON — verified, incl. rate limits (100 req/min max, ~1 req/min per endpoint sustained,
-custom User-Agent expected). Blipbird decodes METAR into plain language ("Broken clouds at
-2,500 ft, wind 12 kt gusting 22") with the raw string one tap away for avgeeks, and shows
-arrival-airport TAF as "expected weather at landing."
+**Airport weather — aviationweather.gov data API** (NOAA): free, **no API key**, worldwide
+METAR + TAF as JSON — verified, incl. rate limits (100 req/min max, ~1 req/min per endpoint
+sustained, custom User-Agent expected). Blipbird decodes METAR into plain language ("Broken
+clouds at 2,500 ft, wind 12 kt gusting 22") with the raw string one tap away for avgeeks,
+and shows arrival-airport TAF as "expected weather at landing."
+
+**En-route weather — Open-Meteo (PRIMARY, verified July 2026):** free tier needs **no API
+key** (non-commercial use — matches Blipbird exactly), data licensed **CC-BY 4.0**
+("Weather data by Open-Meteo.com" on the attribution screen). The killer feature: **one
+HTTP request carries comma-separated coordinate lists (up to 1,000 points)** — so a whole
+route's 10–20 sample points, each evaluated at its *overflight hour*, is a single request.
+Hourly fields per point: total/low/mid/high **cloud cover**, precipitation +
+`precipitation_probability`, WMO `weather_code` (maps cleanly to condition icons),
+visibility (best-effort), temperature, and **wind/temperature/cloud at 19 pressure levels**
+— 250 hPa ≈ cruise altitude, so en-route headwinds and cloud at FL340 are directly
+available. 16-day forecast horizon covers any sensibly tracked flight. Quota: 10,000
+*weighted* calls/day (a multi-point request counts ≈ one weighted call per point ×
+variable/day factors) — a route fetch costs ~15–25 weighted calls, utterly comfortable.
+Escape hatch if terms ever change: the server is AGPL open-source and self-hostable.
+
+**Fallback — MET Norway Locationforecast 2.0:** global, no key, CC-BY 4.0, ~10-day horizon
+(hourly → 6-hourly). Constraints (verified): **mandatory identifying User-Agent** (default
+okhttp/Dalvik UAs are banned → 403 — Blipbird sets a custom UA everywhere anyway), one
+point per request, 20 req/s cap *across all installs*, aggressive caching required
+(honor `Expires` / send `If-Modified-Since`). Fallback-only for exactly these reasons.
+
+**Hazard layer (optional, later):** aviationweather.gov `isigmet` is the only *globally*
+scoped hazard product (GeoJSON polygons — turbulence/convective SIGMETs) and could ship as
+an opt-in map layer; G-AIRMET/PIREP/windtemp are US-only — skipped.
+
+**Radar tiles: consciously skipped.** RainViewer's API is in official wind-down (nowcast +
+satellite killed Jan 2026; the surviving past-2h tiles are personal-use-only, zoom ≤ 7, no
+SLA — verified), and **no free, no-key, global radar tile source exists in mid-2026**. If
+ever revisited: US-only extra via Iowa State's keyless NEXRAD XYZ tiles (verified live), or
+the community LibreWXR instance once it has a track record.
 
 ### 4.5 Degradation matrix
 
@@ -330,13 +363,16 @@ per alias (re-resolved each time via the date rule above), and *recurring* date 
 │  TrackFlightUseCase · RefreshFlightUseCase · ResolveIdentity      │
 │  NotificationPlanner (pure: FlightSnapshot → planned alerts)      │
 │  FlightPhaseMachine (pure: snapshot → Phase + next event)         │
+│  DaylightEngine (pure: route × schedule → solar elevation,        │
+│                  light bands, sunrise/sunset events, terminator)  │
 ├───────────────────────────── Data ───────────────────────────────┤
 │  FlightRepository (single source of truth = Room; network→db)     │
 │  ├─ FlightStatusProvider    ←  AeroDataBoxProvider | AeroApiProv. │
 │  ├─ PositionProvider        ←  AdsbLolProvider | AirplanesLive…   │
 │  ├─ TrackProvider           ←  OpenSkyTracks | ClientAccumulated  │
 │  ├─ MetadataProvider        ←  bundled Room asset + adsbdb/hexdb  │
-│  ├─ WeatherProvider         ←  AviationWeatherGov                 │
+│  ├─ WeatherProvider         ←  AviationWeatherGov (airport wx)    │
+│  ├─ RouteWeatherProvider    ←  OpenMeteo | MetNo (en-route wx)    │
 │  └─ AirlineLogoProvider     ←  Monogram | AvsIo | Kiwi            │
 ├─────────────────────────── Platform ─────────────────────────────┤
 │  WorkManager workers (refresh, notification lead-ups)             │
@@ -393,6 +429,11 @@ PositionFix(trackedFlightId, at, lat, lon, altitudeFt?, groundSpeedKt?,
             trackDeg?, verticalRateFpm?, seenPosAgeSec, source)
 
 TrackPolyline(trackedFlightId, points: encoded, source, refreshedAt)
+
+RoutePoint(trackedFlightId, seq, overflightAt, lat, lon,   // great-circle samples
+           solarElevationDeg, lightBand,     // computed offline by DaylightEngine
+           cloudPct?, precipMmH?, precipProbPct?, weatherCode?,
+           cruiseWindKt?, cruiseWindDirDeg?, fetchedAt?)   // Open-Meteo enrichment
 
 // Bundled reference tables use a synthetic PK with UNIQUE indexes on icao and
 // iata separately (airports with IATA but no ICAO exist); provider-returned
@@ -457,6 +498,11 @@ failover headroom. The quota ledger (per provider, per *billing cycle* — Rapid
 run from subscription date, not calendar months) drives adaptive backoff and surfaces
 usage in Settings, so the "reduced freshness" banner never surprises anyone.
 
+En-route weather rides the same tiers at zero marginal status-quota cost: one batched
+Open-Meteo request per flight at the 24 h, 3 h, and gate-critical boundaries (plus on any
+schedule change ≥ 30 min) — ~15–25 weighted Open-Meteo calls each against its separate
+10,000/day allowance. Daylight bands are pure math (§9.4) and recompute freely on-device.
+
 ---
 
 ## 9. UX design
@@ -508,10 +554,12 @@ Ordered by usefulness (Flighty-verified order, plus our additions):
 4. **Inbound aircraft** *(v2, Flighty's most-praised anxiety-killer)*: "Your plane is
    arriving from Shanghai as CA1858, lands 12:40" — derived from the registration's previous
    leg; late-inbound warning feeds the delay heads-up.
-5. **Weather**: decoded METAR now at both airports; arrival TAF as "expected at landing."
-6. **Airport health chip** *(v2)*: "PEK: departures averaging +40 min right now."
-7. **About the airline**: name, alliance, radio callsign ("AIR CHINA"), contact links.
-8. **Share / Pickup mode**: read-only big-type card (ETA · terminal · progress) exportable
+5. **Flight ribbon** — daylight & weather along the route (§9.4).
+6. **Airport weather**: decoded METAR now at both airports; arrival TAF as "expected at
+   landing."
+7. **Airport health chip** *(v2)*: "PEK: departures averaging +40 min right now."
+8. **About the airline**: name, alliance, radio callsign ("AIR CHINA"), contact links.
+9. **Share / Pickup mode**: read-only big-type card (ETA · terminal · progress) exportable
    as image/link for whoever's picking you up.
 
 ### 9.3 Disruption semantics (designed against Flighty's documented failure)
@@ -523,6 +571,54 @@ Ordered by usefulness (Flighty-verified order, plus our additions):
 | Cancellation | Red full banner — **only** when the provider status is truly *cancelled* |
 | Schedule change / renumbering | Calm blue informational treatment — explicitly never the red banner |
 | Diversion | Banner names the new airport; map re-centers; timeline re-anchors |
+
+### 9.4 The flight ribbon — daylight & weather along the route
+
+A signature Blipbird visualization no mainstream tracker offers: a horizontal strip
+representing the whole flight (x = flight time), answering at a glance *"how much of my
+red-eye is actually dark?"* and *"what will it look like out the window over Greenland?"*
+
+```
+ PEK ─────────────────────────────────────────────── GVA
+ │ ☀ daylight  │▒ dusk ▒│   ★ night   │▒ dawn ▒│  ☀   │
+ │  ☁ 80%   🌧 showers  │  ✦ clear    │ ☁ 40%  │  ⛅   │
+ 14:10        17:52 🌇                 05:41 🌅   06:30
+```
+
+**Daylight band (pure math, fully offline — `DaylightEngine`):**
+
+- Sample the great-circle route (Veness slerp intermediate-point formula, MIT) at
+  **1-minute flight-time steps** between estimated wheels-up and wheels-down (live ADS-B
+  track positions replace the great-circle for the flown portion). At most ~1,000 samples;
+  the whole computation is <10 ms — recompute freely on any schedule change.
+- Compute solar elevation at each `(lat, lon, overflight Instant)` with
+  **commons-suncalc 3.11** (Apache-2.0, zero dependencies, API 26+ — verified) or its
+  Kotlin-native port Kastro; classify by the standard USNO angles: day (≥ −0.833°), civil
+  (−6°), nautical (−12°), astronomical (−18°) twilight, night — rendered as a continuous
+  gradient (warm daylight → orange dusk → deep blue → near-black), not hard bands.
+- **Cruise-altitude correction (verified):** at ~11 km the horizon dips ≈ 3.1°, so
+  passengers see the sun until ≈ −4° elevation — sunsets seen from the cabin run
+  **~12–20 min later** than on the ground below. Sunrise/sunset *event markers* (🌅/🌇
+  with times, refined to the second by bisection between samples) use the
+  altitude-corrected threshold; the twilight band boundaries stay at their standard
+  geometric angles, per convention. Westbound terminator-chasing flights (double sunsets,
+  reversed sunrises) fall out of per-sample classification naturally.
+- Delighter callout derived from the same data: *"Sunrise over Greenland at 05:41 UTC —
+  left side of the aircraft"* (commons-suncalc also gives azimuth → which window to book).
+
+**Weather band (one Open-Meteo request, §4.4):** under the daylight gradient, weather
+glyphs + cloud-cover % at ~10–20 sampled waypoints, each evaluated at its *overflight
+hour* — WMO `weather_code` icons, precipitation probability, and cruise-level wind
+(head/tailwind arrow computed against the route bearing). Tapping a ribbon segment shows
+the sample detail (position, local time, conditions, cruise wind). Airport endpoints show
+METAR-now (actual) rather than forecast. All cells honor the "never fake precision" rule:
+beyond the 16-day forecast horizon or on fetch failure the weather band renders as
+"forecast available closer to departure" while the daylight band (pure math) always
+renders.
+
+The ribbon appears in the detail view (item 5 in §9.2) and — condensed to just the
+daylight gradient — as the progress-bar background in list rows and widgets. The same
+per-segment light bands color the map route polyline (§11).
 
 ---
 
@@ -569,8 +665,14 @@ class; granularity-shifting countdown; subtle contrail confetti on "Landed on ti
      theme; "ghost" style + "last seen X min ago" callout when `seen_pos` goes stale;
      optional dead-reckoning along track at ground speed.
   5. Origin/destination pins with gate labels.
-  6. *(Delighter)* **Day/night terminator** overlay (solar-position math ports trivially
-     to Kotlin) + "sunrise over Greenland ~03:40 UTC" en-route callout.
+  6. **Day/night on the map** (core, powered by `DaylightEngine` §9.4): the route
+     polyline is segment-colored by light band at overflight time, sun icons mark the
+     altitude-corrected sunrise/sunset points, and nested **terminator/twilight polygons**
+     (iso-elevation curves at 0/−6/−12/−18°, the Leaflet.Terminator math generalized —
+     `φ = atan(−cos H / tan δ)` at e=0 — emitted as GeoJSON with graded opacity) shade the
+     night side. Antimeridian splitting and polar-day/night longitudes handled explicitly.
+  7. *(Optional layer, later)* worldwide SIGMET hazard polygons from aviationweather.gov
+     `isigmet` (§4.4).
 - **Camera:** auto-follow with manual override; "recenter" FAB; detail-hero snippet is a
   non-interactive lite view into the same composable.
 - Altitude/speed/track readout strip under the map (avgeek candy, hidden until data exists).
@@ -676,18 +778,22 @@ parser, planner, derived times.
 Position provider chain (adsb.lol → airplanes.live → adsb.fi, with per-provider path map),
 identity→hex resolution, OpenSky track polyline, MapLibre screen (flown/remaining path,
 interpolated rotated marker, staleness ghost), detail-hero map snippet, foreground polling
-loop with lifecycle-aware start/stop, OpenFreeMap themed styles. **AeroAPI as second
-status provider + failover fault-injection tests.** Start the F-Droid inclusion RFP now
-(their review queue takes weeks and is outside our control).
-**Exit:** watch a live flight cross the map smoothly; airplane-mode replay renders cached
-track; status failover proven with fault injection.
+loop with lifecycle-aware start/stop, OpenFreeMap themed styles. **`DaylightEngine` + the
+daylight half of the flight ribbon** (pure math, no new API): great-circle sampling, light
+bands, sunrise/sunset markers, map terminator polygons, light-band-colored route polyline.
+**AeroAPI as second status provider + failover fault-injection tests.** Start the F-Droid
+inclusion RFP now (their review queue takes weeks and is outside our control).
+**Exit:** watch a live flight cross the map smoothly with the terminator band visible;
+ribbon shows correct dark/light segments for a known red-eye; airplane-mode replay renders
+cached track; status failover proven with fault injection.
 
 ### M3 — Notifications (week 9–10)
 Channels, `POST_NOTIFICATIONS` flow, anchor workers (snapshot-reuse rule), snapshot-diff
 event detection, notification planner + persisted `EmittedEvent` ledger, per-flight
 profiles, exact-alarm upgrade path incl. the alarm-driven gate-critical loop, the
 minimal offline projection branch (anchor posts from cached snapshot labeled "projected"),
-METAR/TAF weather cards.
+METAR/TAF weather cards, **`RouteWeatherProvider` (Open-Meteo primary / met.no fallback) +
+the weather half of the flight ribbon**.
 **Exit:** full notification lifecycle observed on a real tracked flight (boarding →
 landed) from a *ground observer's* phone, including one induced offline interval handled
 via the projection branch. (Full offline in-flight mode remains v2.)
@@ -709,7 +815,8 @@ shareable year card — all on-device) · airport-health chip · pickup/share mo
 multi-flight trip grouping (absorbs multi-leg tracking).
 
 ### Delighters (ongoing)
-Day/night terminator + sunrise callouts · landing confetti · route on-time forecast from
+"Sunrise on the left at 05:41" window-seat callouts (azimuth already computed by
+`DaylightEngine`) · landing confetti · route on-time forecast from
 locally accumulated snapshots · AR "point at the sky" long-shot.
 
 ---
@@ -719,7 +826,10 @@ locally accumulated snapshots · AR "point at the sky" long-shot.
 - **Unit (JVM, the bulk):** designator parser (property-based: round-trip IATA↔ICAO,
   ambiguity cases), `FlightPhaseMachine` transition table, `NotificationPlanner`
   (given-snapshot-diff-expect-events, dedup ledger), quota ledger, adaptive scheduler,
-  METAR decoder, great-circle/terminator math.
+  METAR decoder, `DaylightEngine` (property-based: band edges at exact USNO angles, polar
+  day/night longitudes, antimeridian routes, westbound double-sunset flights, known
+  reference flights vs SunFlight/FlightVsLight outputs), terminator polygon generation,
+  Open-Meteo multi-point response mapping.
 - **Provider contract tests:** recorded JSON fixtures per provider (happy path, missing
   gates, cancelled, diverted, codeshare, empty `ac[]`, 429) run against the DTO mappers;
   a nightly *live* smoke workflow (opt-in CI job) pings each free API so provider drift is
@@ -751,8 +861,10 @@ locally accumulated snapshots · AR "point at the sky" long-shot.
   adsb.lol (ODbL) · airplanes.live / adsb.fi (courtesy + their non-commercial terms) ·
   OpenSky Network · adsbdb (+ its credited route-data owners) · hexdb.io ·
   **airport-data.com (aircraft photo thumbnails served via adsbdb)** · aviationweather.gov
-  · OpenFreeMap "© OpenMapTiles © OpenStreetMap" (MapLibre renders map attribution
-  automatically) · trademark notice for airline logos.
+  · **"Weather data by Open-Meteo.com" (CC-BY 4.0)** · **MET Norway (CC-BY 4.0)** ·
+  OpenFreeMap "© OpenMapTiles © OpenStreetMap" (MapLibre renders map attribution
+  automatically) · trademark notice for airline logos. In-code attribution comments for
+  the MIT-licensed Veness great-circle formulas and Leaflet.Terminator-derived math.
 - **License red lines (verified in research):** never bundle or re-export adsbdb/hexdb route
   databases; never ship scraped logo packs; respect AeroAPI Personal = personal use → BYO
   key by design; contact adsb.lol before production launch.
@@ -795,20 +907,32 @@ locally accumulated snapshots · AR "point at the sky" long-shot.
 | Callsign→route/airline | `GET api.adsbdb.com/v0/callsign/{cs}` | none | unpublished; cache |
 | Hex/route fallback | `GET hexdb.io/api/v1/route/icao/{cs}` | none | 1,000 / 5 min |
 | METAR/TAF | `GET aviationweather.gov/api/data/metar?ids={icao}&format=json` | none (custom UA) | 100/min hard, ~1/min sustained |
+| En-route weather (multi-point) | `GET api.open-meteo.com/v1/forecast?latitude={lat1},{lat2},…&longitude={lon1},…&hourly=cloud_cover,weather_code,precipitation_probability,wind_speed_250hPa,…&timeformat=unixtime` | none (non-commercial) | 10,000 weighted calls/day; ≤1,000 points/request |
+| En-route weather fallback | `GET api.met.no/weatherapi/locationforecast/2.0/compact?lat={lat}&lon={lon}` | none (**mandatory identifying UA**) | 20 req/s app-wide; cache per `Expires` |
 | Map tiles | `https://tiles.openfreemap.org/styles/{liberty|dark|positron}` | none | unlimited (no SLA) |
 | Airline logo (optional) | `https://pics.avs.io/{w}/{h}/{IATA}.png` | none | unofficial; monogram fallback |
 
 ## Appendix B: research provenance
 
-This plan was synthesized from five research reports produced by parallel research agents
+This plan was synthesized from seven research reports produced by parallel research agents
 (July 22, 2026), each report's key claims adversarially fact-checked by an independent
-verifier against official sources. 19 of 20 claims were confirmed; 1 was refuted and the
-plan corrected accordingly (exact-alarm policy: `SCHEDULE_EXACT_ALARM` is user-grantable
-for flight trackers; only `USE_EXACT_ALARM` is restricted to alarm/calendar apps).
+verifier against official sources; the full plan was then itself adversarially reviewed by
+three independent reviewers (requirements coverage, fact consistency, engineering
+feasibility — 29 findings, all addressed). Of 28 fact-checked claims, 26 were confirmed
+and 2 refuted with the plan corrected accordingly: (1) exact-alarm policy —
+`SCHEDULE_EXACT_ALARM` is user-grantable for flight trackers; only `USE_EXACT_ALARM` is
+restricted to alarm/calendar apps; (2) the ±0.01° accuracy figure often quoted for NOAA's
+short solar-position form actually belongs to a different algorithm (Michalsky) — moot
+since Blipbird uses commons-suncalc, whose ~1-minute event accuracy is verified.
 Load-bearing verified facts: AeroDataBox free tier & endpoint semantics; AeroAPI Personal
 pricing/window/license; Amadeus Self-Service shutdown (July 17, 2026); FR24 API scope;
 adsb.lol ODbL & endpoints; airplanes.live/adsb.fi limits; OpenSky OAuth2 + credits +
 anonymous `/tracks/all`; ADSBExchange free-tier removal; ADSB One archival; Play target-SDK
 36 deadline; OpenFreeMap terms; material3 1.4/1.5-alpha status; OurAirports PD + no-tz;
 mwgg/Airports MIT + IANA tz; OPTD CC-BY; adsbdb route-data restriction; hexdb limits;
-aviationweather.gov API terms; Android 16 ProgressStyle; Flighty/App-in-the-Air market facts.
+aviationweather.gov API terms; Android 16 ProgressStyle; Flighty/App-in-the-Air market
+facts; Open-Meteo free tier, multi-point batching + pressure-level fields; RainViewer API
+wind-down; met.no Locationforecast terms (mandatory UA, 20 req/s app-wide); ISIGMET global
+vs G-AIRMET/PIREP/windtemp US-only scope; commons-suncalc 3.11 license/API/Android support;
+USNO twilight angles; Leaflet.Terminator math (MIT) and its iso-elevation generalization;
+cruise-altitude horizon dip ≈3.1° at 11 km → ~12–20 min sunset shift.
