@@ -416,11 +416,17 @@ user input ("CA861", "CA 861", "CCA861/CA861", or saved alias)
   │
   ├─ 1. Parse and deduplicate:
   │     resolve an exact saved alias before batch tokenization; batch separators
-  │     are comma/newline (not every space). Normalize case and carrier/number
-  │     whitespace. Treat a slash pair as alternate designators for one flight,
-  │     not two rows. Match prefixes against the bundled airline table instead
-  │     of trusting regex alone: IATA is two alphanumerics (at least one letter),
-  │     ICAO is three letters, followed by 1–4 digits and an optional suffix.
+  │     are comma, newline, **tab, and semicolon** (not every space — pasted input from
+  │     spreadsheets/other apps frequently uses tab or `;`). Trim each token and drop
+  │     empties. Normalize case and carrier/number whitespace. Treat a slash pair as
+  │     alternate designators for one flight, not two rows. Match prefixes against the
+  │     bundled airline table instead of trusting regex alone: IATA is two alphanumerics
+  │     (at least one letter), ICAO is three letters, followed by 1–4 digits and an
+  │     optional suffix. **A prefix absent from the bundled table is not a rejection** —
+  │     accept the designator as a user-entered, unverified input on the limited-mode
+  │     path (with a "code not recognized — tracking will rely on what you enter" hint),
+  │     so launch never blocks on a new ICAO code, a charter, or a typo. The table is a
+  │     disambiguator, never a gate on adding a flight.
   │
   ├─ 2. Normalize through the bundled IATA↔ICAO airline table. A release-cleared
   │     metadata resolver may validate a current callsign/route at runtime under
@@ -850,6 +856,18 @@ so the layout never collapses.
 | Cancellation | Red full banner — **only** when the provider status is truly *cancelled* |
 | Schedule change / renumbering | Calm blue informational treatment — explicitly never the red banner |
 | Diversion | Banner names the new airport; map re-centers; timeline re-anchors |
+
+**Renumbering / schedule-move detection.** A schedule change can renumber the operating
+designator (CA861 → CA862) or shift the flight to the next day. The §5 identity model pins
+`canonicalKey` from `operating designator + origin + destination + originalScheduledOut`, so
+a legitimate renumbering looks like a brand-new flight and would silently drop tracking. To
+catch it: when a tracked flight's provider instance can no longer be found, search the same
+carrier's instances on the same route (same origin/destination, ±30 min of the original
+scheduled OUT, ±1 calendar day) before concluding the flight is gone. A match surfaces
+"your flight may have been renumbered to **CA862** — keep tracking?" with a one-tap re-track
+that retargets the existing `TrackedFlight` (preserving alias, profile, and history) rather
+than creating a new row. Re-track never auto-binds; it asks. The same calm-blue treatment
+applies as the table row above — a renumbering is explicitly never a cancellation.
 
 Reported provider status wins. When only timestamps are available, present the arithmetic
 as "Est. +18 min" with `DERIVED` provenance rather than claiming an airline-issued delay.
