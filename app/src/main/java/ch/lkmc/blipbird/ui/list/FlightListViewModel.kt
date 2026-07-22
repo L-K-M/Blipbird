@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -65,15 +66,17 @@ class FlightListViewModel @Inject constructor(
 
     /**
      * Re-derives the phase views between provider refreshes so countdowns,
-     * progress bars, and derived statuses keep moving. Stops with the last
-     * collector (the stateIn below shares WhileSubscribed).
+     * progress bars, and derived statuses keep moving. One shared hot ticker for
+     * all rows (shareIn, not stateIn: a StateFlow<Unit> would conflate every
+     * tick away); replay=1 so a newly added row's combine fires immediately.
+     * Stops with the last collector.
      */
     private val ticker = flow {
         while (true) {
             emit(Unit)
             delay(TICK_MILLIS)
         }
-    }
+    }.shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
     private val rows: StateFlow<List<FlightRow>> = repository.observeFlights()
         .flatMapLatest { flights ->
