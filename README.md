@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml/badge.svg)](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml)
 
-**Latest release:** v<!-- version -->0.1.0<!-- /version --> · [Download](https://github.com/L-K-M/Blipbird/releases/latest)
+**Latest release:** v<!-- version -->0.2.0<!-- /version --> · [Download](https://github.com/L-K-M/Blipbird/releases/latest)
 
 **The calm, beautiful flight-day companion for Android.** Enter one or more flight
 numbers (`CA861`, `CCA861`, `CCA861/CA861`, or paste a whole list) with an optional
