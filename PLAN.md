@@ -3,7 +3,8 @@
 > **Blipbird** is an open-source Android flight tracker. Enter one or more flight numbers
 > (`CA861`, `CCA861`, or a saved name like *"Mom's flight home"*) and optionally a date;
 > Blipbird shows a beautiful, glanceable list of your flights, a rich detail view with a
-> live-updating map, and sends notifications for the moments that matter — boarding,
+> live-updating map and a **flight ribbon** visualizing daylight/darkness and weather along
+> the whole route, and sends notifications for the moments that matter — boarding,
 > departure, delays, gate changes, landing.
 >
 > This plan reflects a point-in-time research review completed July 22, 2026. Provider
@@ -62,8 +63,9 @@ Design principles:
    applies to the big constraint surfaced in §4.1: the *status* layer (schedule, gates,
    delays, status-driven notifications) has **no fully keyless free source**, so the
    happy path is a guided ~3-minute BYO-key setup rather than "it just works" out of the
-   box — and a genuine zero-key mode (positions, route, airline, weather) is designed as a
-   real first-class mode, not a broken state.
+   box — and a genuine zero-key mode (bundled airline/airport context, endpoint weather and
+   advisories, user-entered route/time, and high-confidence active positions) is designed as
+   a real first-class mode, not a broken state.
 4. **Private and open.** No account, analytics SDK, or Blipbird-operated data backend.
    Blipbird stores aliases/settings locally (with user-controlled OS backup/export) and
    keeps provider-derived operational data out of backup; flight identifiers and related
@@ -125,6 +127,7 @@ M0 rather than treating this table as a permanent compatibility matrix:
 | Background | WorkManager | 2.11.x | Periodic refresh (≥15-min floor) + one-time delayed jobs for notification lead-ups |
 | Images | Coil (`coil-compose`, `coil-network-okhttp`, `coil-svg`) | 3.5.x | Theme assets and any later rights-cleared remote imagery; launch airline identity uses generated monograms |
 | Pull-to-refresh | material3 `PullToRefreshBox` | in material3 1.4.0 | Stable API; style the indicator without wrapping the app in an unnecessary experimental opt-in |
+| Solar math | commons-suncalc (`org.shredzone.commons:commons-suncalc`) | 3.11 | Apache-2.0, API 26+, and no non-optional runtime dependencies; supplies offline true solar altitude and north-based azimuth. Route sampling, cruise-horizon correction, crossing detection, and map geometry remain Blipbird code (§9.4) |
 | Map | **MapLibre Native** via `org.maplibre.compose:maplibre-compose` | 0.13.1 / transitive native 13.0.2 | Open-source, **no API key, no billing**, F-Droid-friendly. Pin the pre-1.0 wrapper and do not override its Native version independently without tests; classic `MapView` in `AndroidView` is the fallback |
 | Map tiles | **OpenFreeMap** (primary); cached-tile/blank-base degradation | — | No key or request limit and commercial use is allowed, but there is no SLA and bulk prefetch is not permitted without approval. Launch fallback keeps the route, pins, and attribution over cached tiles or a neutral canvas. Self-hosted PMTiles is a later operational decision with explicit storage, update, attribution, and bandwidth budgets; never embed a shared commercial key |
 | Widgets | Jetpack Glance | 1.1.1 stable | Home-screen "next flight" + "in-flight" widgets; do not take a newer RC/alpha merely for version freshness |
@@ -178,11 +181,11 @@ countdown, gate, or status-driven notification data. We mitigate rather than hid
 
 | Requirement | Zero-key behavior |
 |---|---|
-| Time to departure | ⚠️ Only from a user-entered scheduled time; adsbdb route data does not provide a trustworthy schedule. User-supplied times are labeled as such |
+| Time to departure | ⚠️ Only from a user-entered scheduled time; route metadata does not provide a trustworthy schedule. User-supplied times are labeled as such |
 | Gate numbers | ❌ Needs a status key — honest CTA shown in place |
-| Airline info | ✅ Bundled datasets + adsbdb |
-| Live map | ✅ For an active aircraft only when callsign/route identity clears the confidence checks in §5 |
-| Airport info, weather | ✅ Bundled data + aviationweather.gov |
+| Airline info | ✅ Bundled datasets; release-cleared runtime enrichment is optional |
+| Live map | ⚠️ For an active aircraft only when identity clears §5; a route guide also needs user-entered or release-cleared endpoints |
+| Airport info, endpoint weather/advisories | ✅ Bundled data + aviationweather.gov; the pressure-level ribbon forecast remains provider-gated |
 | Notifications | ❌ Status changes need an approved status source. ADS-B takeoff/landing detection works only while a foreground screen is polling; background position polling is deliberately off |
 | Themes, pull-to-refresh, list/detail UI | ✅ Fully functional |
 
@@ -195,6 +198,10 @@ fixtures must include missing fields, `alt_baro: "ground"`, padded callsigns, no
 hex prefixes, and absent positions. URL paths also differ: adsb.fi uses `/v2/registration/{reg}`
 (not `/v2/reg/`) and `/v3/lat/{lat}/lon/{lon}/dist/{d}` (not `/v2/point/…`) — so the
 provider abstraction carries a per-provider path map:
+
+Do not collapse altitude fields into one untyped number. Preserve barometric/standard-
+pressure altitude separately from geometric altitude and retain the source-declared datum;
+an undocumented datum is `UNKNOWN` and cannot drive pressure/geopotential or horizon math.
 
 | Provider | Auth | Query by callsign | Rate limit | License |
 |---|---|---|---|---|
@@ -239,18 +246,21 @@ read-only SQLite asset, with compressed and installed size measured rather than 
 | Airlines | OpenTravelData `optd_airlines.csv` (verified CC-BY, updated July 2026) filtered to active carriers | CC-BY | name, IATA↔ICAO code, alliance |
 | Aircraft types | Pinned Wikipedia type-designator revision → generated JSON | CC BY-SA 4.0 | ICAO type code → family name; generated asset remains separately licensed with revision, attribution, and transformation notice |
 
-**Runtime enrichment (ephemeral unless written terms explicitly allow more):**
+**Runtime enrichment candidates (disabled unless written terms cover hosted use, display,
+and exact retention):**
 
 - **adsbdb.com** (free, no key, actively maintained): `/v0/callsign/{cs}` returns both
   callsign forms (ICAO + IATA), the airline (incl. radio callsign), and full
   origin/destination airport objects — live-verified with `CCA861` → Air China,
   Beijing ZBAA → Geneva LSGG. Also `/v0/aircraft/{hex|reg}` for aircraft details.
-  **License trap:** route data may not be incorporated into another database. Do not put
-  route responses in Room, analytics, exports, or fixtures; keep only an in-memory response
-  long enough to resolve the current view unless written permission says otherwise.
+  **License trap:** its source terms say route data may not be copied, published, or
+  incorporated into another database without permission. Display in a distributed app may
+  be publication; in-memory handling does not cure that. Do not call it from a release build
+  until written permission covers client polling, display, normalization, and any cache.
 - **hexdb.io** (fallback; 1,000 req/5 min): route, hex↔reg, aircraft, airport lookups. It
-  publishes no clear data reuse or persistence license, so apply the same no-persistence
-  rule and do not enable it by default until terms are confirmed.
+  publishes no clear display/reuse/persistence license, so keep it disabled until those
+  rights and distributed-client use are confirmed. If neither candidate clears, use only
+  bundled, user-entered, or status-provider-cleared endpoint data.
 
 **Airline logos — the licensing reality (researched):** there is **no fully-licensed free
 logo source**; logos are trademarks and the free CDNs grant no license. Strategy:
@@ -263,7 +273,7 @@ logo source**; logos are trademarks and the free CDNs grant no license. Strategy
 3. Aircraft photos follow the same rule. adsbdb's software license does not grant rights to
    Airport-Data photos; omit photos until per-image display and attribution terms are met.
 
-### 4.4 Weather (origin, destination & en-route) — `WeatherProvider`
+### 4.4 Weather (origin, destination & en-route) — `WeatherProvider` + `RouteWeatherProvider`
 
 **aviationweather.gov data API** (NOAA): free, **no API key**, worldwide METAR + TAF as
 JSON. Its published ceiling is 100 requests/minute and guidance says not to consume an
@@ -287,29 +297,71 @@ cruise altitude:
 | Endpoint weather | METAR now + TAF prevailing conditions and active temporary/probability overlays at estimated origin/destination time | ✅ | diversion airport when known |
 | Route advisories | Normalize international `/isigmet` plus CONUS domestic `/airsigmet`, deduplicate, then intersect active polygons with a buffered great-circle guide while retaining validity time and altitude band | ✅ | map overlay and filed-route intersection when a rights-cleared route exists |
 | Sampled surface context | Batched METARs at a few reporting stations near the guide | optional launch context, explicitly "surface now" | hide when it adds more confusion than value |
-| Time/altitude-aware en-route forecast | A provider capable of pressure-level wind, temperature, cloud, and precipitation sampled at estimated passage time | **M0 source/terms spike; required for the M3 launch weather slice** | turbulence/icing only when the selected data product actually supports them |
+| Time/altitude-aware en-route forecast | **Open-Meteo is the M0 candidate**, sampled at projected passage time with selected/bracketing pressure levels and geopotential height | hard gate for the current beta definition; hosted-use, attribution, capability, and cost gates must close | turbulence/icing only when the selected data product actually supports them |
+| Surface route forecast | **MET Norway Locationforecast is an optional candidate**, never a cruise-weather fallback | disabled pending distributed-app traffic approval | surface context only |
+
+Under the current release definition, failure to clear a time/altitude-aware provider blocks
+the M3 route-weather slice and beta. The project may explicitly revise beta scope in a
+decision record, but it cannot silently substitute surface weather or claim this acceptance
+item passed.
 
 AWC AIRMET/G-AIRMET and winds-aloft products are region-limited, so they must not be labeled
 worldwide fallbacks. A missing advisory is not proof of safe or clear weather; the empty
 state says "No applicable advisories found in available AWC data," includes freshness, and
 links to the full advisory. All weather is informational and explicitly not for navigation.
 
+**Open-Meteo candidate constraints.** The hosted endpoint needs no key and may serve a
+genuinely noncommercial app without ads or subscriptions under its current terms; being
+free or open source does not establish eligibility, so any monetization, sponsorship, or
+commercial backing reopens the gate. Returned data is CC BY 4.0, but that data license does
+not grant hosted-service access. Every ribbon/card location displaying its data carries a
+nearby linked “Weather data by Open-Meteo.com” credit; the legal view also links the license
+and identifies transformations.
+
+Comma-separated coordinates are documented, so 10–20 route samples can share one request.
+The public documentation does not promise the server's current 1,000-location default.
+Request up to 16 forecast days only when needed and tolerate shorter model/variable
+availability. Surface `weather_code`, precipitation, visibility, and total/low/mid/high
+cloud describe surface/column products, **not** cruise conditions. Pressure-level
+temperature, wind, and RH-derived cloud are model approximations: map a standard-pressure/
+flight-level input to pressure surfaces with the documented atmosphere conversion, while a
+geometric-MSL input brackets returned geopotential heights. Unknown or unconverted ellipsoid
+datums select no level; never call 250 hPa “FL340.” A 10–20-location request with a modest
+surface set and one pressure level is roughly 13–30 weighted units through 14 days under the
+current formula; all-level requests cost far more. Meter the exact query against the
+published per-minute/hour/day/month limits. AGPL self-hosting remains a separately costed
+data, operations, upstream-license, and compliance decision, not an automatic escape hatch.
+
+**MET Norway candidate constraints.** Locationforecast provides global surface forecasts
+for up to nine days but explicitly is not suitable above ground level; its altitude argument
+is terrain elevation. It accepts one point per request, prohibits generic Android/OkHttp
+User-Agents, requires cache reuse through `Expires`/`Last-Modified`, and says mobile apps
+must not fetch while unused. Truncate latitude/longitude to at most four decimal places
+before both cache-key creation and request; five or more may receive 403. Traffic above 20
+requests/second across **all installations** needs special agreement, which local clients
+cannot coordinate, and the service recommends a caching proxy as volume grows. It therefore
+ships only after a direct-mobile/aggregate-traffic decision and only as clearly labeled
+surface context.
+
+A general radar layer remains out of v1 until a global source passes the same rights,
+coverage, attribution, caching, and operational review.
+
 ### 4.5 Degradation matrix
 
 | Situation | Behavior |
 |---|---|
-| No status API key configured | Limited mode: bundled airline/airport data, active high-confidence ADS-B position, weather, and a route guide. No provider schedule is implied; status card shows a "connect a data source" CTA |
+| No status API key configured | Limited mode: bundled airline/airport data, endpoint weather/advisories, and an active high-confidence ADS-B position. Show a route guide only from user-entered or separately release-cleared endpoints. No provider schedule is implied; status card shows a "connect a data source" CTA |
 | Status API has no gate | "Gate —" placeholder; notification for gate only fires when a gate exists |
 | Flight not yet airborne | Countdown only when a provider or user supplied a time; map shows a great-circle guide, not a filed route |
 | Position lookup empty in-flight (oceanic gap) | "Last seen 24 min ago" + estimated ghost marker; map keeps flown track |
 | Callsign ≠ flight number (e.g. BA545 flies as BAW5GU) | Fall back to registration (from status payload) → `/v2/reg/{reg}` (adsb.fi: `/v2/registration/`), then poll by hex (see §5) |
-| Callsign ≠ flight number **in zero-key mode** (no status payload → no registration) | Show the route guide and "live position could not be matched." Do not maintain a brittle airline heuristic or display a low-confidence aircraft as the flight |
+| Callsign ≠ flight number **in zero-key mode** (no status payload → no registration) | If endpoint rights/input permit, show only the route guide plus "live position could not be matched"; otherwise show no route. Do not maintain a brittle airline heuristic or display a low-confidence aircraft as the flight |
 | En-route weather fetch fails (§4.4) | Endpoint METAR/TAF remains independent; route forecast and advisory cards show their own muted unavailable/stale state rather than blanking the section |
 | Flight beyond a provider's window (AeroAPI explicit range = −10 d…+2 d) | Use another configured, approved provider if available. Otherwise retain the requested designator/date and say when status lookup becomes available; do not invent a schedule skeleton from route metadata |
 | Quota nearly exhausted | Adaptive cadence backs off; banner explains reduced freshness |
 | All providers down | Room renders only normalized data whose retention terms allow it, with independent source/freshness stamps |
 
-### 4.6 Provider feasibility gates (must close before M1)
+### 4.6 Provider feasibility gates (close or explicitly fail before the dependent milestone)
 
 Public reachability is not production permission. Archive written answers in the repository's
 decision records (without credentials or confidential contract text) for these questions:
@@ -320,13 +372,18 @@ decision records (without credentials or confidential contract text) for these q
 2. **Position rights:** obtain operational polling approval for any default provider whose
    terms are personal/non-commercial or otherwise ambiguous. Implement adsb.lol ODbL
    attribution and assess whether the accumulated local track database triggers share-alike.
-3. **Asset rights:** pin every generated dataset and preserve its license; do not ship logos,
-   photos, timezone mappings, or test fixtures whose provenance is unclear.
-4. **Contract spike:** test at least 20 representative flights (domestic/international,
+3. **Asset and metadata rights:** pin every generated dataset and preserve its license; do
+   not ship logos, photos, timezone mappings, test fixtures, or runtime route/enrichment
+   display whose provenance and distributed-client rights are unclear.
+4. **Weather rights and capability:** confirm hosted-client eligibility, adjacent
+   attribution, normalized retention, aggregate traffic, and exact weighted-query behavior.
+   Validate pressure/geopotential selection and keep surface, pressure-level, observation,
+   forecast, and advisory products visibly distinct.
+5. **Contract spike:** test at least 20 representative flights (domestic/international,
    codeshare, multi-leg, overnight/date-line, delayed/cancelled, and missing-gate cases),
    record field coverage and request cost, and verify response handling without committing
    restricted raw payloads.
-5. **Go/no-go:** if a provider does not grant the required rights, keep it out of release
+6. **Go/no-go:** if a provider does not grant the required rights, keep it out of release
    builds and update the feature matrix. Do not replace legal certainty with a disclaimer.
 
 ---
@@ -352,9 +409,10 @@ user input ("CA861", "CA 861", "CCA861/CA861", or saved alias)
   │     of trusting regex alone: IATA is two alphanumerics (at least one letter),
   │     ICAO is three letters, followed by 1–4 digits and an optional suffix.
   │
-  ├─ 2. Normalize through the bundled IATA↔ICAO airline table. adsbdb may
-  │     validate a current callsign/route at runtime, but its response is not
-  │     written to Room. Preserve the exact user-entered marketing designator.
+  ├─ 2. Normalize through the bundled IATA↔ICAO airline table. A release-cleared
+  │     metadata resolver may validate a current callsign/route at runtime under
+  │     its exact display/retention rules. Preserve the exact user-entered
+  │     marketing designator.
   │
   ├─ 3. Resolve date in the DEPARTURE airport's IANA zone. An explicit date is
   │     passed as `dateLocalRole=Departure`. For dateless input, use a provider's
@@ -401,19 +459,23 @@ v2 and must never silently retarget an already tracked instance.
 │  TrackFlightUseCase · RefreshFlightUseCase · ResolveIdentity      │
 │  NotificationPlanner (pure: FlightSnapshot → planned alerts)      │
 │  FlightPhaseMachine (pure: snapshot → Phase + next event)         │
+│  BuildProjectedRouteProfile (milestones + user input + fixes)      │
+│  DaylightEngine (pure: projected profile → solar elevation,       │
+│                  light bands, sunrise/sunset events, terminator)  │
 ├───────────────────────────── Data ───────────────────────────────┤
 │  FlightRepository (UserDb | no-backup OperationalDb | ReferenceDb)│
 │  PositionSession (foreground hot flow; batched/downsampled writes)│
 │  ├─ FlightStatusProvider    ← release-cleared implementations     │
 │  ├─ PositionProvider        ← AdsbLol | cleared optional sources  │
 │  ├─ TrackProvider           ← ClientAccumulated | optional import │
-│  ├─ MetadataProvider        ← bundled DB + ephemeral resolvers    │
-│  ├─ WeatherProvider         ← AWC + cleared en-route forecast     │
+│  ├─ MetadataProvider        ← bundled DB + approved resolvers     │
+│  ├─ WeatherProvider         ← AWC airport/advisory feeds          │
+│  ├─ RouteWeatherProvider    ← cleared pressure-level forecast     │
 │  └─ AirlineIdentityProvider ← generated Monogram                  │
 ├─────────────────────────── Platform ─────────────────────────────┤
 │  WorkManager workers (refresh, notification lead-ups)             │
 │  NotificationEmitter (channels, ProgressStyle Live Updates)       │
-│  ProviderRequestCoordinator · Glance widgets                      │
+│  ProviderRequestCoordinator · RetentionPruner · Glance widgets    │
 │  DataStore (settings, keys via Keystore)                          │
 └───────────────────────────────────────────────────────────────────┘
 ```
@@ -428,6 +490,15 @@ Principles:
   fixes live in a repository-owned `StateFlow`; writing every fix through Room would add
   disk churn and latency. Downsample/batch useful fixes for the flown track and flush on
   lifecycle stop. Network DTOs are mapped immediately and discarded.
+- **Retention decisions are executable policy, not prose.** Each provider/data class maps to
+  a reviewed persistence permission and maximum TTL. A provider-derived row cannot be
+  written without an expiry unless its decision record explicitly permits indefinite local
+  retention. One pruner runs at startup and after refresh; archive, delete, and erase invoke
+  the same cascade immediately. It removes expired instances/snapshots/route forecasts/
+  tracks/event fingerprints and cancels related alarms/cache entries. A provider with no
+  approved retention remains memory-only. Before deleting an operational `FlightInstance`,
+  the coordinator clears its cross-database `TrackedFlight.selectedInstanceId`; a crash-safe
+  startup integrity pass clears any dangling link and queues re-resolution.
 - **Every external service sits behind an interface,** but an implementation enters a
   release build only after its terms pass §4.6. Failover is centralized, rate-limited, and
   based on error class; it never routes around a license, authentication error, or user
@@ -453,10 +524,13 @@ Principles:
 Core Room entities (abridged):
 
 ```kotlin
+Altitude(valueFt, reference)                   // STANDARD_PRESSURE, GEOMETRIC_MSL,
+                                               // GEOMETRIC_ELLIPSOID, or UNKNOWN
+
 // UserDatabase: user-authored portable intent only. Auto Backup may include this file.
 TrackedFlight(id, userDesignator, departureDateLocal?, selectedInstanceId?,
               userOriginCode?, userDestinationCode?, userScheduledOut?,
-              userScheduleZoneId?, userExpectedDurationMin?,
+              userScheduleZoneId?, userExpectedDurationMin?, userCruiseAltitude?,
               savedFlightId?, notificationProfileId, createdAt, archived)
 
 SavedFlight(id, name,                         // "Mom's flight home" — first-class alias
@@ -468,31 +542,44 @@ SavedFlight(id, name,                         // "Mom's flight home" — first-c
 NotificationProfile(id, perEventToggles: Map<EventType, Bool>, quietHours?)
 
 // OperationalDatabase: explicitly excluded from cloud and device-transfer backup.
-// selectedInstanceId is a nullable logical link; restore clears/re-resolves it.
+// selectedInstanceId is a nullable logical link; restore/expiry clears and re-resolves it.
 FlightInstance(id, canonicalKey,              // operating designator + airports + sched OUT
                designatorIata?, designatorIcao?, operatingDesignator,
                originCode, originCodeType, destinationCode, destinationCodeType,
-               originalScheduledOut,
-               providerInstanceIds)           // adjunct IDs, never the only local identity
+               originalScheduledOut, expiresAt)
+
+ProviderInstanceRef(flightInstanceId, provider, externalId, expiresAt)
+                                               // adjunct ID, never the only local identity
 
 FlightSnapshot(id, flightInstanceId, fetchedAt, statusProvider,
                status,                    // enum incl. Unknown
                depAirportCode, depCodeType, arrAirportCode, arrCodeType,
                depTerminal?, depGate?, depCheckInDesk?,
                arrTerminal?, arrGate?, baggageBelt?,
-               aircraftType?, registration?, icao24Hex?,
-               codeshareOf?)
+               aircraftType?, registration?, icao24Hex?, reportedCruiseAltitude?,
+               codeshareOf?, expiresAt)
 
 FlightMilestone(snapshotId, kind,              // OUT, OFF, ON, IN
                 scheduledAt?, estimatedAt?, actualAt?)
 
-FieldProvenance(snapshotId, field, provider, observedAt,
-                certainty)                     // REPORTED/DERIVED/PROJECTED/USER_ENTERED
+FieldProvenance(snapshotId, field, provider, observedAt, certainty, expiresAt?)
+                                               // REPORTED/DERIVED/PROJECTED/USER_ENTERED
 
-PositionFix(flightInstanceId, at, lat, lon, altitudeFt?, groundSpeedKt?,
-             trackDeg?, verticalRateFpm?, seenPosAgeSec, source)
+PositionFix(flightInstanceId, at, lat, lon, pressureAltitude?, geometricAltitude?,
+             groundSpeedKt?,
+             trackDeg?, verticalRateFpm?, seenPosAgeSec, source, expiresAt)
 
-TrackPolyline(flightInstanceId, points: encoded, source, refreshedAt)
+RoutePoint(flightInstanceId, seq, overflightAt, lat, lon,
+           solarTrueAltitudeDeg, lightBand,      // projected route; computed offline
+           projectedAltitude?, altitudeCertainty?,
+           forecastProvider?, forecastModel?, forecastIssuedAt?, forecastValidAt?,
+           pressureLevelHpa?,
+           pressureLevelGeopotentialM?, cruiseTempC?, cruiseCloudPct?,
+           cruiseWindKt?, cruiseWindDirDeg?, surfaceWeatherCode?,
+           surfacePrecipProbPct?, fetchedAt?, expiresAt?)
+                                               // normalized, source-labeled forecast
+
+TrackPolyline(flightInstanceId, points: encoded, source, refreshedAt, expiresAt)
 
 // ReferenceDatabase: a separate read-only asset uses synthetic PKs and UNIQUE indexes on
 // ICAO and IATA independently. A snapshot remains valid when a code is absent
@@ -502,7 +589,7 @@ Airport(id, icao?, iata?, name, city, country, lat, lon, tz) // bundled
 Airline(id, icao?, iata?, name, alliance?, callsign?)        // bundled
 AircraftTypeName(icaoType, marketingName)                    // bundled, separately licensed
 
-EmittedEvent(flightInstanceId, eventType, eventFingerprint, emittedAt)
+EmittedEvent(flightInstanceId, eventType, eventFingerprint, emittedAt, expiresAt)
 QuotaLedgerEntry(provider, periodStart?, resetAt?, estimatedUsage,
                  providerReportedRemaining?, reconciledAt?)
 FlightLogEntry(...)                              // v2, only for retention-cleared data
@@ -514,6 +601,8 @@ provider payload: it bloats the database, risks key/PII leakage in diagnostics, 
 violate retention terms. Synthetic/redacted fixtures cover debugging. Snapshot history is
 retained only for a provider-approved TTL; if history is not allowed, superseded estimates
 exist only for the current process/session and local punctuality statistics stay disabled.
+`EmittedEvent` contains only the minimum dedup fingerprint and expires after the shorter of
+its operational relevance window and any applicable provider-derived-data TTL.
 
 Persisted position tracks are simplified and downsampled (time interval plus heading/
 altitude-change points) and pruned after the configured history period. This bounds a
@@ -584,6 +673,18 @@ Irregular operations add about two calls per delayed hour under the override and
 the baseline; forecast remaining budget before arming it. Do not present provider allowances
 as a combined fixed ceiling.
 
+Route weather has a separate budget and never inherits status-provider allowance. If the M0
+gate selects Open-Meteo, coalesce one multi-coordinate request at the 24 h, 3 h, and
+gate-critical boundaries, plus meaningful schedule changes (for example ≥30 min), but skip
+it while the applicable forecast is still fresh. Estimate the exact weighted query before
+sending it: 10–20 locations with a modest surface set and one selected pressure level is
+roughly 13–30 units through 14 forecast days under the current formula; more variables,
+models, levels, or days increase that cost. Enforce every published time-window limit, not
+only the daily figure. Request pressure-level variables only when the projected profile has
+a credible altitude; otherwise omit those fields rather than spending quota on a nominal
+level. MET Norway is never background-polled. Daylight bands are offline math (§9.4), but
+recomputation remains bounded, cancellable, and benchmarked.
+
 ---
 
 ## 9. UX design
@@ -615,8 +716,10 @@ One airport-board line per flight (Flighty's proven formula, translated to Mater
   slash-separated equivalents such as `CCA861/CA861`; canonical dedup prevents duplicate
   rows. Existing multi-word aliases are resolved before tokenization.
 - In limited mode, unresolved flights can take an optional origin, destination, departure
-  local date/time, and expected duration so countdown/route/light features remain useful.
-  Every such value is visibly "user entered," editable, and never promoted to provider data.
+  local date/time, expected duration, and cruise altitude with an explicit flight-level/
+  standard-pressure or geometric-MSL reference. This keeps countdown/route/light features
+  and altitude-dependent ribbon fields useful. Every such value is visibly "user entered,"
+  editable, and never promoted to provider data.
 - `PullToRefreshBox` with a themed indicator (see §10); independent freshness labels avoid
   implying that a fresh position also refreshed status/weather (for example, "Status 3 m ·
   position 8 s · weather 20 m").
@@ -648,15 +751,17 @@ Blipbird usability testing:
    current prior leg; a registration alone is not enough, and AeroAPI Personal historical
    access must not be assumed. A high-confidence late inbound may feed a clearly derived
    delay heads-up.
-5. **Weather**: decoded, timestamped METAR at both airports; TAF prevailing conditions plus
-   any `TEMPO`/`PROB` overlays valid at ETA; time/altitude-aware route samples when the M0 provider gate closes; and applicable
-   worldwide SIGMETs from §4.4. Never summarize absent data as "clear."
-6. **Airport context**: full name/city/country, current local time and time-zone difference,
+5. **Flight ribbon:** projected daylight and source-labeled weather along the route (§9.4).
+6. **Weather:** decoded, timestamped METAR at both airports; TAF prevailing conditions plus
+   every `TEMPO`/`PROB` overlay valid at ETA; time/altitude-aware route samples when the M0
+   provider gate closes; and applicable worldwide SIGMETs from §4.4. Never summarize absent
+   data as "clear."
+7. **Airport context**: full name/city/country, current local time and time-zone difference,
    terminal/gate, weather, and official-site/map intents when a trusted URL exists. Do not
    promise security wait times, lounges, or amenities without a selected current source.
-7. **Airport health chip** *(v2, source-gated)*: "PEK: departures averaging +40 min right now."
-8. **About the airline**: name, alliance, radio callsign ("AIR CHINA"), and trusted contact links.
-9. **Share / Pickup mode**: read-only big-type card (ETA · terminal · progress) exportable
+8. **Airport health chip** *(v2, source-gated)*: "PEK: departures averaging +40 min right now."
+9. **About the airline**: name, alliance, radio callsign ("AIR CHINA"), and trusted contact links.
+10. **Share / Pickup mode**: read-only big-type card (ETA · terminal · progress) exportable
    as an image or serverless deep link containing only designator/date/leg. Aliases, API
    keys, provider IDs, and history are never encoded.
 
@@ -676,6 +781,94 @@ Stale data cannot retain a reassuring green "On time" state without its age besi
 Delay notifications use configurable thresholds (for example first crossing +15 min, then
 meaningful further slips) and event fingerprints include the new estimate; a reported or
 evidenced cause is labeled by source, never asserted from correlation alone.
+
+### 9.4 The flight ribbon — daylight & weather along the route
+
+A horizontal strip represents the whole projected flight (x = elapsed time), answering at
+a glance *"how much of my red-eye is actually dark?"* while keeping route and forecast
+uncertainty visible:
+
+```
+ PEK ─────────────────────────────────────────────── GVA
+ │ ☀ daylight  │▒ dusk ▒│   ★ night   │▒ dawn ▒│  ☀   │
+ │  ☁ 80%   🌧 showers  │  ✦ clear    │ ☁ 40%  │  ⛅   │
+ 14:10        17:52 🌇                 05:41 🌅   06:30
+```
+
+**Projection inputs and provenance:** build one `ProjectedRouteProfile` before rendering or
+fetching weather. For time, select each milestone's best reported value (actual, then
+estimated, then scheduled) and prefer a coherent OFF→ON interval. If that pair is absent,
+use OUT→IN as a visibly labeled gate-to-gate approximation; limited mode may use a
+user-entered departure instant plus positive expected duration. Observed fixes anchor the
+flown portion. Different certainty levels within one pair are valid (for example actual OFF
+plus estimated ON) and remain visible; never combine OFF with IN, OUT with ON, or endpoints
+from different selected instances. Non-positive, implausibly long, or otherwise invalid
+intervals produce an unavailable projection rather than invented timing, and the UI exposes
+the chosen basis.
+
+Altitude has independent provenance **and datum**. Use observed fixes only for the flown
+portion; future cruise samples require a retention-cleared reported cruise altitude or the
+optional user-entered value. A standard-pressure/flight-level value maps to weather pressure
+surfaces through a documented standard-atmosphere conversion; geometric MSL can instead be
+bracketed against returned geopotential height. Never compare raw `alt_baro` or ellipsoid
+height directly with geopotential height. Cabin-horizon correction needs geometric height:
+prefer geometric MSL, use only a visibly approximate documented conversion from standard-
+pressure altitude, and suppress it when an ellipsoid/unknown datum cannot be converted.
+There is no silent 11 km default and no invented climb/descent profile. Without credible
+future altitude, standard geometric daylight bands still work, but omit the cabin-visible
+crossing adjustment and pressure-level/cruise forecast fields.
+
+**Daylight band (pure math, fully offline — `DaylightEngine`):**
+
+- Interpolate a spherical great-circle **guide** across the valid profile; future points are
+  never called a filed route. Target one-minute steps while bounding the job to 2,048
+  samples with an adaptive step for unusually long valid durations. Handle coincident and
+  near-antipodal endpoints explicitly. Benchmark the complete workload on the named low-end
+  test device before setting a latency budget or allowing eager recomputation.
+- At each `(lat, lon, overflight Instant)`, use commons-suncalc 3.11
+  `getTrueAltitude()` so the geometric center-of-Sun result matches the USNO thresholds:
+  conventional sunrise/sunset at −0.8333°, civil at −6°, nautical at −12°, and astronomical
+  at −18°. The geometric 0° terminator is a separate map boundary. Render a continuous
+  gradient while retaining these semantic bands for labels and accessibility.
+- A cabin-visible sunrise/sunset marker is a separate approximate model. At 11 km, mean-
+  Earth geometry gives about 3.36° of horizon dip; adding an explicit refraction and solar-
+  radius model places the true Sun-center threshold near −4.2°. The time shift is not a
+  universal 12–20 minutes: latitude, altitude, atmosphere, aircraft direction, and speed all
+  matter. Show projected event times to the minute. Bisection may narrow a sampled bracket
+  below one second, but that is numerical localization, not one-second observational
+  accuracy.
+- Find and classify every crossing rather than stopping after the first; also test local
+  extrema so tangent contacts, polar day/night, reversed crossings, and multiple sunrises or
+  sunsets do not silently disappear.
+- A window-side callout is optional. Compare north-based solar azimuth with a route tangent
+  or reliable true track, suppress the result around ahead/behind uncertainty boundaries,
+  and say “projected left/right based on the route.” ADS-B ground track is not guaranteed
+  fuselage heading, so the app never promises which window to book.
+
+**Weather band (release-gated `RouteWeatherProvider`, §4.4):** sample roughly 10–20 route
+points at their projected passage hours. If Open-Meteo passes M0, one documented
+multi-coordinate request can supply selected/bracketing pressure-level temperature,
+RH-derived cloud, wind, and geopotential height plus separately labeled surface/column
+fields. Select pressure surfaces using the profile's reference-aware conversion and record
+that transformation with the result. Head/tailwind is explicitly derived against the
+projected route bearing. Tapping a segment shows the actual sampled condition/cloud/
+wind values, provider, forecast-valid time, expected passage time, fetch time, position, and
+pressure/geopotential context. Show a model or issue/run time only when an explicit source
+supplies auditable values; never relabel API processing/fetch time as forecast issuance.
+Endpoint observations remain timestamped METAR; event-time expectations come from TAF or a
+labeled forecast.
+
+Degradation states stay distinct while the offline daylight band remains: a confirmed
+forecast-horizon miss says “available closer to departure”; an omitted/unresolved provider
+says route forecasting is not supported by this build; missing credible altitude withholds
+only altitude-dependent cruise fields; and a transient failure shows a rights-permitted
+stale result with age or “temporarily unavailable.” Do not substitute MET Norway surface
+output as cruise weather or turn absent advisories into “clear.” Every Open-Meteo-derived
+ribbon/card carries its required linked attribution beside the display.
+
+The ribbon appears in detail item 5 and, after readability/performance testing, may condense
+to the daylight gradient behind list/widget progress. The same projected light bands tint
+the route guide on the map (§11).
 
 ---
 
@@ -727,10 +920,17 @@ haptics/confetti are independently disableable and absent from High Contrast by 
      velocity projection is time-bounded and uses the "estimated" ghost style. Show "last
      seen X min ago" as soon as `seen_pos` goes stale.
   5. Origin/destination pins with gate labels.
-  6. **Light/dark timeline (launch requirement):** solar-position math shows daylight state
-     at departure, current/high-confidence position, and arrival, plus estimated sunrise/
-     sunset crossings and an optional terminator overlay. Test polar day/night, date-line,
-     and no-crossing cases; labels say projected because the route guide is not a flight plan.
+  6. **Projected light along the route:** tint route-guide segments by the §9.4 light band
+     at passage time and mark approximate cabin-visible crossings. Labels remain projected
+     because the guide is not a flight plan. A global geometric-terminator/twilight overlay
+     ships only after a dedicated spherical small-circle prototype handles zero/two
+     intersections, poles, winding, world wrapping, and RFC 7946 antimeridian splitting;
+     Leaflet.Terminator's 0° one-latitude formula cannot simply be generalized to −6/−12/−18°.
+     The overlay carries its own explicit instant (current map time by default, or a
+     scrubber-selected time) and is visually separate from route segments colored at their
+     different projected passage times.
+  7. *(Optional layer, later)* normalized worldwide SIGMET polygons from both AWC feeds
+     (§4.4), validity- and altitude-filtered.
 - **Camera:** auto-follow with manual override; "recenter" FAB; detail-hero snippet is a
   non-interactive lite view into the same composable.
 - Altitude/speed/track readout strip under the map (avgeek candy, hidden until data exists).
@@ -776,6 +976,11 @@ the user's channel settings or Do Not Disturb.
   `RECEIVE_BOOT_COMPLETED` receiver rebuilds enabled reminders, app startup rechecks
   `canScheduleExactAlarms()`, and the permission-grant broadcast reschedules them. Revocation
   degrades to WorkManager without nagging the user.
+- A desired-alarm reconciler uses one stable `PendingIntent` identity per flight/event. It
+  replaces or cancels reminders whenever their source milestone changes, the flight becomes
+  cancelled/diverted/terminal, the event/profile is disabled, or the flight is archived,
+  deleted, or retention-pruned. The receiver rechecks the latest local flight/profile state
+  before posting, so an old alarm cannot emit a reminder that is no longer desired.
 - **Offline branch:** if refresh fails, an already enabled time-based reminder may still
   post from the schedule that was current when it was planned, labeled "projected · status
   not refreshed." Never synthesize a gate change, departure, cancellation, or other
@@ -837,12 +1042,13 @@ The week estimates below are engineering estimates **after external provider app
 waiting for legal/terms answers is not hidden inside a sprint estimate.
 
 ### M0 — Feasibility + skeleton (week 1–2)
-Close or explicitly fail the §4.6 gates; decide the app-code license; select and spike a
-rights-cleared time/altitude-aware en-route weather source; record API cost/coverage on the
-representative-flight matrix. In parallel: project scaffolding, version catalog, CI (build,
-unit tests, and lint), Hilt graph, Nav3/adaptive shell, Daylight + Cockpit theme engine,
-reproducible bundled reference-data pipeline, and add-flight parser/normalizer using
-synthetic providers.
+Close or explicitly fail every §4.6 gate needed by M1 and the M0 route-weather decision;
+record owners/deadlines and safe omissions for later position, metadata, and fallback
+candidates. Decide the app-code license; select and spike a rights-cleared time/altitude-aware
+en-route weather source; record API cost/coverage on the representative-flight matrix. In
+parallel: project scaffolding, version catalog, CI (build, unit tests, and lint), Hilt graph,
+Nav3/adaptive shell, Daylight + Cockpit theme engine, reproducible bundled reference-data
+pipeline, and add-flight parser/normalizer using synthetic providers.
 **Exit:** provider/asset decision records exist; `CA861`, `CA 861`, and `CCA861/CA861`
 deduplicate correctly; ambiguous fixture flights require date/leg selection; no restricted
 runtime response is persisted.
@@ -852,41 +1058,53 @@ runtime response is persisted.
 including no-backup encrypted credential storage, Room snapshot/milestone/provenance model,
 alias entry + display, list view with real status/countdown/progress, detail hero + key-facts
 grid + event timeline, pull-to-refresh, adaptive coordinator v1, per-plane freshness, spend
-soft stop, and disruption semantics.
+soft stop, executable provider-retention policies/pruner, and disruption semantics.
 **Exit:** track a real flight end-to-end on status alone; unit tests for phase machine,
-parser, instance identity, planner, derived times, DST/date-line cases, and quota accounting.
+parser, instance identity, planner, derived times, DST/date-line cases, quota accounting, and
+expiry/cascade behavior for the selected provider.
 
 ### M2 — Live map + provider resilience (week 6–8)
 Release-cleared position provider(s), identity→hex confidence rules, client-accumulated and
 downsampled track, MapLibre screen (flown track/route guide, bounded marker tween,
 staleness ghost), detail-hero map, lifecycle-aware foreground polling, visible OpenFreeMap
-attribution, and launch light/dark timeline/terminator. Add a second status provider only if
-its approval gate closes; prepare reproducible-build and F-Droid metadata, but do not file a
-premature RFP for an unreleased app.
+attribution, `DaylightEngine`, the daylight half of the ribbon, crossing markers, and a
+light-band-tinted route guide. Prototype global terminator/twilight polygons, but ship that
+overlay only if its spherical-geometry/rendering gate passes. Add a second status provider
+only if its approval gate closes; prepare reproducible-build and F-Droid metadata, but do
+not file a premature RFP for an unreleased app.
 **Exit:** watch a live flight cross the map smoothly; airplane-mode replay renders cached
-track; wrong/colliding callsigns are suppressed; approved status failover is proven with
-fault injection; polar and date-line light calculations pass.
+track **when** local track retention cleared (otherwise record the intentional omission);
+wrong/colliding callsigns are suppressed; if a second status provider cleared, prove failover
+with fault injection, otherwise do not claim it. A known red-eye fixture has the expected
+projected light sequence; polar, date-line, multiple-crossing, and tangent-contact cases pass.
 
 ### M3 — Notifications + weather (week 9–11)
 Channels, `POST_NOTIFICATIONS` flow, anchor workers (snapshot-reuse rule), snapshot-diff
 event detection, notification planner + persisted `EmittedEvent` ledger, per-flight
-profiles, reboot/revocation recovery, optional exact alarms for local reminders only, and
-the constrained offline projection branch. Ship METAR/TAF-at-event cards, route SIGMET
-intersection, and the M0-selected time/altitude-aware en-route forecast.
+profiles, desired-alarm reconciliation, reboot/revocation recovery, optional exact alarms for
+local reminders only, and the constrained offline projection branch. Ship METAR/TAF-at-event
+cards, route SIGMET intersection, and the weather half of the ribbon through the M0-selected,
+release-cleared time/altitude-aware `RouteWeatherProvider`.
+If no provider clears M0, this slice and the current beta definition remain blocked until an
+explicit scope decision; MET Norway surface output is not the fallback.
 **Exit:** notification lifecycle observed on a real tracked flight from a ground observer's
 phone, including induced offline/Doze intervals with no timing guarantee claimed; stale
-data never emits a synthetic operational event; weather states remain distinct and dated.
+data never emits a synthetic operational event, and schedule/profile changes reconcile old
+alarms. Weather states remain distinct, dated, and attributed beside the display; missing
+altitude suppresses pressure-level fields, and surface fields are never presented as cruise
+conditions.
 
 ### M4 — Polish & release (week 12–15)
 Launch themes locked to **three** (Daylight incl. Dynamic, Cockpit, High Contrast), haptics
 and themed pull-to-refresh, **"Next flight" Glance widget** (cheap once the state layer
 exists), accessibility audit (TalkBack, contrast, touch targets), quota ledger UI,
-About/attribution + privacy screens, Play privacy policy/Data Safety/listing, F-Droid
-metadata/submission for a tagged source release, and a `:benchmark` module with baseline
-profiles.
+About/attribution + privacy screens, user-authored Export/Import, erase and retention
+controls, Play privacy policy/Data Safety/listing, F-Droid metadata/submission for a tagged
+source release, and a `:benchmark` module with baseline profiles.
 **Exit:** the release definition above passes on phone + large-screen emulator, provider
-permissions are archived, a real flight-day checklist passes, and the tagged public beta is
-reproducible without embedded secrets.
+permissions are archived, export/import/erase/retention acceptance tests pass, a real
+flight-day checklist passes, and the tagged public beta is reproducible without embedded
+secrets.
 
 ### v2 (post-launch)
 **Solari split-flap theme + flip-animation engine · Skyfade theme** · API 36 ProgressStyle
@@ -897,8 +1115,9 @@ shareable year card — all on-device) · airport-health chip · pickup/share mo
 multi-flight trip grouping (absorbs multi-leg tracking).
 
 ### Delighters (ongoing)
-Richer sunrise callouts · landing confetti · route on-time forecast only from
-retention-cleared local snapshots · AR "point at the sky" long-shot.
+Projected sunrise-side callouts only when the route/heading confidence margin passes ·
+landing confetti · route on-time forecast only from retention-cleared local snapshots · AR
+"point at the sky" long-shot.
 
 ---
 
@@ -909,24 +1128,45 @@ retention-cleared local snapshots · AR "point at the sky" long-shot.
   date line, same-day duplicate, no seven-day scan), milestone/phase transition tables,
   `NotificationPlanner` + event fingerprinting, quota/spend stops, adaptive scheduler,
   METAR decoder, TAF prevailing/inheritance/overlap semantics, dual-feed route/SIGMET
-  normalization and intersection, unit conversion, great-circle and
-  terminator math including polar day/night.
+  normalization and intersection, unit conversion, and Open-Meteo multi-coordinate/
+  pressure-level mapping. Test `ProjectedRouteProfile` milestone precedence, OUT/IN and
+  user-entered fallbacks, valid mixed-certainty pairs, cross-family/instance rejection,
+  invalid intervals, observed/future boundaries, altitude provenance/reference conversion,
+  raw `alt_baro` isolation, and unknown/no-altitude suppression. Test `DaylightEngine`
+  true-vs-apparent altitude, exact USNO band edges, conventional-vs-cruise-visible thresholds,
+  all crossing directions, tangent contacts, polar day/night, antimeridian, coincident/near-
+  antipodal routes, bounded sampling, and low-confidence window-side suppression against
+  independently checked fixtures.
 - **Provider contract tests:** synthetic or provider-approved redacted fixtures cover happy
   path, missing fields, cancellation/diversion, codeshare/multi-leg, polymorphic ADS-B
   values, empty results, 401/403/429/5xx, and pagination. Do not commit captured payloads
   merely because they are useful. Diff public OpenAPI schemas in CI; run low-frequency live
   smoke tests only with provider permission and private BYO secrets, never by anonymously
-  hammering free APIs from shared CI addresses.
+  hammering free APIs from shared CI addresses. Route-weather fixtures cover shorter-than-
+  requested horizons, missing variables, standard-pressure and geometric-MSL level-selection
+  paths, geopotential bracketing, weighted-cost stops, independent surface/cruise provenance,
+  actual-value drill-down, and absent optional model/issue metadata. If MET Norway is
+  approved, test coordinate truncation, identifying User-Agent, and exact cache revalidation
+  behavior without live CI traffic.
 - **Repository/integration:** Room in-memory + fake providers; request coalescing and
   provider-wide rate limiting under concurrent list/map/workers; allowed failover under
-  injected faults; migration, process-death, reboot, alarm-revocation, and snapshot-diff
-  tests. Exercise Android backup/restore and inspect the archive to prove operational DB,
-  credentials, and reference assets are absent; restored user intent re-resolves cleanly.
-  Weather layers fail independently; no low-confidence aircraft reaches UI state.
+  injected faults; migration, process-death, reboot, alarm-revocation, desired-alarm
+  replace/cancel/receiver-recheck, and snapshot-diff tests. Exercise TTL expiry and cascading
+  cleanup for provider IDs, snapshots, route points, tracks, dedup events, alarms, and cache;
+  archive/delete and in-app erase must leave no operational orphan. Expiring an instance
+  clears its cross-database selection before deletion, and the startup integrity pass repairs
+  an injected dangling link. Exercise Android backup/restore and inspect the archive to prove
+  operational DB, credentials, and reference assets are absent; restored user intent
+  re-resolves cleanly. Export/Import includes only its
+  documented user-authored allowlist. Weather layers fail independently; no low-confidence
+  aircraft reaches UI state.
 - **UI:** Compose semantics for list/detail states (loading, degraded, stale, disrupted);
   screenshots per theme × light/dark with RTL, 200% font scale, reduce-motion, color-vision
-  checks, and expanded two-pane layout. Instrument the MapLibre screen to verify visible
-  attribution and lifecycle stop/start rather than snapshot-testing live tiles.
+  checks, expanded two-pane layout, ribbon no-data states, nearby linked weather credit, and
+  accessible non-color band labels. Instrument MapLibre to verify attribution, lifecycle
+  stop/start, and route-segment rendering rather than snapshot-testing live tiles. The
+  optional terminator overlay has separate equinox/solstice, pole, winding, world-wrap, and
+  RFC 7946 antimeridian geometry tests.
 - **E2E happy path:** Maestro flow on CI emulator — add flight (fixture-backed via
   test-only `FakeProviders` build flavor), see list, open detail, pull-to-refresh.
 - **Manual flight-day protocol:** a checklist run against a real tracked flight before each
@@ -947,16 +1187,23 @@ retention-cleared local snapshots · AR "point at the sky" long-shot.
   scripts, and label each generated output. This includes OurAirports (public domain),
   timezone-boundary-builder (ODbL), OpenTravelData (CC BY 4.0; identify changes), and the
   pinned Wikipedia-derived aircraft JSON (CC BY-SA 4.0, not Apache/Unlicense).
+- **Code/dependency notices:** preserve commons-suncalc's Apache-2.0 license in the shipped
+  notices. If implementation code is copied or adapted from a route or terminator project,
+  record its exact revision and license; citing a formula is not a substitute for complying
+  with copied-code terms. The terminator overlay remains original, separately tested
+  spherical/GeoJSON work rather than an assumed feature of the solar library.
 - **Runtime attribution:** keep OpenFreeMap/OpenMapTiles/OpenStreetMap attribution visible
   on every map. Associate displayed adsb.lol data with an ODbL notice. adsb.fi attribution
   is mandatory if that source is ever approved; airplanes.live and OpenSky use the exact
-  attribution/citation their approval requires. Credit aviationweather.gov and any selected
-  forecast source. An About screen supplements, but does not replace, attribution that a
-  license requires beside the work.
+  attribution/citation their approval requires. Credit aviationweather.gov. If Open-Meteo is
+  selected, place its linked credit beside every displayed weather location and put the CC
+  BY 4.0 link/change notice in the legal view. Do the equivalent for MET Norway if approved.
+  An About screen supplements, but does not replace, attribution required beside the work.
 - **Red lines:** no restricted raw payloads or route databases in Room, exports, analytics,
-  or test fixtures; no provider-derived punctuality corpus without permission; no logo CDN,
-  scraped logo pack, or aircraft photo without documented rights; no provider enabled in a
-  release solely because the user supplies a key. Archive the §4.6 decisions.
+  or test fixtures; no runtime route/enrichment call or display without explicit rights; no
+  provider-derived punctuality corpus without permission; no logo CDN, scraped logo pack, or
+  aircraft photo without documented rights; no provider enabled in a release solely because
+  the user supplies a key. Archive the §4.6 decisions.
 - **Privacy:** there is no account, analytics SDK, or Blipbird application backend, but
   network use is not "all on device." Enabled providers receive the flight designator,
   date/range, airports/registration/hex as needed, IP address, and User-Agent; these queries
@@ -1059,11 +1306,12 @@ Concerns that touch every screen and don't fit cleanly into one section above.
 | Live position | `GET api.adsb.lol/v2/callsign/{cs}` · `/v2/reg/{reg}` · `/v2/icao/{hex}` | none today | dynamic/unpublished; ODbL obligations and no SLA |
 | Position candidates (approval-gated) | `GET api.airplanes.live/v2/…` · `GET opendata.adsb.fi/api/v2/…` (adsb.fi maps registration to `/v2/registration/`) | none today | 1 req/s each; not enabled without written distributed-app permission |
 | Optional track import (approval-gated) | `GET opensky-network.org/api/tracks/all?icao24={hex}&time=0` | anonymous or OAuth2 | live call costs 4 of 400 anonymous daily track credits/IP; operational agreement required |
-| Callsign→route/airline | `GET api.adsbdb.com/v0/callsign/{cs}` | none | unpublished; ephemeral use only, no Room route cache |
-| Hex/route fallback | `GET hexdb.io/api/v1/route/icao/{cs}` | none | 1,000 / 5 min; persistence/reuse rights unclear |
+| Metadata candidate (approval-gated) | `GET api.adsbdb.com/v0/callsign/{cs}` | none | source terms restrict copying/publication/database use; disabled pending distributed polling/display/retention permission |
+| Metadata fallback candidate (approval-gated) | `GET hexdb.io/api/v1/route/icao/{cs}` | none | 1,000 / 5 min; display/reuse/persistence rights unclear, so disabled |
 | METAR/TAF | `GET aviationweather.gov/api/data/metar?ids={icao}&format=json` (and TAF endpoint) | none (custom UA) | 100/min maximum; do not consume an endpoint more than once/min/thread |
 | Route SIGMETs | `GET …/isigmet?format=geojson` + `GET …/airsigmet?format=geojson` | none (custom UA) | international + CONUS domestic feeds; normalize/deduplicate and cache by validity/update time |
-| En-route forecast | provider/endpoint selected by the M0 rights + pressure-level capability spike | TBD | must support time/altitude sampling and public-client terms |
+| En-route forecast candidate | `GET api.open-meteo.com/v1/forecast` with documented latitude/longitude lists and selected/bracketing pressure fields | no key; hosted free endpoint only while use is genuinely noncommercial | weighted: fewer than 600/min, 5,000/h, 10,000/d, 300,000/mo under current terms; up to 16 forecast days subject to model/variable availability |
+| Surface route-context candidate | `GET api.met.no/weatherapi/locationforecast/2.0/compact?lat={lat}&lon={lon}` | identifying app/contact User-Agent | one point/request; truncate coordinates to ≤4 decimals; cache until `Expires`, no unused-app fetches; >20 req/s across all installs needs agreement |
 | Map tiles | `https://tiles.openfreemap.org/styles/{liberty|dark|positron}` | none | no published request limit; no SLA or bulk prefetch |
 
 ## Appendix B: source register & open decisions
@@ -1154,9 +1402,32 @@ used in store copy; they do not justify a technical or licensing decision.
 - [Wikipedia aircraft type designators](https://en.wikipedia.org/wiki/List_of_aircraft_type_designators)
   and [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
 - adsbdb [source-specific route-data restrictions](https://github.com/mrjackwills/adsbdb)
-  and [hexdb](https://hexdb.io/) (no published persistence license found)
+  and [hexdb](https://hexdb.io/) (no published display/reuse/persistence license found)
 - Aviation Weather Center [Data API products, limits, and OpenAPI](https://aviationweather.gov/data/api/)
   and the [NWS disclaimer](https://www.weather.gov/disclaimer)
+- Open-Meteo [hosted-service terms](https://open-meteo.com/en/terms),
+  [pricing and weighted-call calculator](https://open-meteo.com/en/pricing#faq),
+  [multi-coordinate/pressure-level/forecast documentation](https://open-meteo.com/en/docs),
+  and [data license and attribution placement](https://open-meteo.com/en/licence)
+- Open-Meteo server [current location-limit default](https://github.com/open-meteo/open-meteo/blob/acfe608b825da1a8b42a755297eb61121986e9da/Sources/App/configure.swift),
+  [current query-weight implementation](https://github.com/open-meteo/open-meteo/blob/acfe608b825da1a8b42a755297eb61121986e9da/Sources/App/Helper/Writer/ForecastApiResult.swift),
+  [AGPL license](https://github.com/open-meteo/open-meteo/blob/acfe608b825da1a8b42a755297eb61121986e9da/LICENSE),
+  and [self-hosting guide](https://github.com/open-meteo/open-meteo/blob/acfe608b825da1a8b42a755297eb61121986e9da/docs/getting-started.md)
+- MET Norway [terms](https://api.met.no/doc/TermsOfService),
+  [Locationforecast documentation](https://api.met.no/weatherapi/locationforecast/2.0/documentation),
+  [data model/coverage](https://api.met.no/doc/locationforecast/datamodel),
+  [caching guide](https://api.met.no/doc/locationforecast/HowTO),
+  [OpenAPI schema](https://api.met.no/weatherapi/locationforecast/2.0/swagger), and
+  [license policy](https://api.met.no/doc/License)
+- commons-suncalc [documentation](https://shredzone.org/maven/commons-suncalc/),
+  [solar-position API](https://shredzone.org/maven/commons-suncalc/apidocs/org/shredzone/commons/suncalc/SunPosition.html),
+  [twilight behavior](https://shredzone.org/maven/commons-suncalc/usage.html#twilight), and
+  [v3.11 Apache-2.0 license](https://github.com/shred/commons-suncalc/blob/v3.11/LICENSE-APL.txt)
+- US Naval Observatory [rise/set and twilight definitions](https://aa.usno.navy.mil/faq/RST_defs)
+- Movable Type [spherical intermediate-point formula](https://www.movable-type.co.uk/scripts/latlong.html#intermediate-point),
+  Ed Williams [aviation formulary](https://www.edwilliams.org/avform.htm#Intermediate),
+  Leaflet.Terminator [source](https://github.com/joergdietrich/Leaflet.Terminator/blob/master/index.js),
+  and RFC 7946 [antimeridian guidance](https://www.rfc-editor.org/rfc/rfc7946#section-3.1.9)
 
 ### Open decisions
 
@@ -1166,5 +1437,8 @@ used in store copy; they do not justify a technical or licensing decision.
 | FlightAware Personal BYO use in a public client, retention, and no-surprise-spend controls | before adding fallback | provider omitted |
 | adsb.lol local accumulated-track ODbL treatment | before M2 | foreground position only, no retained track |
 | airplanes.live, adsb.fi, and OpenSky operational/distributed-app permission | before enabling each | implementation excluded from release build |
-| Global time/altitude-aware en-route forecast source and terms | M0 | do not mislabel surface METAR as cruise weather; beta cannot claim the route-forecast acceptance item |
+| adsbdb/hexdb distributed polling, route/enrichment display, and exact retention | before enabling either | omit runtime metadata; use bundled, user-entered, or status-cleared endpoints |
+| Open-Meteo hosted-use eligibility, adjacent attribution, pressure/geopotential mapping, normalized retention, and exact weighted-query budget | M0 | current beta is blocked unless an explicit decision revises its release definition |
+| MET Norway direct mobile use and aggregate all-installation traffic | before enabling surface fallback | omit it; never substitute surface data for cruise weather |
+| Projected time/altitude profile, crossing model, and optional terminator GeoJSON prototype | before M2/M3 dependent exits | standard daylight only where valid; omit unproven cruise marker/weather/side-callout/overlay pieces |
 | App-code license (current Unlicense vs Apache-2.0) | M0, before outside contributions | retain current license and document decision |
