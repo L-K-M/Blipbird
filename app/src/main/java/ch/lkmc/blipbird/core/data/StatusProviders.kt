@@ -68,9 +68,13 @@ class AeroDataBoxProvider @Inject constructor(
 
     private fun AdbFlight.toSnapshot(): StatusSnapshot {
         fun AdbTime?.instant(): Instant? = this?.utc?.let { raw ->
-            // "2026-07-22 14:10Z" — normalize to ISO
-            runCatching { Instant.parse(raw.replace(" ", "T")) }.getOrNull()
-                ?: runCatching { OffsetDateTime.parse(raw.replace(" ", "T"), DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant() }.getOrNull()
+            // "2026-07-22 14:10Z" — normalize to ISO. ADB timestamps are minute
+            // precision, which Instant.parse rejects, so the offset formatter
+            // (which also accepts Z and full-second forms) goes first; the
+            // Instant fallback keeps any stricter form working.
+            val iso = raw.replace(" ", "T")
+            runCatching { OffsetDateTime.parse(iso, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant() }.getOrNull()
+                ?: runCatching { Instant.parse(iso) }.getOrNull()
         }
         val statusEnum = when (status?.lowercase()) {
             "expected", "checkin", "boarding", "gateclosed" -> FlightStatus.SCHEDULED
