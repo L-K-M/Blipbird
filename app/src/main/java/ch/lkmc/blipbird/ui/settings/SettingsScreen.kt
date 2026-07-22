@@ -26,9 +26,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,9 +40,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.datastore.AppTheme
@@ -104,12 +102,14 @@ fun SettingsScreen(
                 label = stringResource(R.string.settings_aerodatabox_key),
                 configured = state.hasAdbKey,
                 onSave = { viewModel.saveAdbKey(it) },
+                onClear = { viewModel.clearAdbKey() },
             )
             Spacer(Modifier.height(10.dp))
             KeyField(
                 label = stringResource(R.string.settings_aeroapi_key),
                 configured = state.hasAeroApiKey,
                 onSave = { viewModel.saveAeroApiKey(it) },
+                onClear = { viewModel.clearAeroApiKey() },
             )
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
@@ -134,18 +134,12 @@ fun SettingsScreen(
             var exactGranted by remember {
                 mutableStateOf(!exactSupported || alarmManager.canScheduleExactAlarms())
             }
-            // Re-check on resume: the grant happens in the system Settings UI, so the
-            // old eager re-read right after startActivity always saw the *old* state
-            // and left the button label stale ("Allow precise alerts" after granting).
-            val lifecycleOwner = LocalLifecycleOwner.current
-            DisposableEffect(lifecycleOwner, exactSupported) {
-                val observer = LifecycleEventObserver { _, event ->
-                    if (event == Lifecycle.Event.ON_RESUME && exactSupported) {
-                        exactGranted = alarmManager.canScheduleExactAlarms()
-                    }
-                }
-                lifecycleOwner.lifecycle.addObserver(observer)
-                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            // Re-check when the user comes back from the system settings screen
+            // (the grant happens there, so an eager re-read right after
+            // startActivity always saw the old state and left the label stale).
+            LifecycleResumeEffect(Unit) {
+                if (exactSupported) exactGranted = alarmManager.canScheduleExactAlarms()
+                onPauseOrDispose { }
             }
             Button(
                 enabled = !exactGranted,
@@ -155,7 +149,10 @@ fun SettingsScreen(
                     }
                 },
             ) {
-                Text(if (exactGranted) "Granted" else "Allow precise alerts")
+                Text(
+                    if (exactGranted) stringResource(R.string.settings_granted)
+                    else stringResource(R.string.settings_allow_precise)
+                )
             }
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
@@ -220,7 +217,12 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 }
 
 @Composable
-private fun KeyField(label: String, configured: Boolean, onSave: (String) -> Unit) {
+private fun KeyField(
+    label: String,
+    configured: Boolean,
+    onSave: (String) -> Unit,
+    onClear: () -> Unit,
+) {
     var value by remember { mutableStateOf("") }
     Column {
         OutlinedTextField(
@@ -236,9 +238,21 @@ private fun KeyField(label: String, configured: Boolean, onSave: (String) -> Uni
             },
             modifier = Modifier.fillMaxWidth(),
         )
-        if (value.isNotBlank()) {
+        if (value.isNotBlank() || configured) {
             Spacer(Modifier.height(4.dp))
-            Button(onClick = { onSave(value); value = "" }) { Text("Save") }
+            Row {
+                if (value.isNotBlank()) {
+                    Button(onClick = { onSave(value); value = "" }) {
+                        Text(stringResource(R.string.save))
+                    }
+                    Spacer(Modifier.padding(4.dp))
+                }
+                if (configured) {
+                    TextButton(onClick = onClear) {
+                        Text(stringResource(R.string.settings_key_clear))
+                    }
+                }
+            }
         }
     }
 }
