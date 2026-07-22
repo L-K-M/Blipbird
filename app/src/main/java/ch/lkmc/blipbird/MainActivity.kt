@@ -43,6 +43,14 @@ class MainActivity : ComponentActivity() {
     /** Pending notification deep link; consumed by BlipbirdNav. */
     private val deepLinkFlights = MutableStateFlow<Long?>(null)
 
+    /**
+     * Last deep link already handed to navigation. Saved across process death:
+     * removeExtra survives in-process recreation but NOT process death (the
+     * system re-delivers the original intent), so this guard stops a stale
+     * notification link from re-firing after the user backed out of it.
+     */
+    private var consumedDeepLink: Long = -1L
+
     private val notifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -55,14 +63,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Always honor the launch intent's deep link (process death can restore
-        // saved state AND deliver a fresh notification intent in the same
-        // onCreate), then clear the extra so an in-process configuration change
-        // doesn't re-fire a link the user has already navigated away from.
-        intent.deepLinkFlightId()?.let { id ->
-            deepLinkFlights.value = id
-            intent.removeExtra("flightId")
-        }
+        consumedDeepLink = savedInstanceState?.getLong(KEY_CONSUMED_DEEP_LINK, -1L) ?: -1L
+        // Honor the launch intent's deep link unless it was already consumed
+        // before a restore (process death can restore saved state AND re-deliver
+        // the original notification intent in the same onCreate).
+        handleDeepLink(intent)
 
         setContent {
             val theme by settings.theme.collectAsStateWithLifecycle(initialValue = AppTheme.DAYLIGHT_DYNAMIC)
@@ -79,14 +84,34 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // A genuinely new notification tap may target the same flight again.
+        consumedDeepLink = -1L
+        handleDeepLink(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putLong(KEY_CONSUMED_DEEP_LINK, consumedDeepLink)
+    }
+
+    private fun handleDeepLink(intent: Intent?) {
         intent.deepLinkFlightId()?.let { id ->
-            deepLinkFlights.value = id
-            intent.removeExtra("flightId")
+            if (id != consumedDeepLink) {
+                deepLinkFlights.value = id
+                consumedDeepLink = id
+            }
+            intent?.removeExtra(EXTRA_FLIGHT_ID)
         }
     }
 
     private fun Intent?.deepLinkFlightId(): Long? =
-        this?.getLongExtra("flightId", -1L)?.takeIf { it > 0 }
+        this?.getLongExtra(EXTRA_FLIGHT_ID, -1L)?.takeIf { it > 0 }
+
+    companion object {
+        /** Must match the extra set by NotificationEmitter. */
+        const val EXTRA_FLIGHT_ID = "flightId"
+        private const val KEY_CONSUMED_DEEP_LINK = "consumedDeepLink"
+    }
 }
 
 /** Survives configuration change and process death: screens encode to plain longs. */
