@@ -104,11 +104,13 @@ class MetarDecoderTest {
     @Test fun `decodes wind temperature and clouds`() {
         val d = MetarDecoder.decode("LSGG 221220Z 24012G22KT 9999 BKN025 21/12 Q1018 NOSIG")
         assertTrue(d.text.contains("Broken clouds at 2,500 ft"), d.text)
-        assertTrue(d.text.contains("wind 12 kt gusting 22"), d.text)
+        assertTrue(d.text.contains("wind 240° 12 kt gusting 22"), d.text)
         assertEquals(21.0, d.temperatureC)
         assertEquals(240, d.windDirDeg)
         assertEquals(12, d.windSpeedKt)
         assertEquals(22, d.windGustKt)
+        // 9999 = unrestricted visibility, not worth a mention
+        assertTrue(!d.text.contains("visibility"), d.text)
     }
 
     @Test fun `decodes negative temperature`() {
@@ -117,9 +119,63 @@ class MetarDecoderTest {
         assertTrue(d.text.contains("clear skies", ignoreCase = true), d.text)
     }
 
-    @Test fun `weather phenomena appear`() {
+    @Test fun `weather phenomena appear with visibility`() {
         val d = MetarDecoder.decode("EGLL 221150Z 25010KT 4000 -RA BKN008 14/12 Q1008")
         assertTrue(d.text.contains("light rain"), d.text)
+        assertTrue(d.text.contains("visibility 4 km"), d.text)
+    }
+
+    @Test fun `heavy precipitation and multiple phenomena decode`() {
+        // "+RA" previously never matched (the + became a regex quantifier), and
+        // only the first phenomenon was reported.
+        val d = MetarDecoder.decode("KJFK 221151Z 04008KT 1200 +RA BR OVC005 18/17 A2992")
+        assertTrue(d.text.contains("heavy rain"), d.text)
+        assertTrue(d.text.contains("mist"), d.text)
+        assertTrue(d.text.contains("visibility 1.2 km"), d.text)
+    }
+
+    @Test fun `calm and variable winds read naturally`() {
+        val calm = MetarDecoder.decode("LFPG 221200Z 00000KT CAVOK 22/10 Q1020")
+        assertTrue(calm.text.contains("calm wind"), calm.text)
+        val vrb = MetarDecoder.decode("LFPG 221200Z VRB03KT CAVOK 22/10 Q1020")
+        assertTrue(vrb.text.contains("variable wind 3 kt"), vrb.text)
+        assertEquals(3, vrb.windSpeedKt)
+        assertEquals(null, vrb.windDirDeg)
+    }
+
+    @Test fun `statute-mile visibility decodes when reduced`() {
+        val d = MetarDecoder.decode("KSFO 221156Z 28006KT 1/2SM FG OVC002 12/11 A3001")
+        assertTrue(d.text.contains("fog"), d.text)
+        assertTrue(d.text.contains("visibility 0.5 mi"), d.text)
+    }
+
+    @Test fun `convective cloud suffixes surface`() {
+        val cb = MetarDecoder.decode("LSZH 221220Z 24012KT 9999 BKN025CB 21/12 Q1018")
+        assertTrue(cb.text.contains("Broken clouds at 2,500 ft (cumulonimbus)"), cb.text)
+        val tcu = MetarDecoder.decode("LSZH 221220Z 24012KT 9999 SCT040TCU 21/12 Q1018")
+        assertTrue(tcu.text.contains("Scattered clouds at 4,000 ft (towering cumulus)"), tcu.text)
+    }
+
+    @Test fun `mixed-number statute-mile visibility joins across the space`() {
+        val d = MetarDecoder.decode("KSFO 221156Z 28006KT 1 1/2SM BR OVC004 12/11 A3001")
+        assertTrue(d.text.contains("visibility 1.5 mi"), d.text)
+    }
+
+    @Test fun `quarter-mile fractions keep their precision`() {
+        val d = MetarDecoder.decode("KSFO 221156Z 28006KT 3/4SM FG OVC002 12/11 A3001")
+        assertTrue(d.text.contains("visibility 0.75 mi"), d.text)
+    }
+
+    @Test fun `unknown intensity variants fall back to the base phenomenon`() {
+        val d = MetarDecoder.decode("UUEE 221200Z 36008KT 2000 +DZ OVC003 04/03 Q1002")
+        assertTrue(d.text.contains("heavy drizzle"), d.text)
+    }
+
+    @Test fun `mps winds convert to knots`() {
+        val d = MetarDecoder.decode("UUEE 221200Z 36010G20MPS 9999 OVC020 04/03 Q1002")
+        assertEquals(19, d.windSpeedKt)
+        assertEquals(39, d.windGustKt)
+        assertTrue(d.text.contains("wind 360° 19 kt gusting 39"), d.text)
     }
 
     @Test fun `unknown input falls back gracefully`() {
