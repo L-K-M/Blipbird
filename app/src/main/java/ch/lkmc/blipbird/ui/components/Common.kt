@@ -24,22 +24,28 @@ import kotlin.math.abs
 @Composable
 fun StatusWord(status: FlightStatus) {
     val ext = LocalExtendedColors.current
-    val (text, color) = when (status) {
-        FlightStatus.SCHEDULED -> stringResource(R.string.status_scheduled) to ext.statusNeutral
-        FlightStatus.ON_TIME -> stringResource(R.string.status_on_time) to ext.statusOnTime
-        FlightStatus.DELAYED -> stringResource(R.string.status_delayed) to ext.statusDelayed
-        FlightStatus.DEPARTED -> stringResource(R.string.status_departed) to ext.statusEnRoute
-        FlightStatus.EN_ROUTE -> stringResource(R.string.status_en_route) to ext.statusEnRoute
-        FlightStatus.APPROACHING -> stringResource(R.string.status_approaching) to ext.statusEnRoute
-        FlightStatus.LANDED -> stringResource(R.string.status_landed) to ext.statusNeutral
-        FlightStatus.ARRIVED -> stringResource(R.string.status_arrived) to ext.statusOnTime
-        FlightStatus.CANCELLED -> stringResource(R.string.status_cancelled) to ext.statusCancelled
-        FlightStatus.DIVERTED -> stringResource(R.string.status_diverted) to ext.statusDelayed
-        FlightStatus.UNKNOWN -> stringResource(R.string.status_unknown) to ext.statusNeutral
+    val (text, color, onColor) = when (status) {
+        FlightStatus.SCHEDULED -> Triple(stringResource(R.string.status_scheduled), ext.statusNeutral, Color.White)
+        FlightStatus.ON_TIME -> Triple(stringResource(R.string.status_on_time), ext.statusOnTime, Color.White)
+        FlightStatus.DELAYED -> Triple(stringResource(R.string.status_delayed), ext.statusDelayed, Color.Black)
+        FlightStatus.DEPARTED -> Triple(stringResource(R.string.status_departed), ext.statusEnRoute, Color.White)
+        FlightStatus.EN_ROUTE -> Triple(stringResource(R.string.status_en_route), ext.statusEnRoute, Color.White)
+        FlightStatus.APPROACHING -> Triple(stringResource(R.string.status_approaching), ext.statusEnRoute, Color.White)
+        FlightStatus.LANDED -> Triple(stringResource(R.string.status_landed), ext.statusNeutral, Color.White)
+        FlightStatus.ARRIVED -> Triple(stringResource(R.string.status_arrived), ext.statusOnTime, Color.White)
+        FlightStatus.CANCELLED -> Triple(stringResource(R.string.status_cancelled), ext.statusCancelled, Color.White)
+        FlightStatus.DIVERTED -> Triple(stringResource(R.string.status_diverted), ext.statusDelayed, Color.Black)
+        FlightStatus.UNKNOWN -> Triple(stringResource(R.string.status_unknown), ext.statusNeutral, Color.White)
     }
     Text(
         text.uppercase(),
-        color = Color.White,
+        color = onColor,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .background(color, RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,
         modifier = Modifier
