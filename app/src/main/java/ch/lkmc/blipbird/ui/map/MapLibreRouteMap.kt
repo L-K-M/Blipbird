@@ -88,12 +88,6 @@ fun MapLibreRouteMap(
         nightPolygonJson(Instant.now())
     }
 
-    val routeSource = rememberGeoJsonSource(GeoJsonData.JsonString(routeJson))
-    val trackSource = rememberGeoJsonSource(GeoJsonData.JsonString(trackJson))
-    val endpointSource = rememberGeoJsonSource(GeoJsonData.JsonString(endpointsJson))
-    val planeSource = rememberGeoJsonSource(GeoJsonData.JsonString(planeJson))
-    val nightSource = rememberGeoJsonSource(GeoJsonData.JsonString(nightJson))
-
     val planeIcon = remember(ext.routeLine) { planeBitmap(ext.routeLine, sizePx = 72) }
     val stale = (lastFix?.seenPosAgeSec ?: 0.0) > 120
 
@@ -102,6 +96,15 @@ fun MapLibreRouteMap(
         baseStyle = BaseStyle.Uri(ext.mapStyleUrl),
         cameraState = camera,
     ) {
+        // Sources MUST be created inside the map content: rememberGeoJsonSource
+        // consumes MaplibreMap's LocalStyleNode and throws IllegalStateException
+        // anywhere else (this was the detail-view crash).
+        val routeSource = rememberGeoJsonSource(GeoJsonData.JsonString(routeJson))
+        val trackSource = rememberGeoJsonSource(GeoJsonData.JsonString(trackJson))
+        val endpointSource = rememberGeoJsonSource(GeoJsonData.JsonString(endpointsJson))
+        val planeSource = rememberGeoJsonSource(GeoJsonData.JsonString(planeJson))
+        val nightSource = rememberGeoJsonSource(GeoJsonData.JsonString(nightJson))
+
         FillLayer(
             id = "blipbird-night",
             source = nightSource,
