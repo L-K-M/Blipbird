@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -33,6 +34,9 @@ import kotlinx.coroutines.Dispatchers
 import java.time.Duration
 import java.time.Instant
 import javax.inject.Inject
+
+/** Countdown/progress re-derivation cadence while the screen is visible. */
+private const val TICK_MILLIS = 30_000L
 
 data class DetailUiState(
     val flightId: Long = 0,
@@ -96,10 +100,10 @@ class FlightDetailViewModel @Inject constructor(
      * Re-derives the phase view between data emissions so the hero countdown and
      * progress bar keep moving. Stops with the last uiState collector.
      */
-    private val ticker = kotlinx.coroutines.flow.flow {
+    private val ticker = flow {
         while (true) {
             emit(Unit)
-            delay(30_000L)
+            delay(TICK_MILLIS)
         }
     }
 
