@@ -1,6 +1,7 @@
 package ch.lkmc.blipbird.core.database
 
 import android.content.Context
+import androidx.room.withTransaction
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -32,44 +33,48 @@ class ReferenceImporter @Inject constructor(
         if (dao.airportCount() > 0 && prefs.getString(KEY_FINGERPRINT, null) == fingerprint) {
             return@withContext
         }
-        dao.clearAirports()
-        dao.clearAirlines()
+        // One transaction for wipe + refill: concurrent readers keep seeing the
+        // old dataset until commit instead of an empty or half-filled table.
+        ops.withTransaction {
+            dao.clearAirports()
+            dao.clearAirlines()
 
-        context.assets.open("reference/airports.csv").bufferedReader().useLines { lines ->
-            val batch = ArrayList<AirportEntity>(1024)
-            lines.drop(1).forEach { line ->
-                val f = parseCsvLine(line)
-                if (f.size >= 8) {
-                    batch += AirportEntity(
-                        icao = f[0].ifEmpty { null },
-                        iata = f[1].ifEmpty { null },
-                        name = f[2],
-                        city = f[3].ifEmpty { null },
-                        country = f[4].ifEmpty { null },
-                        lat = f[5].toDoubleOrNull(),
-                        lon = f[6].toDoubleOrNull(),
-                        tz = f[7].ifEmpty { null },
-                    )
-                    if (batch.size == 1024) { dao.insertAirports(batch.toList()); batch.clear() }
+            context.assets.open("reference/airports.csv").bufferedReader().useLines { lines ->
+                val batch = ArrayList<AirportEntity>(1024)
+                lines.drop(1).forEach { line ->
+                    val f = parseCsvLine(line)
+                    if (f.size >= 8) {
+                        batch += AirportEntity(
+                            icao = f[0].ifEmpty { null },
+                            iata = f[1].ifEmpty { null },
+                            name = f[2],
+                            city = f[3].ifEmpty { null },
+                            country = f[4].ifEmpty { null },
+                            lat = f[5].toDoubleOrNull(),
+                            lon = f[6].toDoubleOrNull(),
+                            tz = f[7].ifEmpty { null },
+                        )
+                        if (batch.size == 1024) { dao.insertAirports(batch.toList()); batch.clear() }
+                    }
                 }
+                if (batch.isNotEmpty()) dao.insertAirports(batch)
             }
-            if (batch.isNotEmpty()) dao.insertAirports(batch)
-        }
 
-        context.assets.open("reference/airlines.csv").bufferedReader().useLines { lines ->
-            val batch = ArrayList<AirlineEntity>(512)
-            lines.drop(1).forEach { line ->
-                val f = parseCsvLine(line)
-                if (f.size >= 3 && f[2].isNotEmpty()) {
-                    batch += AirlineEntity(
-                        icao = f[0].ifEmpty { null },
-                        iata = f[1].ifEmpty { null },
-                        name = f[2],
-                    )
-                    if (batch.size == 512) { dao.insertAirlines(batch.toList()); batch.clear() }
+            context.assets.open("reference/airlines.csv").bufferedReader().useLines { lines ->
+                val batch = ArrayList<AirlineEntity>(512)
+                lines.drop(1).forEach { line ->
+                    val f = parseCsvLine(line)
+                    if (f.size >= 3 && f[2].isNotEmpty()) {
+                        batch += AirlineEntity(
+                            icao = f[0].ifEmpty { null },
+                            iata = f[1].ifEmpty { null },
+                            name = f[2],
+                        )
+                        if (batch.size == 512) { dao.insertAirlines(batch.toList()); batch.clear() }
+                    }
                 }
+                if (batch.isNotEmpty()) dao.insertAirlines(batch)
             }
-            if (batch.isNotEmpty()) dao.insertAirlines(batch)
         }
 
         prefs.edit().putString(KEY_FINGERPRINT, fingerprint).apply()
