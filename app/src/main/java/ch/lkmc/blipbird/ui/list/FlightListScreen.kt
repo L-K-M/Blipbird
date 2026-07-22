@@ -19,19 +19,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,22 +41,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
-import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.countdownText
+import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.monogramColor
-import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
+import ch.lkmc.blipbird.ui.theme.SkyPalette
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,11 +101,16 @@ fun FlightListScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                 ) {
                     items(state.rows, key = { it.id }) { row ->
-                        FlightRowCard(row, onClick = { onOpenFlight(row.id) })
+                        DismissibleFlightCard(
+                            row = row,
+                            onClick = { onOpenFlight(row.id) },
+                            onDelete = { viewModel.delete(row.id) },
+                            modifier = Modifier.animateItem(),
+                        )
                     }
                 }
             }
@@ -118,62 +130,188 @@ fun FlightListScreen(
 }
 
 @Composable
-private fun FlightRowCard(row: FlightRow, onClick: () -> Unit) {
-    val ext = LocalExtendedColors.current
-    Card(
-        onClick = onClick,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
-        shape = RoundedCornerShape(22.dp),
-    ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Monogram(row.airlineIata ?: row.title.take(2))
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(row.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    row.subtitle?.let {
-                        Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                StatusWord(row.view.status)
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    row.depCode,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
+private fun DismissibleFlightCard(
+    row: FlightRow,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) { onDelete(); true } else false
+        },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        modifier = modifier,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(Color(0xFFC62828)),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = stringResource(R.string.delete),
+                    tint = Color.White,
+                    modifier = Modifier.padding(end = 26.dp),
                 )
+            }
+        },
+    ) {
+        FlightRowCard(row, onClick = onClick)
+    }
+}
+
+/**
+ * Hero-style card on a sky gradient: the color/darkness of the sky is the
+ * departure time of day at the departure airport (SkyPalette). A soft bottom
+ * scrim keeps white text legible on the bright daytime skies.
+ */
+@Composable
+private fun FlightRowCard(row: FlightRow, onClick: () -> Unit) {
+    val sky = SkyPalette.forElevation(row.solarElevationDeg)
+    Column(
+        Modifier
+            .clip(RoundedCornerShape(26.dp))
+            .background(Brush.verticalGradient(0f to sky.top, 0.55f to sky.mid, 1f to sky.bottom))
+            .background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color(0x40000000)))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Monogram(row.airlineIata ?: row.title.take(2))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    row.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = sky.content,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                row.subtitle?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = sky.contentDim)
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            StatusWord(row.view.status)
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.Top) {
+            AirportCell(
+                code = row.depCode,
+                city = row.depCity,
+                time = row.depTime,
+                tz = row.depTz,
+                sky = sky,
+                modifier = Modifier.weight(1f),
+            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(top = 6.dp),
+            ) {
                 Icon(
                     Icons.Filled.Flight, contentDescription = null,
-                    modifier = Modifier.padding(horizontal = 6.dp).size(15.dp),
-                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp).rotate(90f),
+                    tint = sky.contentDim,
                 )
-                Text(
-                    row.arrCode,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    phaseTime(row),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                if (row.depTime != null && row.arrTime != null) {
+                    Text(
+                        countdownText(Duration.between(row.depTime, row.arrTime)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = sky.contentDim,
+                    )
+                }
             }
-            FlightProgressBar(
-                progress = row.view.progress,
-                color = ext.statusEnRoute,
-                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.13f),
+            AirportCell(
+                code = row.arrCode,
+                city = row.arrCity,
+                time = row.arrTime,
+                tz = row.arrTz,
+                dayOffset = row.arrDayOffset,
+                sky = sky,
+                alignEnd = true,
+                modifier = Modifier.weight(1f),
             )
+        }
+        Spacer(Modifier.height(6.dp))
+        FlightProgressBar(
+            progress = row.view.progress,
+            color = sky.content,
+            trackColor = sky.content.copy(alpha = 0.28f),
+        )
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                phaseTime(row),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = sky.content,
+            )
+            Spacer(Modifier.weight(1f))
             val gateLine = listOfNotNull(
                 row.terminal?.let { "${stringResource(R.string.terminal)} $it" },
                 row.gate?.let { "${stringResource(R.string.gate)} $it" },
             ).joinToString("  ·  ")
             if (gateLine.isNotEmpty()) {
-                Text(gateLine, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(gateLine, style = MaterialTheme.typography.labelMedium, color = sky.contentDim)
             }
+        }
+    }
+}
+
+@Composable
+private fun AirportCell(
+    code: String,
+    city: String?,
+    time: Instant?,
+    tz: String?,
+    sky: SkyPalette.Sky,
+    modifier: Modifier = Modifier,
+    alignEnd: Boolean = false,
+    dayOffset: Int? = null,
+) {
+    Column(modifier, horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
+        Text(
+            code,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.ExtraBold,
+            color = sky.content,
+        )
+        if (time != null) {
+            val zone = tz?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    localTime(time, zone),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = sky.content,
+                )
+                // +1 red-eye / −1 across-the-date-line marker — display only.
+                if (dayOffset != null && dayOffset != 0) {
+                    Text(
+                        if (dayOffset > 0) "+$dayOffset" else "−${-dayOffset}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = sky.contentDim,
+                        modifier = Modifier.padding(start = 2.dp),
+                    )
+                }
+            }
+        }
+        city?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color = sky.contentDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -187,7 +325,7 @@ private fun phaseTime(row: FlightRow): String {
         ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.LANDS_IN ->
             "Lands in ${countdownText(Duration.between(Instant.now(), at))}"
         ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.LANDED_AT ->
-            "Landed ${ch.lkmc.blipbird.ui.components.localTime(at)}"
+            "Landed ${localTime(at, row.arrTz?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault())}"
         else -> stringResource(R.string.value_unknown)
     }
 }

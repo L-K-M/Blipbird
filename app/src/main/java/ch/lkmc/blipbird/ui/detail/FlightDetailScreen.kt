@@ -329,6 +329,7 @@ private fun MapCard(state: DetailUiState) {
                 arr = arr,
                 lastFix = state.lastFix,
                 track = state.track,
+                progress = state.view.progress,
                 modifier = Modifier.fillMaxWidth().height(280.dp),
             )
         }

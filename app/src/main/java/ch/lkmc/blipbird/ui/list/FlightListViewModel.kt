@@ -4,12 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ch.lkmc.blipbird.core.data.FlightRepository
 import ch.lkmc.blipbird.core.data.IdentityResolver
+import ch.lkmc.blipbird.core.database.ReferenceDao
 import ch.lkmc.blipbird.core.database.TrackedFlightEntity
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
+import ch.lkmc.blipbird.core.model.AirportRef
 import ch.lkmc.blipbird.core.model.Designator
 import ch.lkmc.blipbird.core.model.StatusSnapshot
 import ch.lkmc.blipbird.core.model.TrackRequest
+import ch.lkmc.blipbird.domain.DaylightEngine
 import ch.lkmc.blipbird.domain.DesignatorParser
+import ch.lkmc.blipbird.domain.FlightDates
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -25,6 +29,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 data class FlightRow(
@@ -33,6 +38,16 @@ data class FlightRow(
     val subtitle: String?,         // alias present → designator shown small
     val depCode: String,
     val arrCode: String,
+    val depCity: String?,
+    val arrCity: String?,
+    val depTime: Instant?,
+    val depTz: String?,
+    val arrTime: Instant?,
+    val arrTz: String?,
+    /** Display-only calendar-day marker: +1 red-eye, −1 across the date line. */
+    val arrDayOffset: Int?,
+    /** True solar elevation at the departure airport at departure time. */
+    val solarElevationDeg: Double?,
     val view: FlightPhaseMachine.View,
     val gate: String?,
     val terminal: String?,
@@ -52,11 +67,15 @@ data class ListUiState(
 class FlightListViewModel @Inject constructor(
     private val repository: FlightRepository,
     private val identity: IdentityResolver,
+    private val referenceDao: ReferenceDao,
     keyStore: ProviderKeyStore,
 ) : ViewModel() {
 
     private val refreshing = MutableStateFlow(false)
     private val addError = MutableStateFlow<String?>(null)
+
+    /** Reference-airport hits keyed by IATA/ICAO; misses are rare and just re-query. */
+    private val airportCache = ConcurrentHashMap<String, ch.lkmc.blipbird.core.database.AirportEntity>()
 
     private val rows: StateFlow<List<FlightRow>> = repository.observeFlights()
         .flatMapLatest { flights ->
@@ -75,12 +94,25 @@ class FlightListViewModel @Inject constructor(
         repository.observeSnapshot(flight.id).map { snapshot: StatusSnapshot? ->
             val view = FlightPhaseMachine.derive(snapshot, null, Instant.now())
             val designator = Designator(flight.designatorIata, flight.designatorIcao, flight.flightNumber, flight.suffix)
+            val dep = resolve(snapshot?.departure)
+            val arr = resolve(snapshot?.arrival)
+            val depTime = snapshot?.depTimes?.best
+            val arrTime = snapshot?.arrTimes?.best
             FlightRow(
                 id = flight.id,
                 title = flight.alias ?: designator.display,
                 subtitle = if (flight.alias != null) designator.display else null,
                 depCode = snapshot?.departure?.code ?: "···",
                 arrCode = snapshot?.arrival?.code ?: "···",
+                depCity = dep?.city,
+                arrCity = arr?.city,
+                depTime = depTime,
+                depTz = dep?.tz,
+                arrTime = arrTime,
+                arrTz = arr?.tz,
+                arrDayOffset = FlightDates.arrivalDayOffset(depTime, dep?.tz, arrTime, arr?.tz),
+                solarElevationDeg = if (dep?.lat != null && dep.lon != null && depTime != null)
+                    DaylightEngine.trueSolarElevation(dep.lat, dep.lon, depTime) else null,
                 view = view,
                 gate = snapshot?.depGate,
                 terminal = snapshot?.depTerminal,
@@ -88,6 +120,23 @@ class FlightListViewModel @Inject constructor(
                 airlineIata = designator.airlineIata,
             )
         }
+
+    /** Fill lat/lon/tz/city gaps from the bundled reference DB (AeroAPI omits coordinates). */
+    private suspend fun resolve(ref: AirportRef?): AirportRef? {
+        if (ref == null) return null
+        if (ref.lat != null && ref.lon != null && ref.tz != null && ref.city != null) return ref
+        val key = ref.iata ?: ref.icao ?: return ref
+        val entity = airportCache[key]
+            ?: (ref.iata?.let { referenceDao.airportByIata(it) } ?: ref.icao?.let { referenceDao.airportByIcao(it) })
+                ?.also { airportCache[key] = it }
+            ?: return ref
+        return ref.copy(
+            city = ref.city ?: entity.city,
+            lat = ref.lat ?: entity.lat,
+            lon = ref.lon ?: entity.lon,
+            tz = ref.tz ?: entity.tz,
+        )
+    }
 
     /** Batch add: "CA861, LX1612" or "CCA861/CA861"; each token resolves to one row. */
     fun addFlights(input: String, date: LocalDate?, alias: String?, onFirstTrack: () -> Unit) {

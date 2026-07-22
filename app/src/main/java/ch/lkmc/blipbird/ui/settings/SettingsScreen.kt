@@ -124,12 +124,19 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(6.dp))
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            var exactGranted by remember { mutableStateOf(alarmManager.canScheduleExactAlarms()) }
+            // Pre-S exact alarms are always allowed; the API and the settings
+            // action to request them exist only on 31+.
+            val exactSupported = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+            var exactGranted by remember {
+                mutableStateOf(!exactSupported || alarmManager.canScheduleExactAlarms())
+            }
             Button(
                 enabled = !exactGranted,
                 onClick = {
-                    context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
-                    exactGranted = alarmManager.canScheduleExactAlarms()
+                    if (exactSupported) {
+                        context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+                        exactGranted = alarmManager.canScheduleExactAlarms()
+                    }
                 },
             ) {
                 Text(if (exactGranted) "Granted" else "Allow precise alerts")

@@ -91,6 +91,11 @@ class NotificationEmitter @Inject constructor(
     }
 
     private fun notify(flightId: Long, channel: String, title: String, text: String) {
+        // Re-checked here (not only in callers) so the permission contract is
+        // local to the notify() call — the user can revoke it at any moment.
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) return
         val intent = Intent(context, MainActivity::class.java).apply {
             putExtra("flightId", flightId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP

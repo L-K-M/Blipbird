@@ -1,8 +1,10 @@
 package ch.lkmc.blipbird.ui.map
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,6 +32,7 @@ import org.maplibre.compose.map.MaplibreMap
 import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.compose.style.BaseStyle
+import org.maplibre.spatialk.geojson.BoundingBox
 import org.maplibre.spatialk.geojson.Position
 import java.time.Instant
 import kotlin.math.ln
@@ -48,6 +51,8 @@ fun MapLibreRouteMap(
     lastFix: PositionFix?,
     track: List<PositionFix>,
     modifier: Modifier = Modifier,
+    /** 0..1 schedule progress; renders a projected ghost plane when no live fix exists. */
+    progress: Float = 0f,
 ) {
     val ext = LocalExtendedColors.current
     if (dep == null || arr == null) return
@@ -71,9 +76,24 @@ fun MapLibreRouteMap(
     )
 
     // ---- geojson sources ----------------------------------------------
-    val routeJson = remember(dep, arr) {
-        multiLineJson(GreatCircle.routeSegments(dep, arr, steps = 96).map { seg -> seg.map { it.lon to it.lat } })
+    val routeSegments = remember(dep, arr) { GreatCircle.routeSegments(dep, arr, steps = 96) }
+    val routeJson = remember(routeSegments) {
+        multiLineJson(routeSegments.map { seg -> seg.map { it.lon to it.lat } })
     }
+
+    // Projected position along the schedule when ADS-B has no fix (pre-departure,
+    // or coverage gaps such as mainland China / oceans).
+    val projected = remember(dep, arr, progress, lastFix?.at) {
+        if (lastFix != null) null else {
+            val f = progress.coerceIn(0f, 1f).toDouble()
+            val p = GreatCircle.intermediate(dep, arr, f)
+            val ahead = GreatCircle.intermediate(dep, arr, (f + 0.02).coerceAtMost(1.0))
+            Triple(p.lat, p.lon, GreatCircle.initialBearing(p, ahead))
+        }
+    }
+    val planeLat = lastFix?.lat ?: projected?.first
+    val planeLon = lastFix?.lon ?: projected?.second
+    val planeBearing = lastFix?.trackDeg ?: projected?.third ?: 0.0
     val trackJson = remember(track.size) {
         if (track.size < 2) EMPTY_FC
         else multiLineJson(splitAtAntimeridian(track.map { it.lon to it.lat }))
@@ -81,8 +101,8 @@ fun MapLibreRouteMap(
     val endpointsJson = remember(dep, arr) {
         pointsJson(listOf(dep.lon to dep.lat, arr.lon to arr.lat))
     }
-    val planeJson = remember(lastFix?.at) {
-        lastFix?.let { pointsJson(listOf(it.lon to it.lat)) } ?: EMPTY_FC
+    val planeJson = remember(planeLat, planeLon) {
+        if (planeLat != null && planeLon != null) pointsJson(listOf(planeLon to planeLat)) else EMPTY_FC
     }
     val nightJson = remember(lastFix?.at?.epochSecond?.div(600)) {
         nightPolygonJson(Instant.now())
@@ -90,6 +110,27 @@ fun MapLibreRouteMap(
 
     val planeIcon = remember(ext.routeLine) { planeBitmap(ext.routeLine, sizePx = 72) }
     val stale = (lastFix?.seenPosAgeSec ?: 0.0) > 120
+
+    // Fit the camera to the WHOLE route (the great-circle arc bulges poleward well
+    // past the endpoint box on long flights), plus the live fix when present.
+    LaunchedEffect(dep, arr, lastFix == null) {
+        val pts = routeSegments.flatten() + listOfNotNull(lastFix?.let { GreatCircle.Point(it.lat, it.lon) })
+        fun unwrap(lon: Double): Double {
+            var l = lon
+            while (l - dep.lon > 180) l -= 360
+            while (l - dep.lon < -180) l += 360
+            return l
+        }
+        camera.animateTo(
+            boundingBox = BoundingBox(
+                west = pts.minOf { unwrap(it.lon) },
+                south = pts.minOf { it.lat },
+                east = pts.maxOf { unwrap(it.lon) },
+                north = pts.maxOf { it.lat },
+            ),
+            padding = PaddingValues(28.dp),
+        )
+    }
 
     MaplibreMap(
         modifier = modifier.clip(RoundedCornerShape(20.dp)),
@@ -140,9 +181,10 @@ fun MapLibreRouteMap(
             source = planeSource,
             iconImage = image(planeIcon),
             iconSize = const(0.62f),
-            iconRotate = const((lastFix?.trackDeg ?: 0.0).toFloat()),
+            iconRotate = const(planeBearing.toFloat()),
             iconAllowOverlap = const(true),
-            iconOpacity = const(if (stale) 0.45f else 1f),
+            // Live = solid; stale fix or schedule-projected = ghost.
+            iconOpacity = const(if (lastFix == null) 0.55f else if (stale) 0.45f else 1f),
         )
     }
 }

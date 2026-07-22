@@ -50,7 +50,10 @@ class ReminderScheduler @Inject constructor(
         private val LANDING_LEAD: Duration = Duration.ofMinutes(45)
     }
 
-    fun canUseExactAlarms(): Boolean = alarmManager.canScheduleExactAlarms()
+    // Before S exact alarms need no permission; canScheduleExactAlarms is API 31+.
+    fun canUseExactAlarms(): Boolean =
+        android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S ||
+            alarmManager.canScheduleExactAlarms()
 
     suspend fun reconcile(flightId: Long) {
         if (!settings.notifReminders.first()) { cancel(flightId); return }
