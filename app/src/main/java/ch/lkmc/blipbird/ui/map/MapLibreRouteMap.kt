@@ -94,7 +94,8 @@ fun MapLibreRouteMap(
     val planeLat = lastFix?.lat ?: projected?.first
     val planeLon = lastFix?.lon ?: projected?.second
     val planeBearing = lastFix?.trackDeg ?: projected?.third ?: 0.0
-    val trackJson = remember(track.size) {
+    val trackKey = track.lastOrNull()?.at?.toEpochMilli()?.let { it xor track.size.toLong() } ?: track.size.toLong()
+    val trackJson = remember(trackKey) {
         if (track.size < 2) EMPTY_FC
         else multiLineJson(splitAtAntimeridian(track.map { it.lon to it.lat }))
     }
@@ -104,7 +105,7 @@ fun MapLibreRouteMap(
     val planeJson = remember(planeLat, planeLon) {
         if (planeLat != null && planeLon != null) pointsJson(listOf(planeLon to planeLat)) else EMPTY_FC
     }
-    val nightJson = remember(lastFix?.at?.epochSecond?.div(600)) {
+    val nightJson = remember(Instant.now().epochSecond / 600) {
         nightPolygonJson(Instant.now())
     }
 
