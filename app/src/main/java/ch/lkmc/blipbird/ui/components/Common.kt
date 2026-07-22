@@ -21,22 +21,39 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.pow
 
+/** Localized status word, shared by the chip and plain-text uses (share sheet). */
+@Composable
+fun statusText(status: FlightStatus): String = stringResource(
+    when (status) {
+        FlightStatus.SCHEDULED -> R.string.status_scheduled
+        FlightStatus.ON_TIME -> R.string.status_on_time
+        FlightStatus.DELAYED -> R.string.status_delayed
+        FlightStatus.DEPARTED -> R.string.status_departed
+        FlightStatus.EN_ROUTE -> R.string.status_en_route
+        FlightStatus.APPROACHING -> R.string.status_approaching
+        FlightStatus.LANDED -> R.string.status_landed
+        FlightStatus.ARRIVED -> R.string.status_arrived
+        FlightStatus.CANCELLED -> R.string.status_cancelled
+        FlightStatus.DIVERTED -> R.string.status_diverted
+        FlightStatus.UNKNOWN -> R.string.status_unknown
+    }
+)
+
 /** Status word chip — always word + color, never color alone (accessibility). */
 @Composable
 fun StatusWord(status: FlightStatus) {
     val ext = LocalExtendedColors.current
-    val (text, color) = when (status) {
-        FlightStatus.SCHEDULED -> stringResource(R.string.status_scheduled) to ext.statusNeutral
-        FlightStatus.ON_TIME -> stringResource(R.string.status_on_time) to ext.statusOnTime
-        FlightStatus.DELAYED -> stringResource(R.string.status_delayed) to ext.statusDelayed
-        FlightStatus.DEPARTED -> stringResource(R.string.status_departed) to ext.statusEnRoute
-        FlightStatus.EN_ROUTE -> stringResource(R.string.status_en_route) to ext.statusEnRoute
-        FlightStatus.APPROACHING -> stringResource(R.string.status_approaching) to ext.statusEnRoute
-        FlightStatus.LANDED -> stringResource(R.string.status_landed) to ext.statusNeutral
-        FlightStatus.ARRIVED -> stringResource(R.string.status_arrived) to ext.statusOnTime
-        FlightStatus.CANCELLED -> stringResource(R.string.status_cancelled) to ext.statusCancelled
-        FlightStatus.DIVERTED -> stringResource(R.string.status_diverted) to ext.statusDelayed
-        FlightStatus.UNKNOWN -> stringResource(R.string.status_unknown) to ext.statusNeutral
+    val text = statusText(status)
+    val color = when (status) {
+        FlightStatus.SCHEDULED -> ext.statusNeutral
+        FlightStatus.ON_TIME -> ext.statusOnTime
+        FlightStatus.DELAYED -> ext.statusDelayed
+        FlightStatus.DEPARTED, FlightStatus.EN_ROUTE, FlightStatus.APPROACHING -> ext.statusEnRoute
+        FlightStatus.LANDED -> ext.statusNeutral
+        FlightStatus.ARRIVED -> ext.statusOnTime
+        FlightStatus.CANCELLED -> ext.statusCancelled
+        FlightStatus.DIVERTED -> ext.statusDelayed
+        FlightStatus.UNKNOWN -> ext.statusNeutral
     }
     Text(
         text.uppercase(),

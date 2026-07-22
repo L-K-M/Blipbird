@@ -1,5 +1,7 @@
 package ch.lkmc.blipbird.ui.detail
 
+import android.content.Intent
+import android.provider.CalendarContract
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.DoorFront
 import androidx.compose.material.icons.outlined.Luggage
 import androidx.compose.material.icons.outlined.Domain
@@ -52,6 +56,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +74,7 @@ import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.agoText
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.localTime
+import ch.lkmc.blipbird.ui.components.statusText
 import ch.lkmc.blipbird.ui.components.monogramColor
 import ch.lkmc.blipbird.ui.map.MapLibreRouteMap
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
@@ -110,7 +116,11 @@ fun FlightDetailScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
-                actions = { StatusWord(state.view.status); Spacer(Modifier.padding(end = 12.dp)) },
+                actions = {
+                    DetailActions(state)
+                    StatusWord(state.view.status)
+                    Spacer(Modifier.padding(end = 12.dp))
+                },
             )
         },
     ) { padding ->
@@ -781,5 +791,56 @@ private fun StatPill(label: String, value: String) {
     ) {
         Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
         Text(label, style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant)
+    }
+}
+
+/**
+ * Share + add-to-calendar top-bar actions. Both are plain intents — no
+ * permissions involved; the calendar button appears once a departure time is
+ * known (the event needs a start).
+ */
+@Composable
+private fun DetailActions(state: DetailUiState) {
+    val context = LocalContext.current
+    val route = "${state.depAirport?.code ?: "?"}→${state.arrAirport?.code ?: "?"}"
+    val depTime = state.snapshot?.depTimes?.best
+    val arrTime = state.snapshot?.arrTimes?.best
+    val depZone = state.depAirport?.tz?.let { runCatching { ZoneId.of(it) }.getOrNull() }
+        ?: ZoneId.systemDefault()
+
+    val shareText = buildString {
+        append(state.designator).append(' ').append(route)
+        depTime?.let { append(" · ").append(localTime(it, depZone)) }
+        state.snapshot?.depGate?.let { append(" · ").append(stringResource(R.string.gate)).append(' ').append(it) }
+        append(" · ").append(statusText(state.view.status))
+    }
+    IconButton(onClick = {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, shareText)
+        }
+        runCatching { context.startActivity(Intent.createChooser(send, null)) }
+    }) {
+        Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.share_flight))
+    }
+
+    if (depTime != null) {
+        val title = "${state.designator} $route"
+        val location = state.depAirport?.name ?: state.depAirport?.code
+        IconButton(onClick = {
+            val insert = Intent(Intent.ACTION_INSERT).apply {
+                data = CalendarContract.Events.CONTENT_URI
+                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, depTime.toEpochMilli())
+                putExtra(
+                    CalendarContract.EXTRA_EVENT_END_TIME,
+                    (arrTime ?: depTime.plus(Duration.ofHours(2))).toEpochMilli(),
+                )
+                putExtra(CalendarContract.Events.TITLE, title)
+                location?.let { putExtra(CalendarContract.Events.EVENT_LOCATION, it) }
+            }
+            runCatching { context.startActivity(insert) }
+        }) {
+            Icon(Icons.Outlined.Event, contentDescription = stringResource(R.string.add_to_calendar))
+        }
     }
 }

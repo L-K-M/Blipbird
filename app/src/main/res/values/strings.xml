@@ -57,6 +57,8 @@
     <string name="timeline">Timeline</string>
     <string name="derived_note">Times marked ~ are Blipbird estimates, not airline data.</string>
     <string name="operated_by">Operated by %1$s</string>
+    <string name="share_flight">Share flight</string>
+    <string name="add_to_calendar">Add to calendar</string>
     <string name="flight_ribbon">Along the route</string>
     <string name="weather">Weather</string>
     <string name="weather_route_pending">Route forecast available closer to departure</string>
