@@ -59,6 +59,8 @@ class AeroDataBoxProvider @Inject constructor(
                 429 -> StatusResult.Error("AeroDataBox rate limited", retryable = true)
                 else -> StatusResult.Error("AeroDataBox HTTP ${e.code()}", retryable = e.code() >= 500)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             StatusResult.Error(e.message ?: "network error", retryable = true)
         }
@@ -146,6 +148,8 @@ class AeroApiProvider @Inject constructor(
                 429 -> StatusResult.Error("AeroAPI rate limited", retryable = true)
                 else -> StatusResult.Error("AeroAPI HTTP ${e.code()}", retryable = e.code() >= 500)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             StatusResult.Error(e.message ?: "network error", retryable = true)
         }
