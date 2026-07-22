@@ -13,12 +13,14 @@ import ch.lkmc.blipbird.domain.DesignatorParser
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -26,6 +28,9 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import javax.inject.Inject
+
+/** Countdown/progress re-derivation cadence while the list is visible. */
+private const val TICK_MILLIS = 30_000L
 
 data class FlightRow(
     val id: Long,
@@ -58,6 +63,18 @@ class FlightListViewModel @Inject constructor(
     private val refreshing = MutableStateFlow(false)
     private val addError = MutableStateFlow<String?>(null)
 
+    /**
+     * Re-derives the phase views between provider refreshes so countdowns,
+     * progress bars, and derived statuses keep moving. Stops with the last
+     * collector (the stateIn below shares WhileSubscribed).
+     */
+    private val ticker = flow {
+        while (true) {
+            emit(Unit)
+            delay(TICK_MILLIS)
+        }
+    }
+
     private val rows: StateFlow<List<FlightRow>> = repository.observeFlights()
         .flatMapLatest { flights ->
             if (flights.isEmpty()) flowOf(emptyList())
@@ -72,7 +89,7 @@ class FlightListViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ListUiState())
 
     private fun rowFlow(flight: TrackedFlightEntity) =
-        repository.observeSnapshot(flight.id).map { snapshot: StatusSnapshot? ->
+        combine(repository.observeSnapshot(flight.id), ticker) { snapshot: StatusSnapshot?, _ ->
             val view = FlightPhaseMachine.derive(snapshot, null, Instant.now())
             val designator = Designator(flight.designatorIata, flight.designatorIcao, flight.flightNumber, flight.suffix)
             FlightRow(

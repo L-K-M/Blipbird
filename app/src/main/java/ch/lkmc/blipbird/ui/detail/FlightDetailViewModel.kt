@@ -92,6 +92,17 @@ class FlightDetailViewModel @Inject constructor(
     private val lastFix = MutableStateFlow<PositionFix?>(null)
     private val track = MutableStateFlow<List<PositionFix>>(emptyList())
 
+    /**
+     * Re-derives the phase view between data emissions so the hero countdown and
+     * progress bar keep moving. Stops with the last uiState collector.
+     */
+    private val ticker = kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(Unit)
+            delay(30_000L)
+        }
+    }
+
     private fun bind(id: Long) {
         if (boundId == id) return
         boundId = id
@@ -116,7 +127,7 @@ class FlightDetailViewModel @Inject constructor(
     }
 
     val uiState: StateFlow<DetailUiState> = combine(
-        listOf(flightId, flightEntity, snapshot, lastFix, track, daylight, routeWeather, airportWeather, enriched, airlineName, refreshing)
+        listOf(flightId, flightEntity, snapshot, lastFix, track, daylight, routeWeather, airportWeather, enriched, airlineName, refreshing, ticker)
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val id = values[0] as Long
