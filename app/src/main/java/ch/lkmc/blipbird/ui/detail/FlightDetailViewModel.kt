@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -76,6 +77,19 @@ class FlightDetailViewModel @Inject constructor(
 
     private var pollJob: Job? = null
     private var lastComputedSnapshotAt: Instant? = null
+
+    /**
+     * Whether this flight's screen is started (visible or behind a dialog).
+     * Under the hand-rolled navigation the ViewModel is Activity-scoped and never
+     * cleared, so the poll loop must gate on this instead of the ViewModel's own
+     * lifetime — otherwise every detail screen ever opened keeps hitting the
+     * ADS-B APIs (every 10 s while airborne) until the process dies.
+     */
+    private val screenVisible = MutableStateFlow(false)
+
+    fun setScreenVisible(visible: Boolean) {
+        screenVisible.value = visible
+    }
 
     fun setFlightId(id: Long) {
         if (flightId.value == id) return
@@ -247,6 +261,8 @@ class FlightDetailViewModel @Inject constructor(
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
             while (isActive) {
+                // Suspend (no polling, no timers) until the screen is visible again.
+                screenVisible.first { it }
                 val snap = snapshot.value
                 val view = FlightPhaseMachine.derive(snap, lastFix.value, Instant.now())
                 val interval = when (view.status) {
