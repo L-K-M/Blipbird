@@ -98,7 +98,7 @@ class FlightDetailViewModel @Inject constructor(
      * the next network write.
      */
     private val clock: SharedFlow<Instant> = flow {
-        while (isActive) { emit(Instant.now()); delay(15_000) }
+        while (true) { emit(Instant.now()); delay(15_000) }
     }.distinctUntilChanged().shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
     /**

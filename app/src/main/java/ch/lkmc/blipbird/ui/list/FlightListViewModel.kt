@@ -92,7 +92,7 @@ class FlightListViewModel @Inject constructor(
      * Multicast via shareIn so N rows share one upstream ticker.
      */
     private val clock: SharedFlow<Instant> = flow {
-        while (isActive) { emit(Instant.now()); delay(30_000) }
+        while (true) { emit(Instant.now()); delay(30_000) }
     }.distinctUntilChanged().shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
     /** Reference-airport hits keyed by IATA/ICAO; misses are rare and just re-query. */
