@@ -15,6 +15,9 @@
     <string name="updated_never">Not updated yet</string>
     <string name="archive">Archive</string>
     <string name="delete">Delete</string>
+    <string name="rename">Rename</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
 
     <!-- Status words -->
     <string name="status_scheduled">Scheduled</string>

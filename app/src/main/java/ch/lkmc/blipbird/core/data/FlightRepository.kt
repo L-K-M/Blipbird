@@ -77,6 +77,8 @@ class FlightRepository @Inject constructor(
 
     suspend fun archive(id: Long) = trackedDao.archive(id)
 
+    suspend fun setAlias(id: Long, alias: String?) = trackedDao.setAlias(id, alias?.trim()?.takeIf { it.isNotEmpty() })
+
     suspend fun delete(id: Long) {
         trackedDao.delete(id)
         snapshotDao.deleteForFlight(id)

@@ -175,5 +175,6 @@ class FlightListViewModel @Inject constructor(
 
     fun archive(id: Long) = viewModelScope.launch { repository.archive(id) }
     fun delete(id: Long) = viewModelScope.launch { repository.delete(id) }
+    fun rename(id: Long, alias: String?) = viewModelScope.launch { repository.setAlias(id, alias) }
     fun clearAddError() { addError.value = null }
 }

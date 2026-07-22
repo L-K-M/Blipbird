@@ -1,7 +1,8 @@
 package ch.lkmc.blipbird.ui.list
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,17 +21,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -109,6 +116,7 @@ fun FlightListScreen(
                             row = row,
                             onClick = { onOpenFlight(row.id) },
                             onDelete = { viewModel.delete(row.id) },
+                            onRename = { alias -> viewModel.rename(row.id, alias) },
                             modifier = Modifier.animateItem(),
                         )
                     }
@@ -134,6 +142,7 @@ private fun DismissibleFlightCard(
     row: FlightRow,
     onClick: () -> Unit,
     onDelete: () -> Unit,
+    onRename: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
@@ -141,6 +150,9 @@ private fun DismissibleFlightCard(
             if (value == SwipeToDismissBoxValue.EndToStart) { onDelete(); true } else false
         },
     )
+    var menuOpen by remember { mutableStateOf(false) }
+    var renameOpen by remember { mutableStateOf(false) }
+
     SwipeToDismissBox(
         state = dismissState,
         modifier = modifier,
@@ -162,8 +174,65 @@ private fun DismissibleFlightCard(
             }
         },
     ) {
-        FlightRowCard(row, onClick = onClick)
+        Box {
+            FlightRowCard(row, onClick = onClick, onLongClick = { menuOpen = true })
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.rename)) },
+                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                    onClick = { menuOpen = false; renameOpen = true },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = {
+                        Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    },
+                    onClick = { menuOpen = false; onDelete() },
+                )
+            }
+        }
     }
+
+    if (renameOpen) {
+        RenameDialog(
+            current = if (row.subtitle != null) row.title else null,
+            designator = row.subtitle ?: row.title,
+            onDismiss = { renameOpen = false },
+            onSave = { renameOpen = false; onRename(it) },
+        )
+    }
+}
+
+/** Edit the flight's display name; blank restores the plain designator. */
+@Composable
+private fun RenameDialog(
+    current: String?,
+    designator: String,
+    onDismiss: () -> Unit,
+    onSave: (String?) -> Unit,
+) {
+    var text by remember { mutableStateOf(current ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${stringResource(R.string.rename)} $designator") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                placeholder = { Text(stringResource(R.string.add_flight_alias_hint)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(text.trim().ifEmpty { null }) }) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 /**
@@ -171,15 +240,16 @@ private fun DismissibleFlightCard(
  * departure time of day at the departure airport (SkyPalette). A soft bottom
  * scrim keeps white text legible on the bright daytime skies.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FlightRowCard(row: FlightRow, onClick: () -> Unit) {
+private fun FlightRowCard(row: FlightRow, onClick: () -> Unit, onLongClick: () -> Unit) {
     val sky = SkyPalette.forElevation(row.solarElevationDeg)
     Column(
         Modifier
             .clip(RoundedCornerShape(26.dp))
             .background(Brush.verticalGradient(0f to sky.top, 0.55f to sky.mid, 1f to sky.bottom))
             .background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color(0x40000000)))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 18.dp, vertical = 16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
