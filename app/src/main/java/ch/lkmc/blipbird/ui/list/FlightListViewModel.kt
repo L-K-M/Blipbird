@@ -89,16 +89,32 @@ class FlightListViewModel @Inject constructor(
             )
         }
 
-    /** Batch add: "CA861, LX1612" or "CCA861/CA861"; each token resolves to one row. */
-    fun addFlights(input: String, date: LocalDate?, alias: String?, onFirstTrack: () -> Unit) {
+    /**
+     * Batch add: "CA861, LX1612" or "CCA861/CA861"; each token resolves to one row.
+     * [onResult] reports whether every token was accepted, so the sheet can stay
+     * open (showing the error) when something didn't parse.
+     */
+    fun addFlights(
+        input: String,
+        date: LocalDate?,
+        alias: String?,
+        onFirstTrack: () -> Unit,
+        onResult: (allAccepted: Boolean) -> Unit = {},
+    ) {
         viewModelScope.launch {
             val tokens = DesignatorParser.splitBatch(input)
-            if (tokens.isEmpty()) { addError.value = "No flight number recognized"; return@launch }
+            if (tokens.isEmpty()) {
+                addError.value = "No flight number recognized"
+                onResult(false)
+                return@launch
+            }
             var added = 0
+            var failed = 0
             for (token in tokens) {
                 val designator = identity.resolveToken(token)
                 if (designator == null) {
                     addError.value = "Couldn't parse “$token”"
+                    failed++
                     continue
                 }
                 val id = repository.track(
@@ -108,6 +124,7 @@ class FlightListViewModel @Inject constructor(
                 launch { repository.refreshStatus(id, force = true) }
             }
             if (added > 0) onFirstTrack()
+            onResult(failed == 0 && added > 0)
         }
     }
 
