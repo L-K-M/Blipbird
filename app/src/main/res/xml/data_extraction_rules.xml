@@ -3,7 +3,7 @@
   Backup boundary (PLAN.md §7/§18): include-only semantics — listing explicit
   includes means everything else (blipbird-ops.db, the encrypted provider_keys
   file, caches) is NOT backed up. User-authored intent travels; provider-derived
-  operational data and device-bound credentials never leave the device.
+  operational data and device-bound credentials are excluded from OS backup.
 -->
 <data-extraction-rules>
     <cloud-backup>

@@ -272,5 +272,8 @@ private const val ATTRIBUTION_TEXT = """Data sources & licenses:
 • Airlines: OpenTravelData (CC BY 4.0, filtered to active carriers)
 • Weather: NOAA aviationweather.gov · Weather data by Open-Meteo.com (CC BY 4.0)
 • Solar math: commons-suncalc (Apache-2.0); great-circle formulas after Chris Veness (MIT); terminator math after Leaflet.Terminator (MIT)
+
+Privacy: No Blipbird account, backend, or analytics. User-authored flights and settings may be included in Android OS backup or device transfer; operational provider data and API keys are excluded. Configured status providers receive flight identifiers, dates, and credentials as needed. ADS-B, weather, and map hosts receive their respective queries and ordinary request metadata.
+
 Airline names/codes are trademarks of their respective owners, used for identification only.
 All flight data is informational and not for navigation or operational use."""
