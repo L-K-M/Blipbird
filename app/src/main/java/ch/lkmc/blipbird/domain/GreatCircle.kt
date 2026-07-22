@@ -77,7 +77,10 @@ object GreatCircle {
                 val eastward = cur.lon - prev.lon < 0
                 val crossLon = if (eastward) 180.0 else -180.0
                 val unwrappedCurLon = if (eastward) cur.lon + 360.0 else cur.lon - 360.0
-                val frac = (crossLon - prev.lon) / (unwrappedCurLon - prev.lon)
+                // Degenerate when both vertices sit exactly on ±180°: unwrapping
+                // lands on prev.lon and the division below would produce NaN.
+                val denom = unwrappedCurLon - prev.lon
+                val frac = if (kotlin.math.abs(denom) < 1e-12) 0.0 else (crossLon - prev.lon) / denom
                 val crossLat = prev.lat + (cur.lat - prev.lat) * frac
                 segments.last() += Point(crossLat, crossLon)
                 segments += mutableListOf(Point(crossLat, -crossLon), cur)
