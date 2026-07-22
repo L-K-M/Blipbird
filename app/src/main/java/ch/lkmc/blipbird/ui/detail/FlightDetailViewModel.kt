@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -260,24 +260,27 @@ class FlightDetailViewModel @Inject constructor(
     private fun startPolling(id: Long) {
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
-            while (isActive) {
-                // Suspend (no polling, no timers) until the screen is visible again.
-                screenVisible.first { it }
-                val snap = snapshot.value
-                val view = FlightPhaseMachine.derive(snap, lastFix.value, Instant.now())
-                val interval = when (view.status) {
-                    FlightStatus.DEPARTED, FlightStatus.EN_ROUTE, FlightStatus.APPROACHING -> 10_000L
-                    FlightStatus.ON_TIME, FlightStatus.DELAYED, FlightStatus.SCHEDULED -> {
-                        val dep = snap?.depTimes?.best
-                        if (dep != null && Duration.between(Instant.now(), dep).abs() < Duration.ofHours(2)) 60_000L else 0L
+            // collectLatest cancels the inner loop the moment the screen hides,
+            // so not even an idle delay() timer outlives visibility.
+            screenVisible.collectLatest { visible ->
+                if (!visible) return@collectLatest
+                while (isActive) {
+                    val snap = snapshot.value
+                    val view = FlightPhaseMachine.derive(snap, lastFix.value, Instant.now())
+                    val interval = when (view.status) {
+                        FlightStatus.DEPARTED, FlightStatus.EN_ROUTE, FlightStatus.APPROACHING -> 10_000L
+                        FlightStatus.ON_TIME, FlightStatus.DELAYED, FlightStatus.SCHEDULED -> {
+                            val dep = snap?.depTimes?.best
+                            if (dep != null && Duration.between(Instant.now(), dep).abs() < Duration.ofHours(2)) 60_000L else 0L
+                        }
+                        else -> 0L
                     }
-                    else -> 0L
-                }
-                if (interval > 0) {
-                    repository.pollPosition(id)
-                    delay(interval)
-                } else {
-                    delay(120_000L)
+                    if (interval > 0) {
+                        repository.pollPosition(id)
+                        delay(interval)
+                    } else {
+                        delay(120_000L)
+                    }
                 }
             }
         }
