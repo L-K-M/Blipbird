@@ -38,8 +38,15 @@ class PositionProvider @Inject constructor(
             }
             try {
                 val resp = api.byUrl(url)
-                val ac = resp.ac.firstOrNull { it.lat != null && it.lon != null } ?: continue
+                // Require a non-null seenPos: a record with lat/lon but no
+                // position-timestamp can't be aged honestly, and the old code
+                // (`Instant.now().minusMillis(((seenPos ?: 0.0)*1000)...)`) treated
+                // such a record as brand-new and persisted it as the latest fix.
+                val ac = resp.ac.firstOrNull { it.lat != null && it.lon != null && it.seenPos != null }
+                    ?: continue
                 return ac.toFix(spec.name)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // fall through to the next provider
             }

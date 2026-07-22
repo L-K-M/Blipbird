@@ -40,6 +40,8 @@ class WeatherRepository @Inject constructor(
                     windGustKt = m.wgst ?: decoded.windGustKt,
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (_: Exception) {
             emptyList()
         }
@@ -81,6 +83,8 @@ class WeatherRepository @Inject constructor(
                     cruiseWindDirDeg = hourly.windDirection250.getOrNull(idx),
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (_: Exception) {
             emptyList()
         }
