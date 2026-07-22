@@ -79,7 +79,7 @@ fun FlightDetailScreen(
     LaunchedEffect(flightId) { viewModel.setFlightId(flightId) }
     // Gate the ViewModel's live-position polling on this screen actually being
     // started: stops on navigation away AND when the app goes to background.
-    LifecycleStartEffect(flightId) {
+    LifecycleStartEffect(flightId, viewModel) {
         viewModel.setScreenVisible(true)
         onStopOrDispose { viewModel.setScreenVisible(false) }
     }
