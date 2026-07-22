@@ -58,6 +58,8 @@
     <string name="last_seen_ago">Last seen %1$s ago</string>
     <string name="sunrise_at">Sunrise %1$s</string>
     <string name="sunset_at">Sunset %1$s</string>
+    <string name="ribbon_side_left">left side</string>
+    <string name="ribbon_side_right">right side</string>
     <string name="attribution_openfreemap">© OpenMapTiles © OpenStreetMap contributors</string>
 
     <!-- Settings -->
