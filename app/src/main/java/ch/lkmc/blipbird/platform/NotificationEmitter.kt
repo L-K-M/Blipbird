@@ -66,6 +66,7 @@ class NotificationEmitter @Inject constructor(
             NotificationPlanner.EventType.GATE_CHANGE,
             NotificationPlanner.EventType.CANCELLED,
             NotificationPlanner.EventType.DIVERTED -> CHANNEL_CRITICAL to settings.notifCritical.first()
+            NotificationPlanner.EventType.DELAY_RECOVERED -> CHANNEL_STATUS to settings.notifStatus.first()
             else -> CHANNEL_STATUS to settings.notifStatus.first()
         }
         if (!enabled) return
@@ -74,13 +75,18 @@ class NotificationEmitter @Inject constructor(
             NotificationPlanner.EventType.GATE_CHANGE ->
                 context.getString(R.string.notif_gate_change, event.oldValue ?: "?", event.newValue ?: "?")
             NotificationPlanner.EventType.DELAY -> {
-                val mins = event.fingerprint.substringAfter(':').toLongOrNull() ?: 0
-                context.getString(R.string.notif_delay, "${mins}m", timeString(event.newValue))
+                if (event.fingerprint == "delay:status") {
+                    context.getString(R.string.notif_delay_status_only)
+                } else {
+                    val mins = event.fingerprint.substringAfter(':').toLongOrNull() ?: 0
+                    context.getString(R.string.notif_delay, "${mins}m", timeString(event.newValue))
+                }
             }
             NotificationPlanner.EventType.CANCELLED -> context.getString(R.string.notif_cancelled)
             NotificationPlanner.EventType.DIVERTED -> context.getString(R.string.notif_diverted, event.newValue ?: "?")
             NotificationPlanner.EventType.DEPARTED -> context.getString(R.string.notif_departed, timeString(event.newValue))
             NotificationPlanner.EventType.LANDED -> context.getString(R.string.notif_landed, timeString(event.newValue))
+            NotificationPlanner.EventType.DELAY_RECOVERED -> context.getString(R.string.status_on_time)
         }
         notify(flightId, channel, designator, text)
     }

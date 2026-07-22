@@ -11,7 +11,7 @@ import java.time.Duration
  */
 object NotificationPlanner {
 
-    enum class EventType { GATE_CHANGE, DELAY, CANCELLED, DIVERTED, DEPARTED, LANDED }
+    enum class EventType { GATE_CHANGE, DELAY, CANCELLED, DIVERTED, DEPARTED, LANDED, DELAY_RECOVERED }
 
     data class Event(
         val type: EventType,
@@ -32,6 +32,19 @@ object NotificationPlanner {
         val newGate = current.depGate
         if (oldGate != null && newGate != null && oldGate != newGate) {
             events += Event(EventType.GATE_CHANGE, "gate:$newGate", oldGate, newGate)
+        }
+
+        // Status-only delay: provider says "delayed" but may not have revised times.
+        // Fires on the status transition itself; timed slip buckets fire separately.
+        if (current.status == FlightStatus.DELAYED && prev?.status != FlightStatus.DELAYED) {
+            events += Event(EventType.DELAY, "delay:status")
+        }
+
+        // Delay recovered: was delayed, now back on-schedule
+        if (prev?.status == FlightStatus.DELAYED && current.status != FlightStatus.DELAYED
+            && current.status != FlightStatus.CANCELLED && current.status != FlightStatus.DIVERTED
+        ) {
+            events += Event(EventType.DELAY_RECOVERED, "recovered")
         }
 
         // Delay vs schedule, crossing the threshold or slipping further

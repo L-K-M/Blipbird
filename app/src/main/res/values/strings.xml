@@ -107,6 +107,7 @@
     <string name="channel_reminders_desc">Check-in, boarding and landing-soon reminders</string>
     <string name="notif_gate_change">Gate %1$s → %2$s</string>
     <string name="notif_delay">Delayed %1$s — now %2$s</string>
+    <string name="notif_delay_status_only">Flight is delayed</string>
     <string name="notif_cancelled">Flight cancelled</string>
     <string name="notif_diverted">Diverted to %1$s</string>
     <string name="notif_departed">Departed at %1$s</string>
