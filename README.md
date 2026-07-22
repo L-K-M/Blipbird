@@ -1,5 +1,9 @@
 # Blipbird 🐦📡
 
+[![CI](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml/badge.svg)](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml)
+
+**Latest release:** v<!-- version -->0.1.0<!-- /version --> · [Download](https://github.com/L-K-M/Blipbird/releases/latest)
+
 **The calm, beautiful flight-day companion for Android.** Enter one or more flight
 numbers (`CA861`, `CCA861`, `CCA861/CA861`, or paste a whole list) with an optional
 date and a friendly name, and Blipbird shows a departure-board list of your
@@ -52,6 +56,13 @@ Blipbird composes free/BYO-key services — see `PLAN.md` §4 for the full strat
 | Route weather | [Open-Meteo](https://open-meteo.com/) (CC BY 4.0, non-commercial) | none |
 | Airports/airlines | bundled: OurAirports (PD) + mwgg/Airports tz (MIT) + OpenTravelData (CC BY 4.0) | — |
 
+### Generating a key for FlightAware
+
+1. Subscribe to the free tier
+2. Go to your Account
+3. Go to "Subscription"
+4. Your key will be there
+
 **Without any key** the app still works in limited mode: live map, airline/airport
 info, weather, themes — with an honest "connect a data source" CTA where status
 data would be. Paste keys in **Settings → Data sources** (stored AES-GCM-encrypted
@@ -64,12 +75,34 @@ with an Android Keystore key, excluded from backups).
 ./gradlew testDebugUnitTest    # 52 unit tests
 ```
 
+Helper scripts:
+
+```bash
+scripts/build.sh               # release APK staged into dist/ (--debug for debug)
+scripts/install-debug.sh       # build debug APK + adb install on a connected phone
+scripts/release.sh 0.2.0 --push # bump version, tag v0.2.0, push — CI publishes the release
+```
+
 Regenerate bundled reference data / icons:
 
 ```bash
 python3 scripts/generate_reference_data.py   # writes app/src/main/assets/reference/ + lockfile
 python3 scripts/generate_icons.py            # regenerates launcher mipmaps from media-sources/icon.png
 ```
+
+## Releasing
+
+`scripts/release.sh X.Y.Z --push` (a stub over the shared
+[release-tool](https://github.com/L-K-M/release-tool) engine) bumps
+`versionName`/`versionCode` in `app/build.gradle.kts` plus the version line at
+the top of this README, commits, tags `vX.Y.Z`, and pushes. The tag triggers
+[`release.yml`](.github/workflows/release.yml), which re-runs tests + lint,
+builds the release APK, signs it when the `ANDROID_KEYSTORE_BASE64` /
+`ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`
+secrets are configured (attaching an unsigned APK with a warning otherwise),
+and publishes the GitHub Release. Pull requests are additionally reviewed by
+GLM 5.2 via [`zai-code-review.yml`](.github/workflows/zai-code-review.yml)
+when the `ZAI_API_KEY` secret is set.
 
 ## Architecture
 

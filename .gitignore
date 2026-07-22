@@ -1,8 +1,10 @@
 build/
+dist/
 .gradle/
 .kotlin/
 local.properties
 .idea/
+.vscode/
 *.iml
 captures/
 .DS_Store
