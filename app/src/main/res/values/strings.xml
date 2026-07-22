@@ -24,7 +24,6 @@
     <string name="flight_archived">Flight archived</string>
     <string name="flight_deleted">Flight deleted</string>
     <string name="undo">Undo</string>
-    <string name="back">Back</string>
 
     <!-- Status words -->
     <string name="status_scheduled">Scheduled</string>
