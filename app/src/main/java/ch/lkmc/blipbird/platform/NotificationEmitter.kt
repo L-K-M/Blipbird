@@ -74,8 +74,16 @@ class NotificationEmitter @Inject constructor(
             NotificationPlanner.EventType.GATE_CHANGE ->
                 context.getString(R.string.notif_gate_change, event.oldValue ?: "?", event.newValue ?: "?")
             NotificationPlanner.EventType.DELAY -> {
-                val mins = event.fingerprint.substringAfter(':').toLongOrNull() ?: 0
-                context.getString(R.string.notif_delay, "${mins}m", timeString(event.newValue))
+                if (event.fingerprint == "delay:status") {
+                    context.getString(R.string.notif_delay_status_only)
+                } else {
+                    val realMins = (event.newValue?.let { nv ->
+                        event.oldValue?.let { ov ->
+                            runCatching { java.time.Duration.between(Instant.parse(ov), Instant.parse(nv)).toMinutes() }.getOrNull()
+                        }
+                    } ?: event.fingerprint.substringAfter(':').toLongOrNull()) ?: 0
+                    context.getString(R.string.notif_delay, "${realMins}m", timeString(event.newValue))
+                }
             }
             NotificationPlanner.EventType.CANCELLED -> context.getString(R.string.notif_cancelled)
             NotificationPlanner.EventType.DIVERTED -> context.getString(R.string.notif_diverted, event.newValue ?: "?")
