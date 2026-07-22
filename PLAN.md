@@ -32,8 +32,9 @@
 15. [Testing strategy](#15-testing-strategy)
 16. [Licensing, attribution & privacy](#16-licensing-attribution--privacy)
 17. [Risks & mitigations](#17-risks--mitigations)
-18. [Appendix A: API quick reference](#appendix-a-api-quick-reference)
-19. [Appendix B: research provenance](#appendix-b-research-provenance)
+18. [Cross-cutting concerns](#18-cross-cutting-concerns)
+19. [Appendix A: API quick reference](#appendix-a-api-quick-reference)
+20. [Appendix B: research provenance](#appendix-b-research-provenance)
 
 ---
 
@@ -56,7 +57,12 @@ Design principles:
    we explicitly design against).
 3. **Honest about data.** Free aviation data is imperfect: gates are best-effort, oceanic
    position coverage has gaps. Blipbird always shows *when* data was last updated, renders
-   missing fields gracefully ("Gate —"), and never fakes precision.
+   missing fields gracefully ("Gate —"), and never fakes precision. The same honesty
+   applies to the big constraint surfaced in §4.1: the *status* layer (schedule, gates,
+   delays, status-driven notifications) has **no fully keyless free source**, so the
+   happy path is a guided ~3-minute BYO-key setup rather than "it just works" out of the
+   box — and a genuine zero-key mode (positions, route, airline, weather) is designed as a
+   real first-class mode, not a broken state.
 4. **Private and open.** All user data (tracked flights, aliases, stats) stays on device.
    No accounts, no analytics. Permissively licensed open-source (Apache-2.0 recommended;
    license gate in §16) with reproducible builds and an F-Droid-friendly dependency set
@@ -241,13 +247,32 @@ logo source**; logos are trademarks and the free CDNs grant no license. Strategy
 3. **Never** bundle scraped logo packs in the repo. About screen carries a "logos are
    trademarks of their respective owners, used for identification only" notice.
 
-### 4.4 Airport weather — `WeatherProvider`
+### 4.4 Weather (origin, destination & en-route) — `WeatherProvider`
 
 **aviationweather.gov data API** (NOAA): free, **no API key**, worldwide METAR + TAF as
 JSON — verified, incl. rate limits (100 req/min max, ~1 req/min per endpoint sustained,
 custom User-Agent expected). Blipbird decodes METAR into plain language ("Broken clouds at
 2,500 ft, wind 12 kt gusting 22") with the raw string one tap away for avgeeks, and shows
 arrival-airport TAF as "expected weather at landing."
+
+**En-route weather (the requirement's "weather at different points in the flight").**
+Airport-only METAR/TAF covers the endpoints but not the hours in between, and flights
+routinely cross weather the airports don't see (oceanic storms, mountain-wave turbulence,
+convective SIGMETs). The `WeatherProvider` interface is therefore written to serve four
+layers, all from the same keyless NOAA/Aviation Weather Center source family, each
+independently optional so a fetch failure never blanks the section:
+
+| Layer | Source | Launch scope | Later |
+|---|---|---|---|
+| Endpoint weather | METAR + TAF at origin / destination / diversion-alternate | ✅ | — |
+| Sampled path weather | METAR at the nearest reporting stations along the great-circle route, sampled at ~4–6 points | ✅ (cheap: one batched `ids=A,B,C` request) | refine sampling by estimated passage time, not just distance |
+| Hazard intersection | **SIGMET / AIRMET** (turbulence, icing, convective, IFR) from AWC; launch lists active SIGMETs for the FIRs along the route; v2 intersects polygons with the corridor and shows "⚠ Turbulence SIGMET near waypoint ~09:40 UTC" | list at launch | polygon intersection → map overlay (graphical SIGWX) |
+| Wind at altitude | AWC **Winds/Temperature Aloft** at the planned cruise level — feeds the "why the ETA drifted" explanation and the on-time-forecast delighter | v2 (needs cruise level from the status payload) | — |
+
+Presentation rule (consistent with §1's "never fakes precision" and §9.3's calm-by-default
+semantic): hazard items are an at-a-glance list — tap for full text and affected altitude
+band — never scary banners for routine conditions, and the common case renders as a calm
+"Clear along your route."
 
 ### 4.5 Degradation matrix
 
@@ -259,6 +284,7 @@ arrival-airport TAF as "expected weather at landing."
 | Position lookup empty in-flight (oceanic gap) | "Last seen 24 min ago" + estimated ghost marker; map keeps flown track |
 | Callsign ≠ flight number (e.g. BA545 flies as BAW5GU) | Fall back to registration (from status payload) → `/v2/reg/{reg}` (adsb.fi: `/v2/registration/`), then poll by hex (see §5) |
 | Callsign ≠ flight number **in zero-key mode** (no status payload → no registration) | No silent empty map: show the route arc + an honest "live position for this airline needs a connected data source" CTA. Detect the case heuristically via a bundled flag on airlines known to fly alphanumeric ATC callsigns |
+| En-route weather fetch fails (§4.4) | Endpoint METAR/TAF still shown; sampled-path strip and hazard list hidden behind a muted "route conditions unavailable" label — never blanks endpoint weather |
 | Flight beyond a provider's window (AeroAPI = −10 d…+2 d) | Fall through to the provider that covers it (AeroDataBox: ±365 d). AeroAPI-only users adding a flight >2 days out see "full status available from 2 days before departure" plus bundled/adsbdb schedule skeleton — never a bare empty state |
 | Quota nearly exhausted | Adaptive cadence backs off; banner explains reduced freshness |
 | All providers down | Room cache renders last-known everything + "last updated" stamp |
@@ -432,7 +458,7 @@ tier transitions cancel-and-re-enqueue the periodic WorkManager request:
 | Window (non-overlapping) | Status fetch cadence | Position cadence |
 |---|---|---|
 | > 48 h out | on app open / manual only | — |
-| 48 h → 24 h | every 6 h, **only on days the app was opened** | — |
+| 48 h → 24 h | every 6 h, periodic worker armed on app open in this band (a flight never viewed during the window isn't backfilled) | — |
 | 24 h → 3 h | every 3 h | — |
 | 3 h → T−75 min | every 30 min | — |
 | **Gate-critical: T−75 min → T+30 min** | every 15 min (WorkManager floor; tighter with exact-alarm grant, see §12.2) | 30–60 s if map open |
@@ -508,7 +534,10 @@ Ordered by usefulness (Flighty-verified order, plus our additions):
 4. **Inbound aircraft** *(v2, Flighty's most-praised anxiety-killer)*: "Your plane is
    arriving from Shanghai as CA1858, lands 12:40" — derived from the registration's previous
    leg; late-inbound warning feeds the delay heads-up.
-5. **Weather**: decoded METAR now at both airports; arrival TAF as "expected at landing."
+5. **Weather**: decoded METAR now at both airports; arrival TAF as "expected at landing,"
+   plus the en-route weather strip from §4.4 — sampled-path conditions and (later) any
+   SIGMET/AIRMET intersecting the corridor, summarized as a calm "Clear along your route"
+   when there's nothing notable.
 6. **Airport health chip** *(v2)*: "PEK: departures averaging +40 min right now."
 7. **About the airline**: name, alliance, radio callsign ("AIR CHINA"), contact links.
 8. **Share / Pickup mode**: read-only big-type card (ETA · terminal · progress) exportable
@@ -719,15 +748,18 @@ locally accumulated snapshots · AR "point at the sky" long-shot.
 - **Unit (JVM, the bulk):** designator parser (property-based: round-trip IATA↔ICAO,
   ambiguity cases), `FlightPhaseMachine` transition table, `NotificationPlanner`
   (given-snapshot-diff-expect-events, dedup ledger), quota ledger, adaptive scheduler,
-  METAR decoder, great-circle/terminator math.
+  METAR decoder, **route-sampling + SIGMET-list reduction for §4.4**, unit-conversion
+  matrix per locale override, great-circle/terminator math.
 - **Provider contract tests:** recorded JSON fixtures per provider (happy path, missing
   gates, cancelled, diverted, codeshare, empty `ac[]`, 429) run against the DTO mappers;
   a nightly *live* smoke workflow (opt-in CI job) pings each free API so provider drift is
   caught before users see it.
 - **Repository/integration:** Room in-memory + fake providers; failover chains under
-  injected faults; snapshot-diff event emission.
+  injected faults; snapshot-diff event emission; **en-route weather layers fail down to
+  endpoint-only without taking the section down**.
 - **UI:** Compose testing for list/detail states (loading, degraded, disrupted); screenshot
-  tests per theme × light/dark via Paparazzi (JVM, fast, no emulator).
+  tests per theme × light/dark via Paparazzi (JVM, fast, no emulator), **including an RTL
+  locale and the `EXPANDED` two-pane layout**.
 - **E2E happy path:** Maestro flow on CI emulator — add flight (fixture-backed via
   test-only `FakeProviders` build flavor), see list, open detail, pull-to-refresh.
 - **Manual flight-day protocol:** a checklist run against a real tracked flight before each
@@ -782,6 +814,50 @@ locally accumulated snapshots · AR "point at the sky" long-shot.
 
 ---
 
+## 18. Cross-cutting concerns
+
+Concerns that touch every screen and don't fit cleanly into one section above.
+
+- **Internationalization & locale-aware units.** Blipbird launches in English but
+  externalizes all strings (`strings.xml`, zero hardcoded UI text). Units follow the device
+  locale *and* a manual override in Settings: distance (km / nm / mi), altitude (ft / m),
+  speed (kt / km·h / mph), temperature (°C / °F), pressure (hPa / inHg). Airport names
+  render in the device locale where the reference data has a translation, falling back to
+  the English/ICAO name. Times use `java.time` locale-aware formatters; the countdown stays
+  locale-neutral ("2 h 14 m") for compactness. RTL layouts (Arabic/Hebrew) are validated in
+  the Paparazzi screenshot gate.
+- **Large screens & foldables.** Nav3's adaptive scaffold gets a two-pane list-detail
+  layout at the `MEDIUM`/`EXPANDED` window-size class (tablets, unfolded foldables,
+  ChromeOS), with the map pinnable to a side pane on `EXPANDED`; phone stays single-pane.
+  Most of this is free from Nav3 — the cost is a handful of responsive `WindowSizeClass`
+  branches in the list/detail composables, scoped as an M4 polish task.
+- **Battery & network-aware polling.** The §8 cadence is a *ceiling*, not a target. The
+  refresh engine reads `ConnectivityManager` + `PowerManager`: on **metered cellular** the
+  foreground map poll widens to ~20–30 s and non-urgent background status fetches are
+  constrained to `UNMETERED` (unless a gate-critical anchor is pending); in **low-battery
+  / saver** mode the position poll pauses even with the map open and the staleness/ghost
+  indicator takes over. These are config knobs in the refresh engine so they're tunable
+  without touching call sites.
+- **Data portability & backup.** Because all user data is on-device with no account,
+  switching phones would silently lose tracked flights, aliases, and history. M4 adds
+  manual **Export/Import** (JSON via SAF `ACTION_CREATE_DOCUMENT` / `ACTION_OPEN_DOCUMENT`)
+  covering `TrackedFlight`, `SavedFlight`, `NotificationProfile`, and the opt-in
+  `FlightLogEntry` history — **never API keys** (those are re-entered on the new device).
+  `fullBackupContent` rules include the Room DB and DataStore so Android Auto Backup
+  restores across devices for users who haven't opted out; Keystore-protected keys are
+  device-bound by design and won't migrate, so the app re-prompts on restore.
+- **Performance budgets.** Targets enforced in CI: cold start to first frame < 1.5 s on a
+  mid-range device (Baseline Profile + androidx Startup), map marker tween at 60 fps with
+  no frame > 32 ms during interpolation, AAB download size < 12 MB (bundled reference data
+  ~1 MB; logos fetched at runtime), and `macrobenchmark` regressions gating release.
+- **First-run onboarding.** A single linear flow ties the pieces from across sections
+  together: theme pick (Daylight / Dynamic / Cockpit) → add a sample flight (demo data) →
+  notification-permission rationale → BYO-key setup (the §4.1 guided happy path, skippable
+  into limited mode). Every step is one-tap skippable and the whole flow is re-enterable
+  from Settings.
+
+---
+
 ## Appendix A: API quick reference
 
 | Purpose | Endpoint | Auth | Limit |
@@ -795,6 +871,8 @@ locally accumulated snapshots · AR "point at the sky" long-shot.
 | Callsign→route/airline | `GET api.adsbdb.com/v0/callsign/{cs}` | none | unpublished; cache |
 | Hex/route fallback | `GET hexdb.io/api/v1/route/icao/{cs}` | none | 1,000 / 5 min |
 | METAR/TAF | `GET aviationweather.gov/api/data/metar?ids={icao}&format=json` | none (custom UA) | 100/min hard, ~1/min sustained |
+| En-route weather (batched METAR at sampled path stations) | `GET aviationweather.gov/api/data/metar?ids={A,B,C}&format=json` | none (custom UA) | same 100/min budget — one batched call covers the whole path |
+| SIGMET/AIRMET (active hazards along the route) | `aviationweather.gov` data API (SIGMET/AIRMET dataset; exact path to be pinned in M3 when the hazard list ships) | none (custom UA) | same source; cache 10–15 min |
 | Map tiles | `https://tiles.openfreemap.org/styles/{liberty|dark|positron}` | none | unlimited (no SLA) |
 | Airline logo (optional) | `https://pics.avs.io/{w}/{h}/{IATA}.png` | none | unofficial; monogram fallback |
 
