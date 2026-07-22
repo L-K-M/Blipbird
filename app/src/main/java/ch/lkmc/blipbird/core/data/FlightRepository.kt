@@ -73,6 +73,12 @@ class FlightRepository @Inject constructor(
 
     suspend fun archive(id: Long) = trackedDao.archive(id)
 
+    suspend fun unarchive(id: Long) = trackedDao.unarchive(id)
+
+    /** Re-inserts a deleted flight (undo); provider data refetches on next refresh. */
+    suspend fun restore(flight: TrackedFlightEntity): Long =
+        trackedDao.insert(flight.copy(id = 0))
+
     suspend fun delete(id: Long) {
         trackedDao.delete(id)
         snapshotDao.deleteForFlight(id)

@@ -11,6 +11,7 @@ import ch.lkmc.blipbird.core.model.StatusSnapshot
 import ch.lkmc.blipbird.core.model.TrackRequest
 import ch.lkmc.blipbird.domain.DesignatorParser
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
+import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +37,7 @@ data class FlightRow(
     val view: FlightPhaseMachine.View,
     val gate: String?,
     val terminal: String?,
+    val baggageBelt: String?,      // shown instead of gate once landed
     val updatedAt: Instant?,
     val airlineIata: String?,
 )
@@ -52,6 +54,7 @@ data class ListUiState(
 class FlightListViewModel @Inject constructor(
     private val repository: FlightRepository,
     private val identity: IdentityResolver,
+    private val reminders: ReminderScheduler,
     keyStore: ProviderKeyStore,
 ) : ViewModel() {
 
@@ -84,6 +87,7 @@ class FlightListViewModel @Inject constructor(
                 view = view,
                 gate = snapshot?.depGate,
                 terminal = snapshot?.depTerminal,
+                baggageBelt = snapshot?.baggageBelt,
                 updatedAt = snapshot?.fetchedAt,
                 airlineIata = designator.airlineIata,
             )
@@ -124,7 +128,31 @@ class FlightListViewModel @Inject constructor(
         }
     }
 
-    fun archive(id: Long) = viewModelScope.launch { repository.archive(id) }
-    fun delete(id: Long) = viewModelScope.launch { repository.delete(id) }
+    /** Kept for the snackbar's undo after a swipe-delete. */
+    private var lastDeleted: TrackedFlightEntity? = null
+
+    fun archive(id: Long) = viewModelScope.launch {
+        reminders.cancel(id)
+        repository.archive(id)
+    }
+
+    fun unarchive(id: Long) = viewModelScope.launch {
+        repository.unarchive(id)
+        reminders.reconcile(id)
+    }
+
+    fun delete(id: Long) = viewModelScope.launch {
+        lastDeleted = repository.flight(id)
+        reminders.cancel(id)
+        repository.delete(id)
+    }
+
+    fun undoDelete() = viewModelScope.launch {
+        val flight = lastDeleted ?: return@launch
+        lastDeleted = null
+        val id = repository.restore(flight)
+        repository.refreshStatus(id, force = true)
+    }
+
     fun clearAddError() { addError.value = null }
 }

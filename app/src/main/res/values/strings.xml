@@ -15,6 +15,9 @@
     <string name="updated_never">Not updated yet</string>
     <string name="archive">Archive</string>
     <string name="delete">Delete</string>
+    <string name="flight_archived">Flight archived</string>
+    <string name="flight_deleted">Flight deleted</string>
+    <string name="undo">Undo</string>
 
     <!-- Status words -->
     <string name="status_scheduled">Scheduled</string>
