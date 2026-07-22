@@ -39,6 +39,11 @@
     <string name="baggage_belt">Baggage</string>
     <string name="aircraft">Aircraft</string>
     <string name="registration">Registration</string>
+    <string name="departs">Departs</string>
+    <string name="arrives">Arrives</string>
+    <string name="route_distance">Route</string>
+    <string name="duration">Duration</string>
+    <string name="observed_ago">observed %1$s ago</string>
     <string name="value_unknown">—</string>
     <string name="timeline">Timeline</string>
     <string name="timeline_scheduled">Sched</string>

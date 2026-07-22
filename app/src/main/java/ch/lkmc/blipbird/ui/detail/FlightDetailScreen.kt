@@ -3,6 +3,8 @@ package ch.lkmc.blipbird.ui.detail
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,15 +20,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Flight
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.outlined.DoorFront
 import androidx.compose.material.icons.outlined.Luggage
 import androidx.compose.material.icons.outlined.Domain
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.filled.FlightLand
 import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -61,12 +67,14 @@ import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.agoText
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.localTime
+import ch.lkmc.blipbird.ui.components.monogramColor
 import ch.lkmc.blipbird.ui.map.MapLibreRouteMap
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,47 +111,71 @@ fun FlightDetailScreen(
             onRefresh = { viewModel.refresh() },
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                item { Hero(state) }
-                item { MapCard(state) }
-                item { KeyFacts(state) }
-                item { Timeline(state) }
-                state.daylight?.let { day ->
-                    item {
-                        SectionCard(stringResource(R.string.flight_ribbon)) {
-                            FlightRibbon(
-                                daylight = day,
-                                weather = state.routeWeather,
-                                depCode = state.depAirport?.code ?: "",
-                                arrCode = state.arrAirport?.code ?: "",
-                                progress = state.view.progress,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                if (state.routeWeather.isNotEmpty()) "Weather data by Open-Meteo.com (CC BY 4.0)"
-                                else stringResource(R.string.weather_route_pending),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                // Tablet / landscape: pair the equal-height card couples side by side.
+                val wide = maxWidth >= 620.dp
+                val hasWeather = state.airportWeather.isNotEmpty()
+                val hasAirline = state.airlineName != null
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    item { Hero(state) }
+                    item { MapCard(state) }
+                    if (wide && state.snapshot != null) {
+                        item {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Box(Modifier.weight(1f)) { KeyFacts(state) }
+                                Spacer(Modifier.width(14.dp))
+                                Box(Modifier.weight(1f)) { Timeline(state) }
+                            }
+                        }
+                    } else {
+                        item { KeyFacts(state) }
+                        item { Timeline(state) }
+                    }
+                    state.daylight?.let { day ->
+                        item {
+                            SectionCard(stringResource(R.string.flight_ribbon)) {
+                                FlightRibbon(
+                                    daylight = day,
+                                    weather = state.routeWeather,
+                                    depCode = state.depAirport?.code ?: "",
+                                    arrCode = state.arrAirport?.code ?: "",
+                                    progress = state.view.progress,
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    if (state.routeWeather.isNotEmpty()) "Weather data by Open-Meteo.com (CC BY 4.0)"
+                                    else stringResource(R.string.weather_route_pending),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
-                }
-                if (state.airportWeather.isNotEmpty()) {
-                    item { WeatherCard(state) }
-                }
-                item { AirlineCard(state) }
-                item {
-                    Text(
-                        state.updatedAt?.let { stringResource(R.string.updated_ago, agoText(it)) }
-                            ?: stringResource(R.string.updated_never),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (wide && hasWeather && hasAirline) {
+                        item {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Box(Modifier.weight(1f)) { WeatherCard(state) }
+                                Spacer(Modifier.width(14.dp))
+                                Box(Modifier.weight(1f)) { AirlineCard(state) }
+                            }
+                        }
+                    } else {
+                        if (hasWeather) item { WeatherCard(state) }
+                        if (hasAirline) item { AirlineCard(state) }
+                    }
+                    item {
+                        Text(
+                            state.updatedAt?.let { stringResource(R.string.updated_ago, agoText(it)) }
+                                ?: stringResource(R.string.updated_never),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }
@@ -151,8 +183,10 @@ fun FlightDetailScreen(
 }
 
 @Composable
-private fun SectionCard(title: String, content: @Composable () -> Unit) {
+private fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Card(
+        // fillMaxWidth so content-sized cards (weather, airline) align with the rest.
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
     ) {
@@ -362,10 +396,17 @@ private fun MapCard(state: DetailUiState) {
 @Composable
 private fun KeyFacts(state: DetailUiState) {
     val s = state.snapshot ?: return
+    // Airport-LOCAL wall-clock time + date; the date makes red-eyes and
+    // date-line crossings unambiguous without a +1/−1 marker.
+    fun timeDate(at: Instant?, tz: String?): String? = at?.let {
+        val zone = zoneOf(tz)
+        localTime(it, zone) + " · " + DateTimeFormatter.ofPattern("EEE d MMM").withZone(zone).format(it)
+    }
     SectionCard(stringResource(R.string.key_facts)) {
         Row(Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
                 FactsHeader(Icons.Filled.FlightTakeoff, stringResource(R.string.departure))
+                Fact(Icons.Outlined.Schedule, stringResource(R.string.departs), timeDate(s.depTimes.best, state.depAirport?.tz))
                 Fact(Icons.Outlined.Domain, stringResource(R.string.terminal), s.depTerminal)
                 Fact(Icons.Outlined.DoorFront, stringResource(R.string.gate), s.depGate)
                 Fact(Icons.Outlined.Tag, stringResource(R.string.check_in), s.depCheckInDesk)
@@ -373,6 +414,7 @@ private fun KeyFacts(state: DetailUiState) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 FactsHeader(Icons.Filled.FlightLand, stringResource(R.string.arrival))
+                Fact(Icons.Outlined.Schedule, stringResource(R.string.arrives), timeDate(s.arrTimes.best, state.arrAirport?.tz))
                 Fact(Icons.Outlined.Domain, stringResource(R.string.terminal), s.arrTerminal)
                 Fact(Icons.Outlined.DoorFront, stringResource(R.string.gate), s.arrGate)
                 Fact(Icons.Outlined.Luggage, stringResource(R.string.baggage_belt), s.baggageBelt)
@@ -573,35 +615,152 @@ private fun zoneOf(tz: String?): ZoneId =
 private fun WeatherCard(state: DetailUiState) {
     SectionCard(stringResource(R.string.weather)) {
         state.airportWeather.forEachIndexed { i, w ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.foundation.layout.Box(
-                    Modifier.size(34.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(w.stationId.takeLast(3), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text(w.decoded, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                    Text(
-                        w.rawMetar,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            val isDep = w.stationId.equals(state.depAirport?.icao, ignoreCase = true)
+            val airport = if (isDep) state.depAirport else state.arrAirport
+            WeatherStation(
+                w = w,
+                roleIcon = if (isDep) Icons.Filled.FlightTakeoff else Icons.Filled.FlightLand,
+                code = airport?.code ?: w.stationId,
+                place = airport?.city ?: airport?.name,
+            )
+            if (i != state.airportWeather.lastIndex) {
+                HorizontalDivider(
+                    Modifier.padding(vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                )
             }
-            if (i != state.airportWeather.lastIndex) Spacer(Modifier.height(10.dp))
         }
     }
 }
 
 @Composable
+private fun WeatherStation(
+    w: ch.lkmc.blipbird.core.model.AirportWeather,
+    roleIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    code: String,
+    place: String?,
+) {
+    val cs = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            w.temperatureC?.let { "${it.roundToInt()}°" } ?: "–",
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+            color = cs.onSurface,
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(roleIcon, contentDescription = null, modifier = Modifier.size(14.dp), tint = cs.primary)
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    listOfNotNull(code, place).joinToString(" · "),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Text(
+                w.decoded,
+                style = MaterialTheme.typography.bodyMedium,
+                color = cs.onSurfaceVariant,
+            )
+            w.observedAt?.let {
+                Text(
+                    stringResource(R.string.observed_ago, agoText(it)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = cs.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+            }
+        }
+        if (w.windSpeedKt != null) {
+            Spacer(Modifier.width(10.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // METAR wind is FROM a direction; the arrow shows where it blows TO.
+                Icon(
+                    Icons.Filled.Navigation,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .rotate((((w.windDirDeg ?: 0) + 180) % 360).toFloat()),
+                    tint = cs.primary,
+                )
+                Text(
+                    "${w.windSpeedKt} kt" + (w.windGustKt?.let { " G$it" } ?: ""),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+    Text(
+        w.rawMetar,
+        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+    )
+}
+
+@Composable
 private fun AirlineCard(state: DetailUiState) {
     val name = state.airlineName ?: return
+    val s = state.snapshot
     SectionCard(stringResource(R.string.airline)) {
-        Text(name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-        state.snapshot?.registration?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val mono = state.airlineIata ?: state.airlineIcao ?: name.take(2)
+            Box(
+                Modifier.size(44.dp).background(monogramColor(mono), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    mono.take(2).uppercase(),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                val codes = listOfNotNull(
+                    state.airlineIata?.let { "IATA $it" },
+                    state.airlineIcao?.let { "ICAO $it" },
+                ).joinToString("  ·  ")
+                if (codes.isNotEmpty()) {
+                    Text(codes, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
+        // Route stats: great-circle distance (provider's, else computed) + block time.
+        val dep = state.depAirport
+        val arr = state.arrAirport
+        val distanceKm = s?.greatCircleKm
+            ?: if (dep?.lat != null && dep.lon != null && arr?.lat != null && arr.lon != null)
+                GreatCircle.distanceKm(GreatCircle.Point(dep.lat!!, dep.lon!!), GreatCircle.Point(arr.lat!!, arr.lon!!))
+            else null
+        val blockTime = s?.depTimes?.best?.let { d -> s.arrTimes.best?.let { a -> Duration.between(d, a) } }
+            ?.takeIf { !it.isNegative && !it.isZero }
+        val pills = listOfNotNull(
+            distanceKm?.let { stringResource(R.string.route_distance) to "${"%,d".format(it.roundToInt())} km" },
+            blockTime?.let { stringResource(R.string.duration) to countdownText(it) },
+        )
+        if (pills.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pills.forEach { (label, value) -> StatPill(label, value) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatPill(label: String, value: String) {
+    val cs = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .background(cs.surface.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    ) {
+        Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant)
     }
 }

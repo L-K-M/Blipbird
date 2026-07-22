@@ -40,6 +40,8 @@ data class DetailUiState(
     val designator: String = "",
     val alias: String? = null,
     val airlineName: String? = null,
+    val airlineIata: String? = null,
+    val airlineIcao: String? = null,
     val snapshot: StatusSnapshot? = null,
     val view: FlightPhaseMachine.View =
         FlightPhaseMachine.derive(null, null, Instant.EPOCH),
@@ -131,15 +133,16 @@ class FlightDetailViewModel @Inject constructor(
         val airline = values[9] as String?
         val busy = values[10] as Boolean
 
-        val designator = flight?.let {
-            Designator(it.designatorIata, it.designatorIcao, it.flightNumber, it.suffix).display
-        } ?: ""
+        val d = flight?.let { Designator(it.designatorIata, it.designatorIcao, it.flightNumber, it.suffix) }
+        val designator = d?.display ?: ""
         DetailUiState(
             flightId = id,
             title = flight?.alias ?: designator,
             designator = designator,
             alias = flight?.alias,
             airlineName = airline,
+            airlineIata = d?.airlineIata,
+            airlineIcao = d?.airlineIcao,
             snapshot = snap,
             view = FlightPhaseMachine.derive(snap, fix, Instant.now()),
             depAirport = dep ?: snap?.departure,
