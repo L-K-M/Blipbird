@@ -89,7 +89,19 @@ class FlightRepository @Inject constructor(
 
     suspend fun archive(id: Long) = trackedDao.archive(id)
 
+<<<<<<< HEAD
     suspend fun setAlias(id: Long, alias: String?) = trackedDao.setAlias(id, alias?.trim()?.takeIf { it.isNotEmpty() })
+=======
+    suspend fun unarchive(id: Long) = trackedDao.unarchive(id)
+
+    /**
+     * Re-inserts a deleted flight (undo) as a fresh row with a new id. Snapshot
+     * history and reminder state were intentionally dropped by [delete]; the
+     * caller refreshes (and reconciles reminders) to repopulate them.
+     */
+    suspend fun restore(flight: TrackedFlightEntity): Long =
+        trackedDao.insert(flight.copy(id = 0))
+>>>>>>> origin/claude/feat-list-management
 
     suspend fun delete(id: Long) {
         trackedDao.delete(id)

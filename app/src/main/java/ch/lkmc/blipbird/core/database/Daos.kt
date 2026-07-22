@@ -26,6 +26,9 @@ interface TrackedFlightDao {
     @Query("UPDATE tracked_flight SET archived = 1 WHERE id = :id")
     suspend fun archive(id: Long)
 
+    @Query("UPDATE tracked_flight SET archived = 0 WHERE id = :id")
+    suspend fun unarchive(id: Long)
+
     @Query("DELETE FROM tracked_flight WHERE id = :id")
     suspend fun delete(id: Long)
 

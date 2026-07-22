@@ -18,6 +18,9 @@
     <string name="rename">Rename</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
+    <string name="flight_archived">Flight archived</string>
+    <string name="flight_deleted">Flight deleted</string>
+    <string name="undo">Undo</string>
 
     <!-- Status words -->
     <string name="status_scheduled">Scheduled</string>

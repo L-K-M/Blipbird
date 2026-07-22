@@ -6,6 +6,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,7 +25,11 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,6 +39,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -45,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,12 +70,15 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
+import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.monogramColor
+import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 import ch.lkmc.blipbird.ui.theme.SkyPalette
+import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -80,6 +93,33 @@ fun FlightListScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showAddSheet by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    val archivedMsg = stringResource(R.string.flight_archived)
+    val deletedMsg = stringResource(R.string.flight_deleted)
+    val undoLabel = stringResource(R.string.undo)
+
+    // Undoable actions, shared by swipes and the long-press menu.
+    fun archiveWithUndo(id: Long) {
+        viewModel.archive(id)
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = archivedMsg, actionLabel = undoLabel, duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) viewModel.unarchive(id)
+        }
+    }
+
+    fun deleteWithUndo(id: Long) {
+        viewModel.delete(id)
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = deletedMsg, actionLabel = undoLabel, duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -92,6 +132,7 @@ fun FlightListScreen(
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddSheet = true }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_flight))
@@ -104,18 +145,34 @@ fun FlightListScreen(
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
             if (state.rows.isEmpty()) {
-                EmptyState(Modifier.fillMaxSize())
+                Column(Modifier.fillMaxSize()) {
+                    if (!state.hasStatusKey) {
+                        DataSourceCta(
+                            onOpenSettings = onOpenSettings,
+                            modifier = Modifier.padding(horizontal = 16.dp).padding(top = 16.dp),
+                        )
+                    }
+                    EmptyState(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        onAdd = { showAddSheet = true },
+                    )
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                    // Extra bottom room so the FAB never covers the last card.
+                    contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
                 ) {
+                    if (!state.hasStatusKey) {
+                        item(key = "data-source-cta") { DataSourceCta(onOpenSettings) }
+                    }
                     items(state.rows, key = { it.id }) { row ->
                         DismissibleFlightCard(
                             row = row,
                             onClick = { onOpenFlight(row.id) },
-                            onDelete = { viewModel.delete(row.id) },
+                            onArchive = { archiveWithUndo(row.id) },
+                            onDelete = { deleteWithUndo(row.id) },
                             onRename = { alias -> viewModel.rename(row.id, alias) },
                             modifier = Modifier.animateItem(),
                         )
@@ -137,17 +194,26 @@ fun FlightListScreen(
     }
 }
 
+/**
+ * Swipe right → archive (green, undoable), swipe left → delete (red, undoable);
+ * long-press → menu with rename / archive / delete.
+ */
 @Composable
 private fun DismissibleFlightCard(
     row: FlightRow,
     onClick: () -> Unit,
+    onArchive: () -> Unit,
     onDelete: () -> Unit,
     onRename: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) { onDelete(); true } else false
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> { onArchive(); true }
+                SwipeToDismissBoxValue.EndToStart -> { onDelete(); true }
+                SwipeToDismissBoxValue.Settled -> false
+            }
         },
     )
     var menuOpen by remember { mutableStateOf(false) }
@@ -156,23 +222,7 @@ private fun DismissibleFlightCard(
     SwipeToDismissBox(
         state = dismissState,
         modifier = modifier,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(Color(0xFFC62828)),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Icon(
-                    Icons.Filled.Delete,
-                    contentDescription = stringResource(R.string.delete),
-                    tint = Color.White,
-                    modifier = Modifier.padding(end = 26.dp),
-                )
-            }
-        },
+        backgroundContent = { SwipeBackground(dismissState.dismissDirection) },
     ) {
         Box {
             FlightRowCard(row, onClick = onClick, onLongClick = { menuOpen = true })
@@ -181,6 +231,11 @@ private fun DismissibleFlightCard(
                     text = { Text(stringResource(R.string.rename)) },
                     leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
                     onClick = { menuOpen = false; renameOpen = true },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.archive)) },
+                    leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
+                    onClick = { menuOpen = false; onArchive() },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
@@ -200,6 +255,63 @@ private fun DismissibleFlightCard(
             onDismiss = { renameOpen = false },
             onSave = { renameOpen = false; onRename(it) },
         )
+    }
+}
+
+@Composable
+private fun SwipeBackground(direction: SwipeToDismissBoxValue) {
+    val ext = LocalExtendedColors.current
+    val (color, icon, alignment) = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd ->
+            Triple(ext.statusOnTime, Icons.Outlined.Archive, Alignment.CenterStart)
+        SwipeToDismissBoxValue.EndToStart ->
+            Triple(ext.statusCancelled, Icons.Filled.Delete, Alignment.CenterEnd)
+        SwipeToDismissBoxValue.Settled -> Triple(Color.Transparent, null, Alignment.Center)
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(26.dp))
+            .background(color)
+            .padding(horizontal = 26.dp),
+        contentAlignment = alignment,
+    ) {
+        icon?.let {
+            Icon(
+                it,
+                contentDescription = if (direction == SwipeToDismissBoxValue.StartToEnd)
+                    stringResource(R.string.archive) else stringResource(R.string.delete),
+                tint = Color.White,
+            )
+        }
+    }
+}
+
+/** Shown while no status API key is configured (README's promised honest CTA). */
+@Composable
+private fun DataSourceCta(onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.onboarding_keys_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.onboarding_keys_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onOpenSettings) { Text(stringResource(R.string.settings)) }
+            }
+        }
     }
 }
 
@@ -324,12 +436,18 @@ private fun FlightRowCard(row: FlightRow, onClick: () -> Unit, onLongClick: () -
                 color = sky.content,
             )
             Spacer(Modifier.weight(1f))
-            val gateLine = listOfNotNull(
-                row.terminal?.let { "${stringResource(R.string.terminal)} $it" },
-                row.gate?.let { "${stringResource(R.string.gate)} $it" },
-            ).joinToString("  ·  ")
-            if (gateLine.isNotEmpty()) {
-                Text(gateLine, style = MaterialTheme.typography.labelMedium, color = sky.contentDim)
+            // Landed: the useful fact is the baggage belt; otherwise terminal/gate.
+            val landed = row.view.status == FlightStatus.LANDED || row.view.status == FlightStatus.ARRIVED
+            val factLine = if (landed) {
+                row.baggageBelt?.let { "${stringResource(R.string.baggage_belt)} $it" }.orEmpty()
+            } else {
+                listOfNotNull(
+                    row.terminal?.let { "${stringResource(R.string.terminal)} $it" },
+                    row.gate?.let { "${stringResource(R.string.gate)} $it" },
+                ).joinToString("  ·  ")
+            }
+            if (factLine.isNotEmpty()) {
+                Text(factLine, style = MaterialTheme.typography.labelMedium, color = sky.contentDim)
             }
         }
     }
@@ -414,7 +532,7 @@ private fun Monogram(code: String) {
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
+private fun EmptyState(modifier: Modifier = Modifier, onAdd: () -> Unit) {
     Column(modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Icon(Icons.Filled.Flight, contentDescription = null, modifier = Modifier.size(56.dp),
             tint = MaterialTheme.colorScheme.primary)
@@ -427,5 +545,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Spacer(Modifier.height(20.dp))
+        Button(onClick = onAdd) { Text(stringResource(R.string.add_flight)) }
     }
 }
