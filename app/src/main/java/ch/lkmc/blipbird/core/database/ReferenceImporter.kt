@@ -10,16 +10,30 @@ import javax.inject.Singleton
 /**
  * Loads the bundled reference CSVs (assets/reference/, produced by
  * scripts/generate_reference_data.py) into the ops database. Idempotent; runs at
- * startup when the tables are empty.
+ * startup when the tables are empty OR when the bundled dataset changed — the
+ * lockfile fingerprint of the last import is kept so an app update with
+ * regenerated CSVs re-imports instead of serving first-install data forever.
  */
 @Singleton
 class ReferenceImporter @Inject constructor(
     @ApplicationContext private val context: Context,
     private val ops: OpsDatabase,
 ) {
+    private companion object {
+        const val PREFS = "reference_import"
+        const val KEY_FINGERPRINT = "lockfile_fingerprint"
+        const val LOCKFILE = "reference/data-sources.lock.json"
+    }
+
     suspend fun ensureImported() = withContext(Dispatchers.IO) {
         val dao = ops.referenceDao()
-        if (dao.airportCount() > 0) return@withContext
+        val fingerprint = lockfileFingerprint()
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (dao.airportCount() > 0 && prefs.getString(KEY_FINGERPRINT, null) == fingerprint) {
+            return@withContext
+        }
+        dao.clearAirports()
+        dao.clearAirlines()
 
         context.assets.open("reference/airports.csv").bufferedReader().useLines { lines ->
             val batch = ArrayList<AirportEntity>(1024)
@@ -57,7 +71,20 @@ class ReferenceImporter @Inject constructor(
             }
             if (batch.isNotEmpty()) dao.insertAirlines(batch)
         }
+
+        prefs.edit().putString(KEY_FINGERPRINT, fingerprint).apply()
     }
+
+    /**
+     * Fingerprint of the bundled dataset: an MD5 of the provenance lockfile,
+     * which the generator rewrites (fetch date, sha256 per source) whenever the
+     * CSVs are regenerated.
+     */
+    private fun lockfileFingerprint(): String = runCatching {
+        val bytes = context.assets.open(LOCKFILE).readBytes()
+        java.security.MessageDigest.getInstance("MD5").digest(bytes)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }.getOrDefault("missing-lockfile")
 
     /** Minimal RFC-4180 line parser (fields may be quoted and contain commas). */
     private fun parseCsvLine(line: String): List<String> {
