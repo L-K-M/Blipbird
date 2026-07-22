@@ -17,12 +17,15 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.LightBand
 import ch.lkmc.blipbird.core.model.SunEvent
 import ch.lkmc.blipbird.core.model.SunEventType
 import ch.lkmc.blipbird.core.model.WeatherSample
 import ch.lkmc.blipbird.domain.DaylightEngine
+import ch.lkmc.blipbird.domain.GreatCircle
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 
@@ -101,9 +104,18 @@ fun FlightRibbon(
         Row(Modifier.fillMaxWidth()) {
             Text(depCode, style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.weight(1f))
+            val leftSide = stringResource(R.string.ribbon_side_left)
+            val rightSide = stringResource(R.string.ribbon_side_right)
             daylight.events.forEach { e ->
+                // The sun's azimuth vs the course at the event point tells the
+                // passenger which side of the cabin the show is on.
+                val side = when (cabinSide(e, daylight)) {
+                    CabinSide.LEFT -> " · $leftSide"
+                    CabinSide.RIGHT -> " · $rightSide"
+                    null -> ""
+                }
                 Text(
-                    (if (e.type == SunEventType.SUNRISE) "🌅 " else "🌇 ") + localTime(e.at),
+                    (if (e.type == SunEventType.SUNRISE) "🌅 " else "🌇 ") + localTime(e.at) + side,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -112,6 +124,33 @@ fun FlightRibbon(
             Spacer(Modifier.weight(1f))
             Text(arrCode, style = MaterialTheme.typography.labelMedium)
         }
+    }
+}
+
+private enum class CabinSide { LEFT, RIGHT }
+
+/**
+ * Which side of the cabin a sun event is visible from, or null when the sun sits
+ * near dead ahead/astern (within ~20°), where naming a side would mislead.
+ * Course is estimated from the route samples bracketing the event instant.
+ */
+private fun cabinSide(event: SunEvent, daylight: DaylightEngine.Result): CabinSide? {
+    val samples = daylight.samples
+    if (samples.size < 2) return null
+    var idx = samples.indexOfFirst { it.at > event.at }
+    if (idx == -1) idx = samples.lastIndex
+    if (idx == 0) idx = 1
+    val a = samples[idx - 1]
+    val b = samples[idx]
+    val course = GreatCircle.initialBearing(
+        GreatCircle.Point(a.lat, a.lon),
+        GreatCircle.Point(b.lat, b.lon),
+    )
+    val relative = (event.azimuthDeg - course + 360.0) % 360.0
+    return when {
+        relative in 20.0..160.0 -> CabinSide.RIGHT
+        relative in 200.0..340.0 -> CabinSide.LEFT
+        else -> null
     }
 }
 
