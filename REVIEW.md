@@ -1,12 +1,12 @@
 # Blipbird — Review findings & work backlog
 
 The living successor to the July 2026 review documents: the Fable full-codebase
-review (`fable.md`, added and consolidated on the review branch), the GLM 5.2
-review (`glm.md`, committed briefly on `glm/metar-decoder` — see that branch's
-history), and the interim `ANALYSIS.md`. All three originals live in git
-history; **this file is the single source of truth going forward.** IDs are
-stable so PRs and discussions can keep referencing them: `B/G/P/V/F/I` from the
-Fable review, `glm x.y` from the GLM review.
+review, the GLM 5.2 review, and both interim `ANALYSIS.md` backlogs. The raw
+point-in-time snapshots are archived under [`docs/reviews/`](docs/reviews/)
+(`fable.md`, `glm.md`, `glm-analysis.md`); **this file is the single source of
+truth going forward.** IDs are stable so PRs and discussions can keep
+referencing them: `B/G/P/V/F/I` from the Fable review, `glm x.y` from the GLM
+review.
 
 ---
 
@@ -26,7 +26,11 @@ here.
 | Frozen countdowns | #30 (supersedes #19) | B3, B15, glm 1.1, 1.12 | Shared multicast tick per ViewModel; detail VM property/init order; `countdownText` past-due clamp (ported from #19) |
 | Notification/alarm correctness | #32 (supersedes #27) | B14, B16-part, glm 1.3, 1.4, 5.7 | Stable non-negative notification/alarm IDs, boarding-after-airborne guard (runway-actual counts as "up"), exact-alarm label re-check on resume |
 | METAR decoder | #24 + #31 (union) | B10, G7, glm 1.5–1.7 | Token-based decode: `+RA`/multi-phenomena/MPS→kt/calm/VRB, visibility (m + mixed-number SM), CB/TCU, wind direction phrasing, **ceiling = first BKN/OVC** (from #31), locale-safe formatting, 15 regression tests |
-| Coroutine hygiene | (branch `glm/coroutine-hygiene`) | glm 1.8, 1.9 | Rethrow `CancellationException` in all network catch blocks; require `seenPos` on ADS-B records |
+| Coroutine hygiene | #33 | glm 1.8, 1.9 | Rethrow `CancellationException` in all network catch blocks; require `seenPos` on ADS-B records |
+| Map geometry | #34 | glm 1.13, 1.14, 1.15 | Near-antipodal slerp guard, interpolated dateline vertex on both antimeridian segments, night polygon keyed on wall-clock (was frozen with no live fix) |
+| Visual/perf polish | #35 | glm 1.17, 2.1, 2.4-part, 3.3–3.6, 3.9, V4, V7-parts | WCAG-aware `StatusWord` on-color, ribbon brush hoisted out of the draw lambda, theme-aware sunrise/sunset/aircraft ribbon colors (new `ExtendedColors` roles), civil-twilight band rendered, non-emoji sun-event arrows, progress-bar Path reuse + shorter tween + dead draw removed |
+| Repo hygiene | #36 | glm 7.1, 7.3 | `CONTRIBUTING.md`, `GLOSSARY.md`, `SECURITY.md`, ADR template, `.editorconfig`, `.gitattributes` |
+| Review docs | #37 (content) | glm 7.2 | Raw review snapshots archived under `docs/reviews/`; new findings folded into this file |
 | Review consolidation + lint gate | #16 | B24, glm 1.2 | This document's ancestor (`ANALYSIS.md`); the API-31 `canScheduleExactAlarms` guards had already landed on `main` independently |
 | Back stack & deep links | #17 | B1, B8 | `rememberSaveable` back stack, `singleTask` + `onNewIntent`, consumed-deep-link guard across process death |
 | Machine-locale formatting | #18 | B2 | `Locale.ROOT` for Open-Meteo coordinates (GeoJSON was already pinned on `main`) |
@@ -59,21 +63,6 @@ be verified offline.*
 `ReferenceImporter` guards on `airportCount() > 0`; a shipped update with
 regenerated CSVs never reaches the database. **Fix:** version the import (store
 the lockfile's `fetched` date or a CSV hash; clear + re-import on change).
-
-### glm 1.13 · Near-antipodal routes divide by ~0 — MEDIUM
-`GreatCircle.intermediate()` guards the coincident case (`d < 1e-9`) but not the
-antipodal case (`d ≈ π` → `sin(d) ≈ 0`): polar/near-antipodal routes return
-garbage, breaking the polyline, terminator, and daylight sampling.
-
-### glm 1.14 · Antimeridian split leaves a one-segment gap — LOW (visual)
-`GreatCircle.routeSegments`/`splitAtAntimeridian` start the new segment without
-inserting the interpolated ±180° vertex, so the polyline visibly breaks at the
-date line.
-
-### glm 1.15 · Night-side polygon frozen when there's no live fix — MEDIUM
-`MapLibreRouteMap` keys the terminator on `lastFix?.at?.epochSecond?.div(600)` —
-null forever on the planned-route view, so the night shading never advances.
-Key on wall-clock deciminutes instead.
 
 ### glm 1.10 · Cancelled/diverted/departed/landed re-fire after the 3-day prune — MEDIUM
 `EmittedEvent.expiresAt` shares the snapshot TTL; after prune the next refresh
@@ -124,6 +113,25 @@ collisions). #27 proposed a provably collision-free alternative
 (`floorMod(flightId, 500M) * 4 + channelIndex`) — adopt if IDs ever matter
 forensically.
 
+### glm-A: further verified defects (from the GLM backlog)
+- **Future-dated ADS-B fixes treated as fresh** — `FlightPhaseMachine` uses
+  `Duration.between(...).abs() < 30m`, so a fix timestamped in the future (clock
+  skew, buggy feeder) counts as airborne. Require `!fix.at.isAfter(now)`.
+- **Codeshare self-reference** — when ADB reports `IsCodeshared`,
+  `codeshareOf = number` marks the flight as its own codeshare (ADB exposes no
+  operating field there). Prefer null on both until enriched.
+- **ADB minute-precision timestamps** — `"2026-07-22 14:10Z"` relies on the
+  `OffsetDateTime` fallback; pre-normalize missing seconds so the common path
+  doesn't throw-and-recover (extends G8).
+- **ReferenceImporter CSV parser** doesn't handle embedded newlines in quoted
+  fields / trailing doubled quotes. Harden or use a real CSV lib.
+- **No `Retry-After` honoring** — 429 just falls through the provider chain.
+- **Crash logger writes on the crashing thread** (`BlipbirdApp`) — cap the
+  write size / defer so it can't extend the ANR dialog.
+- **Night polygon triple-draw alpha-stacks** — the −360/0/+360 copies overlap
+  on wide views, producing visible darkening bands; cull each shift by
+  bounding box.
+
 ---
 
 ## Open general issues
@@ -157,8 +165,6 @@ forensically.
   of B4; the #20 gate treats the symptom). Memory grows with every flight
   opened. Consider nav-entry-scoped ViewModels or Navigation 3 so `onCleared`
   fires on pop.
-- **glm 7.1 — Contributor docs missing:** `CONTRIBUTING.md`, `GLOSSARY.md`,
-  `SECURITY.md`, `.editorconfig`, `.gitattributes`, `docs/decisions/` template.
 
 ---
 
@@ -179,8 +185,9 @@ forensically.
 - **P7 — GeoJSON string building on the composition thread.**
 - **glm 2.3 — 11-way detail `combine` rebuilds everything per fix** (~10 s while
   airborne), recomposing heavyweight items. Split map-only state out.
-- **glm 2.1/2.2/2.4 — Brushes/Paths built inside draw lambdas** (ribbon
-  gradient, hero brush, progress bar); hoist into `remember`.
+- **glm 2.2 — Hero brush built inside the composable per recomposition**
+  (`remember(cs)` it); ribbon and progress bar were fixed in #35, `RouteMap.kt`
+  is dead code (G2).
 - **glm 2.7 — Monograms redrawn per row**; cache.
 
 ---
@@ -196,17 +203,14 @@ forensically.
   transitions buy disproportionate polish. (#21 added list-item animation.)
 - **V3 — No haptics** (PLAN M4): pull-to-refresh completion, swipe thresholds,
   wheels-down.
-- **V4 / glm 3.3 — `StatusWord` white text fails WCAG AA on amber/neutral.**
-  Use per-chip on-colors.
 - **V5 — Empty map card** renders header + attribution and nothing else when
   coordinates are unknown. Placeholder or hide.
 - **V6 — Add sheet:** plain text field for the date (use `DatePickerDialog`),
   no loading state while resolving, silent date parse errors (glm 5.8).
-- **V7 / glm 3.4–3.6 — Ribbon niggles:** weather glyphs drift left of their
-  sample positions; sunrise/sunset times render in device TZ unlabeled; events
-  can crowd on narrow phones; marker colors hardcoded (ignore Cockpit/High
-  Contrast); raw emoji despite the file's own tofu warning; `bandColor` skips
-  civil twilight.
+- **V7 remainder — Ribbon niggles:** weather glyphs drift left of their sample
+  positions; sunrise/sunset times render in device TZ unlabeled; events can
+  crowd on narrow phones. (Theme-aware colors, emoji, and the civil band were
+  fixed in #35.)
 - **V9 — Detail density:** `Tag` icon reused for check-in and registration;
   registration duplicated in `AirlineCard`.
 - **V10 — Top bars don't collapse** (`scrollBehavior`); large-title collapse is
@@ -283,20 +287,34 @@ forensically.
 
 ---
 
+## Plan → code gaps (the merged PLAN additions the code doesn't realize yet)
+
+- **Injectable `core.time.Clock`** — code still reads `Instant.now()` directly
+  across the repository and domain cores; introduce, inject, fake in tests.
+- **`ProviderHealth`/`CircuitBreaker` + rate-limit buckets** — the chain just
+  `continue`s on error; no OPEN/HALF_OPEN state, no per-host token bucket.
+- **`CrashRouter`** — formalize/redact the basic crash logger per plan.
+- **Design-token system** (`BlipbirdTypography`/`Motion`/`Shapes`/`Elevation`),
+  predictive back, theme schedule — PLAN §10.2 exists; code doesn't.
+- **Delighters in code** — Pickup Mode, route-diagram hero, sunset headline,
+  sunrise alarm, reverse-geocode, contrail, scrubber (PLAN §9/§11/§12/§14).
+- **A11y foundations** — 48 dp scaffold + `semantics` conventions from §18.
+
 ## Plan-level leftovers (from glm §8, not yet in PLAN.md)
 
 M0 scope split (M0a engineering / M0b legal); module-split heuristic;
 primary-key strategy note; `hilt-navigation-compose` build-time guard; R8
 keep-rule checklist; provider-cost simulator; FTS search; per-event lead-time
-customization; notification actions; Wear OS; clipboard-text export; third
-widget.
+customization; notification actions; Wear OS complication; clipboard-text
+export; third "airport departure board" widget; usability-testing budget;
+CLA/DCO process.
 
 ---
 
 ## Suggested next cycle
 
-1. Quick wins: glm 1.15 (night-polygon key), glm 1.13/1.14 (great-circle
-   guards), B21, glm 4.1 (back-arrow descriptions), G4, G6, F8, F9.
+1. Quick wins: B21 (track source key), glm 4.1 (back-arrow descriptions),
+   glm-A future-dated fixes + codeshare self-reference, G4, G6, F8, F9.
 2. B9 delay-status notifications (verify against a live ADB payload first).
 3. The two aesthetic levers: V1 typography (owner picks a face) + V2 motion —
    PLAN §10.2 is the spec.
