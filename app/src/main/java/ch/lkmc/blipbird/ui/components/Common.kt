@@ -40,6 +40,8 @@ fun StatusWord(status: FlightStatus) {
     }
     Text(
         text.uppercase(),
+        // Luminance-based rather than a per-status table: any future palette
+        // change keeps its WCAG-safe foreground automatically.
         color = onColorFor(color),
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,

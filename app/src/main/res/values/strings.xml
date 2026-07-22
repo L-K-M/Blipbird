@@ -2,6 +2,9 @@
 <resources>
     <string name="app_name">Blipbird</string>
 
+    <!-- Generic -->
+    <string name="back">Back</string>
+
     <!-- List / add flight -->
     <string name="my_flights">My flights</string>
     <string name="add_flight">Add flight</string>
