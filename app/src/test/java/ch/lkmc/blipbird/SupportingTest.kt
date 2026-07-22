@@ -149,6 +149,13 @@ class MetarDecoderTest {
         assertTrue(d.text.contains("visibility 0.5 mi"), d.text)
     }
 
+    @Test fun `convective cloud suffixes surface`() {
+        val cb = MetarDecoder.decode("LSZH 221220Z 24012KT 9999 BKN025CB 21/12 Q1018")
+        assertTrue(cb.text.contains("Broken clouds at 2,500 ft (cumulonimbus)"), cb.text)
+        val tcu = MetarDecoder.decode("LSZH 221220Z 24012KT 9999 SCT040TCU 21/12 Q1018")
+        assertTrue(tcu.text.contains("Scattered clouds at 4,000 ft (towering cumulus)"), tcu.text)
+    }
+
     @Test fun `mixed-number statute-mile visibility joins across the space`() {
         val d = MetarDecoder.decode("KSFO 221156Z 28006KT 1 1/2SM BR OVC004 12/11 A3001")
         assertTrue(d.text.contains("visibility 1.5 mi"), d.text)

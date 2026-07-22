@@ -20,7 +20,7 @@ object MetarDecoder {
     private val VIS_SM_FRACTION = Regex("^\\d+/\\d+SM$")
     private const val MPS_TO_KT = 1.94384
     private val TEMP = Regex("^(M?\\d{2})/(M?\\d{2})$")
-    private val CLOUD = Regex("^(FEW|SCT|BKN|OVC)(\\d{3})(?:CB|TCU)?$")
+    private val CLOUD = Regex("^(FEW|SCT|BKN|OVC)(\\d{3})(CB|TCU)?$")
 
     /** Exact-token lookup; order in the map is irrelevant. */
     private val WX = mapOf(
@@ -59,32 +59,40 @@ object MetarDecoder {
 
         if ("CAVOK" in tokens) parts += "clear skies and good visibility"
 
-        // Most significant (last reported) cloud layer.
+        // Most significant (last reported) cloud layer, with convective marker.
         tokens.mapNotNull { CLOUD.matchEntire(it) }.lastOrNull()?.let { m ->
             val kind = CLOUD_NAME[m.groupValues[1]] ?: return@let
             val feet = m.groupValues[2].toInt() * 100
-            parts += "$kind at ${"%,d".format(Locale.ROOT, feet)} ft"
+            val convective = when (m.groupValues[3]) {
+                "CB" -> " (cumulonimbus)"
+                "TCU" -> " (towering cumulus)"
+                else -> ""
+            }
+            parts += "$kind at ${"%,d".format(Locale.ROOT, feet)} ft$convective"
         }
 
         // Visibility — only when notable (below 10 km / 6 SM).
-        tokens.firstNotNullOfOrNull { VIS_M.matchEntire(it) }?.let { m ->
-            val meters = m.groupValues[1].toInt()
-            if (meters < 9999) {
-                parts += when {
-                    meters % 1000 == 0 -> "visibility ${meters / 1000} km"
-                    meters >= 1000 -> "visibility ${"%.1f".format(Locale.ROOT, meters / 1000.0)} km"
-                    else -> "visibility $meters m"
-                }
+        val meters = tokens.firstNotNullOfOrNull { VIS_M.matchEntire(it) }
+            ?.groupValues?.get(1)?.toInt()
+        if (meters != null && meters < 9999) {
+            parts += when {
+                meters % 1000 == 0 -> "visibility ${meters / 1000} km"
+                meters >= 1000 -> "visibility ${"%.1f".format(Locale.ROOT, meters / 1000.0)} km"
+                else -> "visibility $meters m"
             }
-        } ?: tokens.firstNotNullOfOrNull { VIS_SM.matchEntire(it) }?.let { m ->
-            val leading = m.groupValues[1].toDoubleOrNull() ?: 0.0
-            val whole = m.groupValues[2].toDouble()
-            val denom = m.groupValues[3].toDoubleOrNull()
-            val miles = leading + if (denom != null && denom > 0) whole / denom else whole
-            if (miles < 6.0) {
-                parts += if (miles < 1.0 || miles % 1.0 != 0.0)
-                    "visibility ${"%.1f".format(Locale.ROOT, miles)} mi"
-                else "visibility ${miles.toInt()} mi"
+        } else if (meters == null) {
+            tokens.firstNotNullOfOrNull { VIS_SM.matchEntire(it) }?.let { m ->
+                val leading = m.groupValues[1].toDoubleOrNull() ?: 0.0
+                val whole = m.groupValues[2].toDouble()
+                val denom = m.groupValues[3].toDoubleOrNull()
+                // Round to a tenth so float noise can't turn "2" into "2.0".
+                val miles = ((leading + if (denom != null && denom > 0) whole / denom else whole) * 10)
+                    .roundToInt() / 10.0
+                if (miles < 6.0) {
+                    parts += if (miles < 1.0 || miles % 1.0 != 0.0)
+                        "visibility ${"%.1f".format(Locale.ROOT, miles)} mi"
+                    else "visibility ${miles.toInt()} mi"
+                }
             }
         }
 
