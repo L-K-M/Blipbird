@@ -101,7 +101,7 @@ class NotificationEmitter @Inject constructor(
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pending = PendingIntent.getActivity(
-            context, flightId.toInt(), intent,
+            context, stableId(flightId, channel), intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(context, channel)
@@ -113,6 +113,19 @@ class NotificationEmitter @Inject constructor(
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(context)
-            .notify((flightId % Int.MAX_VALUE).toInt() * 10 + channel.hashCode() % 10, notification)
+            .notify(stableId(flightId, channel), notification)
+    }
+
+    /**
+     * Stable, non-negative Int id for a (flight, channel) pair. Replaces the old
+     * `flightId.toInt()` (truncates a Long) / `(flightId % Int.MAX_VALUE).toInt() * 10
+     * + channel.hashCode() % 10` (Int overflow → negative ids; hashCode() % 10 can
+     * be negative; large flightIds collapse onto the same slot) scheme that let
+     * different flights replace each other's notifications.
+     */
+    private fun stableId(flightId: Long, discriminator: String): Int {
+        var h = flightId xor discriminator.hashCode().toLong()
+        h = h xor (h ushr 32)
+        return h.toInt() and 0x7FFFFFFF
     }
 }

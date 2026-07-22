@@ -62,14 +62,19 @@ class ReminderScheduler @Inject constructor(
         val now = Instant.now()
 
         val boardingAt = snapshot.depTimes.best?.minus(FlightPhaseMachine.DEFAULT_BOARDING_LEAD)
-        if (boardingAt != null && boardingAt.isAfter(now) && snapshot.depTimes.actual == null) {
+        // "Up" = gate-actual OR runway-actual (wheels-off). AeroDataBox only fills
+        // runwayActual, so checking depTimes.actual alone would keep a boarding
+        // alarm armed after the flight is already airborne.
+        val up = snapshot.depTimes.actual ?: snapshot.depTimes.runwayActual
+        if (boardingAt != null && boardingAt.isAfter(now) && up == null) {
             setExact(flightId, KIND_BOARDING, boardingAt)
         } else {
             cancelKind(flightId, KIND_BOARDING)
         }
 
         val landingSoonAt = snapshot.arrTimes.best?.minus(LANDING_LEAD)
-        if (landingSoonAt != null && landingSoonAt.isAfter(now) && snapshot.arrTimes.actual == null) {
+        val down = snapshot.arrTimes.actual ?: snapshot.arrTimes.runwayActual
+        if (landingSoonAt != null && landingSoonAt.isAfter(now) && down == null) {
             setExact(flightId, KIND_LANDING_SOON, landingSoonAt)
         } else {
             cancelKind(flightId, KIND_LANDING_SOON)
@@ -102,7 +107,11 @@ class ReminderScheduler @Inject constructor(
         val intent = Intent(context, ReminderAlarmReceiver::class.java)
             .putExtra(EXTRA_FLIGHT_ID, flightId)
             .putExtra(EXTRA_KIND, kind)
-        val requestCode = (flightId * 10 + if (kind == KIND_BOARDING) 1 else 2).toInt()
+        // Stable, non-negative request code. The old `(flightId * 10 + n).toInt()`
+        // truncated Long ids and overflowed Int once flightId exceeded ~214M.
+        var h = flightId xor kind.hashCode().toLong()
+        h = h xor (h ushr 32)
+        val requestCode = h.toInt() and 0x7FFFFFFF
         return PendingIntent.getBroadcast(
             context, requestCode, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
