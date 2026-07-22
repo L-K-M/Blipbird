@@ -39,13 +39,25 @@ fun StatusWord(status: FlightStatus) {
     }
     Text(
         text.uppercase(),
-        color = Color.White,
+        color = onColorFor(color),
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,
         modifier = Modifier
             .background(color, RoundedCornerShape(6.dp))
             .padding(horizontal = 8.dp, vertical = 3.dp),
     )
+}
+
+/**
+ * Pick black or white foreground for a colored chip background by relative
+ * luminance. White-on-everything failed WCAG AA for the small bold label on the
+ * amber (#B26A00 ~ 3.0:1) and neutral (#5F6368 ~ 4.6:1) status colors.
+ */
+private fun onColorFor(bg: Color): Color {
+    fun linear(c: Float) = if (c <= 0.03928f) c / 12.92f else
+        kotlin.math.pow(((c + 0.055) / 1.055), 2.4).toFloat()
+    val l = 0.2126f * linear(bg.red) + 0.7152f * linear(bg.green) + 0.0722f * linear(bg.blue)
+    return if (l > 0.45f) Color.Black else Color.White
 }
 
 /** Countdown with adaptive granularity: days → h m → m. */

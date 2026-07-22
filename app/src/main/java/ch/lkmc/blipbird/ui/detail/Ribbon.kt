@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -58,6 +59,21 @@ fun FlightRibbon(
             Spacer(Modifier.height(2.dp))
         }
 
+        // Continuous gradient computed once per daylight/theme change, not on
+        // every draw (the old code rebuilt the Brush inside the Canvas lambda on
+        // every recomposition / position poll).
+        val ribbonBrush = remember(daylight, ext.ribbonDay, ext.ribbonDusk, ext.ribbonNight) {
+            val samples = daylight.samples
+            if (samples.size < 2) null else {
+                val stops = samples.filterIndexed { i, _ -> i % 8 == 0 || i == samples.lastIndex }
+                Brush.horizontalGradient(
+                    colorStops = stops.map { s ->
+                        s.fraction.toFloat() to bandColor(s.solarElevationDeg, ext.ribbonDay, ext.ribbonDusk, ext.ribbonNight)
+                    }.toTypedArray(),
+                )
+            }
+        }
+
         Canvas(
             Modifier
                 .fillMaxWidth()
@@ -65,34 +81,26 @@ fun FlightRibbon(
         ) {
             val w = size.width
             val h = size.height
-            val samples = daylight.samples
-            if (samples.size < 2) return@Canvas
+            if (ribbonBrush != null) {
+                drawRoundRect(brush = ribbonBrush, size = Size(w, h), cornerRadius = CornerRadius(h / 2))
+            }
 
-            // Continuous gradient from per-sample light colors
-            val stops = samples.filterIndexed { i, _ -> i % 8 == 0 || i == samples.lastIndex }
-            val brush = Brush.horizontalGradient(
-                colorStops = stops.map { s ->
-                    s.fraction.toFloat() to bandColor(s.solarElevationDeg, ext.ribbonDay, ext.ribbonDusk, ext.ribbonNight)
-                }.toTypedArray(),
-            )
-            drawRoundRect(brush = brush, size = Size(w, h), cornerRadius = CornerRadius(h / 2))
-
-            // Sunrise/sunset markers
+            // Sunrise/sunset markers (theme-aware, not hardcoded)
             for (event in daylight.events) {
                 val f = fractionOf(event, daylight)
                 val x = (f * w).toFloat()
                 drawCircle(
-                    color = if (event.type == SunEventType.SUNRISE) Color(0xFFFFD54F) else Color(0xFFFF8A65),
+                    color = if (event.type == SunEventType.SUNRISE) ext.ribbonSunrise else ext.ribbonSunset,
                     radius = h * 0.28f,
                     center = Offset(x, h / 2),
                 )
             }
 
-            // Aircraft position marker
+            // Aircraft position marker (theme-aware)
             if (progress in 0.01f..0.995f) {
                 val x = progress * w
                 drawCircle(Color.White, radius = h * 0.34f, center = Offset(x, h / 2))
-                drawCircle(Color(0xFF1667D9), radius = h * 0.34f, center = Offset(x, h / 2),
+                drawCircle(ext.ribbonAircraft, radius = h * 0.34f, center = Offset(x, h / 2),
                     style = androidx.compose.ui.graphics.drawscope.Stroke(width = h * 0.09f))
             }
         }
@@ -102,10 +110,14 @@ fun FlightRibbon(
             Text(depCode, style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.weight(1f))
             daylight.events.forEach { e ->
+                // Non-emoji arrows (U+2191/U+2193) — color emoji 🌅/🌇 rendered as
+                // tofu on several OEM fonts despite the file's own warning, and the
+                // glyphs clash with refined themes. Color matches the canvas marker.
+                val arrow = if (e.type == SunEventType.SUNRISE) "↑ " else "↓ "
                 Text(
-                    (if (e.type == SunEventType.SUNRISE) "🌅 " else "🌇 ") + localTime(e.at),
+                    arrow + localTime(e.at),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (e.type == SunEventType.SUNRISE) ext.ribbonSunrise else ext.ribbonSunset,
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
             }
@@ -127,8 +139,12 @@ private fun bandColor(elevationDeg: Double, day: Color, dusk: Color, night: Colo
     elevationDeg >= 10.0 -> day
     elevationDeg >= DaylightEngine.SUNRISE_SET_DEG ->
         lerp(dusk, day, ((elevationDeg - DaylightEngine.SUNRISE_SET_DEG) / (10.0 - DaylightEngine.SUNRISE_SET_DEG)).toFloat())
+    // Civil twilight as a solid dusk band so the ribbon shows the -6° transition
+    // the LightBand enum models (the old code lerped night↔dusk straight across
+    // [-12, -0.833] and hid it).
+    elevationDeg >= DaylightEngine.CIVIL_DEG -> dusk
     elevationDeg >= DaylightEngine.NAUTICAL_DEG ->
-        lerp(night, dusk, ((elevationDeg - DaylightEngine.NAUTICAL_DEG) / (DaylightEngine.SUNRISE_SET_DEG - DaylightEngine.NAUTICAL_DEG)).toFloat())
+        lerp(night, dusk, ((elevationDeg - DaylightEngine.NAUTICAL_DEG) / (DaylightEngine.CIVIL_DEG - DaylightEngine.NAUTICAL_DEG)).toFloat())
     else -> night
 }
 

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -29,7 +30,9 @@ fun FlightProgressBar(
     modifier: Modifier = Modifier,
     planeVisible: Boolean = true,
 ) {
-    val p by animateFloatAsState(progress.coerceIn(0f, 1f), animationSpec = tween(700), label = "flightProgress")
+    val p by animateFloatAsState(progress.coerceIn(0f, 1f), animationSpec = tween(250), label = "flightProgress")
+    // Reuse one Path across draws instead of allocating inside the Canvas lambda.
+    val planePath = remember { Path() }
 
     Canvas(modifier.fillMaxWidth().height(18.dp)) {
         val w = size.width
@@ -54,20 +57,18 @@ fun FlightProgressBar(
         // endpoint dots
         drawCircle(color, radius = 3.5.dp.toPx(), center = Offset(x0, cy))
         drawCircle(trackColor, radius = 3.5.dp.toPx(), center = Offset(x1, cy))
-        drawCircle(Color.Transparent, radius = 2.dp.toPx(), center = Offset(x1, cy))
 
         // plane at the head, pointing along the track
         if (planeVisible && p in 0.01f..0.995f) {
             rotate(degrees = 90f, pivot = Offset(head, cy)) {
                 val s = 7.dp.toPx()
-                val plane = Path().apply {
-                    moveTo(head, cy - s)               // nose (pre-rotation: up)
-                    lineTo(head + s * 0.72f, cy + s * 0.55f)
-                    lineTo(head, cy + s * 0.22f)
-                    lineTo(head - s * 0.72f, cy + s * 0.55f)
-                    close()
-                }
-                drawPath(plane, color)
+                planePath.rewind()
+                planePath.moveTo(head, cy - s)               // nose (pre-rotation: up)
+                planePath.lineTo(head + s * 0.72f, cy + s * 0.55f)
+                planePath.lineTo(head, cy + s * 0.22f)
+                planePath.lineTo(head - s * 0.72f, cy + s * 0.55f)
+                planePath.close()
+                drawPath(planePath, color)
             }
         }
     }

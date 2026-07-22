@@ -31,6 +31,9 @@ data class ExtendedColors(
     val ribbonDay: Color,
     val ribbonDusk: Color,
     val ribbonNight: Color,
+    val ribbonSunrise: Color,
+    val ribbonSunset: Color,
+    val ribbonAircraft: Color,
     val routeLine: Color,
     val mapStyleUrl: String,
 )
@@ -45,6 +48,9 @@ val LocalExtendedColors = staticCompositionLocalOf {
         ribbonDay = Color(0xFF8FD3FF),
         ribbonDusk = Color(0xFFFF9E5E),
         ribbonNight = Color(0xFF0A1633),
+        ribbonSunrise = Color(0xFFFFD54F),
+        ribbonSunset = Color(0xFFFF8A65),
+        ribbonAircraft = Color(0xFF1667D9),
         routeLine = Color(0xFF19D3F3),
         mapStyleUrl = "https://tiles.openfreemap.org/styles/liberty",
     )
@@ -134,6 +140,9 @@ fun BlipbirdTheme(
             ribbonDay = Color(0xFF1E5F8A),
             ribbonDusk = Color(0xFF8A5A1E),
             ribbonNight = Color(0xFF03110A),
+            ribbonSunrise = Color(0xFFFFB454),
+            ribbonSunset = Color(0xFFB5621E),
+            ribbonAircraft = Color(0xFF53F2A0),
             routeLine = Color(0xFF53F2A0),
             mapStyleUrl = "https://tiles.openfreemap.org/styles/dark",
         )
@@ -146,6 +155,9 @@ fun BlipbirdTheme(
             ribbonDay = if (darkTheme) Color(0xFFB7DCFF) else Color(0xFF9CC7EA),
             ribbonDusk = Color(0xFFE08840),
             ribbonNight = Color(0xFF000000),
+            ribbonSunrise = if (darkTheme) Color.White else Color(0xFF333333),
+            ribbonSunset = if (darkTheme) Color.White else Color(0xFF333333),
+            ribbonAircraft = if (darkTheme) Color.White else Color.Black,
             routeLine = if (darkTheme) Color.White else Color.Black,
             mapStyleUrl = if (darkTheme)
                 "https://tiles.openfreemap.org/styles/dark"
@@ -160,6 +172,9 @@ fun BlipbirdTheme(
             ribbonDay = Color(0xFF8FD3FF),
             ribbonDusk = Color(0xFFFF9E5E),
             ribbonNight = Color(0xFF0A1633),
+            ribbonSunrise = Color(0xFFFFD54F),
+            ribbonSunset = Color(0xFFFF8A65),
+            ribbonAircraft = Color(0xFF1667D9),
             routeLine = Color(0xFF19D3F3),
             mapStyleUrl = if (darkTheme)
                 "https://tiles.openfreemap.org/styles/dark"
