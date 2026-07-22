@@ -34,21 +34,20 @@ class NotificationEmitter @Inject constructor(
         const val CHANNEL_STATUS = "status"
         const val CHANNEL_REMINDERS = "reminders"
 
-        /** Stable per-channel index for notification-ID composition. */
-        private val CHANNEL_INDEX = mapOf(
-            CHANNEL_CRITICAL to 0,
-            CHANNEL_STATUS to 1,
-            CHANNEL_REMINDERS to 2,
-        )
-
         /**
-         * One notification slot per flight and channel: id = flightId * 4 + index.
+         * One notification slot per flight and channel:
+         * id = (flightId % 500_000_000) * 4 + channel index.
          * The old scheme used channel.hashCode() % 10, which can be negative and
          * lets two flight/channel pairs collide (a gate change silently
          * overwriting another flight's delay alert).
          */
         internal fun notificationId(flightId: Long, channel: String): Int {
-            val index = CHANNEL_INDEX[channel] ?: 3
+            val index = when (channel) {
+                CHANNEL_CRITICAL -> 0
+                CHANNEL_STATUS -> 1
+                CHANNEL_REMINDERS -> 2
+                else -> 3
+            }
             return ((flightId % 500_000_000L).toInt()) * 4 + index
         }
     }
