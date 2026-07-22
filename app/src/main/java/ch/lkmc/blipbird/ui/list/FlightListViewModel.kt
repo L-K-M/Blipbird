@@ -9,6 +9,7 @@ import ch.lkmc.blipbird.core.database.TrackedFlightEntity
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
 import ch.lkmc.blipbird.core.model.AirportRef
 import ch.lkmc.blipbird.core.model.Designator
+import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.core.model.StatusSnapshot
 import ch.lkmc.blipbird.core.model.TrackRequest
 import ch.lkmc.blipbird.domain.DaylightEngine
@@ -103,7 +104,16 @@ class FlightListViewModel @Inject constructor(
             if (flights.isEmpty()) flowOf(emptyList())
             else combine(flights.map { flight -> rowFlow(flight) }) { it.toList() }
         }
-        .map { list -> list.sortedBy { it.view.nextEventAt ?: Instant.MAX } }
+        .map { list ->
+            // Finished flights carry their (past) landing time as nextEventAt,
+            // which would pin them above every upcoming flight. Active flights
+            // sort by next event; finished ones sink, most recently landed first.
+            val (done, active) = list.partition {
+                it.view.status == FlightStatus.LANDED || it.view.status == FlightStatus.ARRIVED
+            }
+            active.sortedBy { it.view.nextEventAt ?: Instant.MAX } +
+                done.sortedByDescending { it.view.nextEventAt ?: Instant.MIN }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val uiState: StateFlow<ListUiState> =
