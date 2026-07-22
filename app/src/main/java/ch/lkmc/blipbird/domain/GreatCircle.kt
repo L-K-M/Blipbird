@@ -38,7 +38,7 @@ object GreatCircle {
             if (mid != null) return mid
         }
         val sinD = sin(d)
-        if (sinD < 1e-12) return if (f <= 0.5) a else b
+        if (sinD < 1e-8) return if (f <= 0.5) a else b
         val fa = sin((1 - f) * d) / sinD
         val fb = sin(f * d) / sinD
         val f1 = Math.toRadians(a.lat); val l1 = Math.toRadians(a.lon)
@@ -61,7 +61,7 @@ object GreatCircle {
         val d1 = angularDistance(a, pole)
         val d2 = angularDistance(pole, b)
         val total = d1 + d2
-        if (total < 1e-9) return null
+        if (total < 1e-9 || d1 > PI - 1e-9 || d2 > PI - 1e-9) return null
         val fScaled = f * total
         return if (fScaled <= d1) intermediate(a, pole, (fScaled / d1).coerceIn(0.0, 1.0))
         else intermediate(pole, b, ((fScaled - d1) / d2).coerceIn(0.0, 1.0))
