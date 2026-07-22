@@ -29,9 +29,9 @@ Open-source, ad-free, no accounts, no analytics. All your data stays on the devi
   cruise-altitude horizon-dip correction: cabin sunsets run ~12–20 min later than
   on the ground), sunrise/sunset markers with times, and Open-Meteo weather glyphs
   at sampled waypoints evaluated at their overflight hour.
-- **Live route map** — offline schematic projection with graticule, real
-  day/night terminator shading, flown track (solid) vs great-circle guide
-  (dashed), heading-rotated aircraft marker with staleness ghosting, and an
+- **Live route map** — real MapLibre vector tiles (OpenFreeMap style per theme)
+  with day/night terminator shading, flown ADS-B track vs great-circle guide,
+  endpoint rings, a heading-rotated aircraft symbol with staleness fade, and an
   altitude/speed/track readout.
 - **Notifications** — delay (per-15-min slip buckets), gate change, cancellation,
   diversion, departed, landed via snapshot diffing with a persisted dedup ledger;
@@ -72,7 +72,7 @@ with an Android Keystore key, excluded from backups).
 
 ```bash
 ./gradlew assembleDebug        # requires JDK 17+; Gradle 9.6.1 via wrapper
-./gradlew testDebugUnitTest    # 52 unit tests
+./gradlew testDebugUnitTest    # 60 unit tests
 ```
 
 Helper scripts:
@@ -120,9 +120,6 @@ Full design rationale, verified API research, and the roadmap live in
 ### Known deviations from PLAN.md in v0.1
 
 - **Navigation:** hand-rolled 3-screen back stack instead of Navigation 3.
-- **Map:** offline Canvas route map instead of MapLibre vector tiles (MapLibre
-  integration is the tracked follow-up; the schematic map needs zero network and
-  themes perfectly).
 - **Modules:** single `:app` module ("Kotlin packages first", per plan §3).
 - **Aliases:** stored on the tracked flight; separate `SavedFlight` entity and
   recurring rules remain roadmap.
