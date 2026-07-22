@@ -1,0 +1,26 @@
+{
+  "generated": "2026-07-22",
+  "sources": {
+    "ourairports": {
+      "url": "https://davidmegginson.github.io/ourairports-data/airports.csv",
+      "license": "Public Domain (Unlicense)",
+      "sha256": "be0d0c5bf2248046642f16d6e50604390355bed1040cf81b97391b11cda78302",
+      "bytes": 12684530,
+      "rows_kept": 9056
+    },
+    "mwgg_airports": {
+      "url": "https://raw.githubusercontent.com/mwgg/Airports/master/airports.json",
+      "license": "MIT",
+      "sha256": "a4ca48ee44e1c24d80115b2e47c679f45be02081e31dbdc6978a842937f4cd21",
+      "bytes": 9026616,
+      "airports_without_tz": 1498
+    },
+    "optd_airlines": {
+      "url": "https://raw.githubusercontent.com/opentraveldata/opentraveldata/master/opentraveldata/optd_airlines.csv",
+      "license": "CC BY 4.0 (changes: filtered to active carriers with IATA or ICAO codes)",
+      "sha256": "591ff59781c9247f9fdb6ae7458d59eff32f4a5ea3afe7c941d81ff70a31b3d0",
+      "bytes": 258597,
+      "rows_kept": 1114
+    }
+  }
+}
