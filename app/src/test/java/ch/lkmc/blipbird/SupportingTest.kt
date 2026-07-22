@@ -9,6 +9,8 @@ import java.time.Instant
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -120,6 +122,31 @@ class MetarDecoderTest {
     @Test fun `weather phenomena appear`() {
         val d = MetarDecoder.decode("EGLL 221150Z 25010KT 4000 -RA BKN008 14/12 Q1008")
         assertTrue(d.text.contains("light rain"), d.text)
+    }
+
+    @Test fun `heavy precipitation decodes (+ prefix not treated as quantifier)`() {
+        val d = MetarDecoder.decode("ZSPD 221200Z 18018G30KT 3000 +RA OVC010 22/21 Q1003")
+        assertTrue(d.text.contains("heavy rain"), d.text)
+    }
+
+    @Test fun `ceiling is first BKN or OVC, not the last layer`() {
+        // BKN025 is the ceiling; OVC100 must not win.
+        val d = MetarDecoder.decode("KSFO 221656Z 27014KT 10SM BKN025 OVC100 16/11 A2998")
+        assertTrue(d.text.contains("Broken clouds at 2,500 ft"), d.text)
+        assertFalse(d.text.contains("10,000 ft"), d.text)
+    }
+
+    @Test fun `multiple weather phenomena are all reported`() {
+        val d = MetarDecoder.decode("VTBD 221200Z 18012KT 4000 TSRA BR BKN010 30/26 Q1006")
+        assertTrue(d.text.contains("thunderstorms with rain"), d.text)
+        assertTrue(d.text.contains("mist"), d.text)
+    }
+
+    @Test fun `MPS wind unit decodes instead of being dropped`() {
+        val d = MetarDecoder.decode("ZBAA 221200Z 3506MPS 9999 SCT040 28/08 Q1020")
+        assertNotNull(d.windSpeedKt, "MPS wind must not be dropped")
+        assertTrue(d.windSpeedKt!! > 0, "6 m/s should convert to >0 kt, got ${d.windSpeedKt}")
+        assertTrue(d.text.contains("wind"), d.text)
     }
 
     @Test fun `unknown input falls back gracefully`() {
