@@ -10,10 +10,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.core.datastore.AppTheme
 import ch.lkmc.blipbird.core.datastore.SettingsRepository
@@ -22,6 +24,7 @@ import ch.lkmc.blipbird.ui.list.FlightListScreen
 import ch.lkmc.blipbird.ui.settings.SettingsScreen
 import ch.lkmc.blipbird.ui.theme.BlipbirdTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.MutableStateFlow
 import javax.inject.Inject
 
 /** Minimal explicit back stack (documented deviation from PLAN.md's Nav3 pick). */
@@ -36,6 +39,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var settings: SettingsRepository
 
+    /** Pending notification deep link; consumed by BlipbirdNav. */
+    private val deepLinkFlights = MutableStateFlow<Long?>(null)
+
     private val notifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -48,33 +54,81 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val deepLinkFlightId = intent.deepLinkFlightId()
+        // Only seed the deep link on a fresh launch; on re-creation the saved back
+        // stack already reflects any navigation the user did since tapping it.
+        if (savedInstanceState == null) {
+            deepLinkFlights.value = intent.deepLinkFlightId()
+        }
 
         setContent {
             val theme by settings.theme.collectAsStateWithLifecycle(initialValue = AppTheme.DAYLIGHT_DYNAMIC)
             BlipbirdTheme(theme = theme) {
                 BlipbirdNav(
-                    initialDetailFlightId = deepLinkFlightId,
+                    deepLinkFlights = deepLinkFlights,
                     onFirstTrack = { requestNotificationPermission() },
                 )
             }
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.deepLinkFlightId()?.let { deepLinkFlights.value = it }
+    }
+
     private fun Intent?.deepLinkFlightId(): Long? =
         this?.getLongExtra("flightId", -1L)?.takeIf { it > 0 }
 }
 
+/** Survives configuration change and process death: screens encode to plain longs. */
+private val BackStackSaver = listSaver<SnapshotStateList<Screen>, Long>(
+    save = { stack ->
+        stack.map { screen ->
+            when (screen) {
+                is Screen.List -> SAVED_LIST
+                is Screen.Settings -> SAVED_SETTINGS
+                is Screen.Detail -> screen.flightId
+            }
+        }
+    },
+    restore = { saved ->
+        mutableStateListOf<Screen>().apply {
+            saved.forEach { id ->
+                add(
+                    when (id) {
+                        SAVED_LIST -> Screen.List
+                        SAVED_SETTINGS -> Screen.Settings
+                        else -> Screen.Detail(id)
+                    }
+                )
+            }
+            if (isEmpty()) add(Screen.List)
+        }
+    },
+)
+private const val SAVED_LIST = -1L
+private const val SAVED_SETTINGS = -2L
+
 @Composable
 fun BlipbirdNav(
-    initialDetailFlightId: Long?,
+    deepLinkFlights: MutableStateFlow<Long?>,
     onFirstTrack: () -> Unit,
 ) {
-    val backStack = remember {
-        mutableStateListOf<Screen>(Screen.List).also { stack ->
-            initialDetailFlightId?.let { stack.add(Screen.Detail(it)) }
+    val backStack = rememberSaveable(saver = BackStackSaver) {
+        mutableStateListOf<Screen>(Screen.List)
+    }
+
+    // Notification taps: navigate to the flight (both cold start and while running).
+    LaunchedEffect(Unit) {
+        deepLinkFlights.collect { flightId ->
+            if (flightId != null) {
+                val target = Screen.Detail(flightId)
+                if (backStack.last() != target) backStack.add(target)
+                deepLinkFlights.value = null
+            }
         }
     }
+
     val current = backStack.last()
 
     BackHandler(enabled = backStack.size > 1) { backStack.removeAt(backStack.lastIndex) }
