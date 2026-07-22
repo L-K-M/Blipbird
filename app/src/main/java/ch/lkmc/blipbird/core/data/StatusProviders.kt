@@ -78,7 +78,7 @@ class AeroDataBoxProvider @Inject constructor(
             "enroute", "approaching" -> FlightStatus.EN_ROUTE
             "arrived" -> FlightStatus.ARRIVED
             "delayed" -> FlightStatus.DELAYED
-            "canceled", "cancelled" -> FlightStatus.CANCELLED
+            "canceled", "cancelled", "canceleduncertain" -> FlightStatus.CANCELLED
             "diverted" -> FlightStatus.DIVERTED
             else -> FlightStatus.UNKNOWN
         }
