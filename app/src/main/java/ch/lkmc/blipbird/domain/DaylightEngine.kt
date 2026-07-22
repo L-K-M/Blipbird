@@ -111,7 +111,7 @@ object DaylightEngine {
         for (i in 1 until samples.size) {
             val e0 = samples[i - 1].solarElevationDeg - thresholdDeg
             val e1 = samples[i].solarElevationDeg - thresholdDeg
-            if (e0 == 0.0 || e0 * e1 >= 0) continue
+            if (e0 * e1 > 0 || e0 == 0.0) continue
             // Bisect the bracketing fractions to ~1 s of flight time.
             var lo = samples[i - 1].fraction
             var hi = samples[i].fraction
