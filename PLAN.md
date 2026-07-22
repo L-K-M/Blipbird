@@ -724,6 +724,18 @@ One airport-board line per flight (Flighty's proven formula, translated to Mater
   implying that a fresh position also refreshed status/weather (for example, "Status 3 m ·
   position 8 s · weather 20 m").
 - Empty state: friendly onboarding — add a flight, pick sample flight to demo the UI.
+- **Information hierarchy is explicit and degrades gracefully.** At `COMPACT` width or 200 %
+  font scale, the row drops elements in a defined order: alias truncates first, then the
+  gate chip moves to detail-only, then the progress bar — the countdown and status word are
+  always last to go. The row must never wrap chaotically or horizontally scroll.
+- **Status uses a bespoke glyph set, not platform emoji.** A small, consistent, two-tone
+  line-icon family (✈ en route · 🛬 landed · ⚠ delayed · ✕ cancelled · ⏱ boarding) reads
+  faster than text at a glance and matches how real departure boards signal phase. The set
+  is theme-tinted via the §10.2 color tokens, never a stock emoji font (which varies across
+  OEM densities and clashes with a refined palette).
+- **All numeric displays use tabular figures** (`FontFeatureSettings.TNUM` / `"tnum"`), and
+  the row sits on the §10.2 4 dp spacing rhythm. Without tabular figures, the countdown
+  visibly jiggles as digits change width — a small but constant "amateur" tell.
 
 ### 9.2 Detail view — the flight dossier
 
@@ -734,7 +746,11 @@ Blipbird usability testing:
    timezone labels ("14:10 CST · your time 08:10"), live map snippet (expands full-screen).
 2. **Key facts grid**: dep terminal/gate/check-in desk, arr terminal/gate/baggage belt,
    aircraft type + registration, duration, distance. Photos remain out until a source grants
-   documented per-image display rights.
+   documented per-image display rights. **The grid adapts to phase, honoring §1's
+   "the single most relevant fact is the biggest thing on screen":** before departure the
+   **departure gate** dominates and the bag belt is suppressed; on approach/after landing the
+   **baggage belt** dominates and the departure gate demotes. A static 2×3 block of equal
+   cells violates the plan's own north-star.
 3. **Event timeline** — the centerpiece. Rows: check-in reminder → boarding reminder →
    gate departure → takeoff → cruise → descent → landing → gate arrival → baggage. Three-column
    scheduled/estimated/actual presentation; superseded estimates get struck through when
@@ -746,6 +762,10 @@ Blipbird usability testing:
    doors-closed time); *takeoff* = `off`; *landing* = `on`; *gate arrival* = `in`;
    *cruise/descent* = inferred from ADS-B altitude + vertical rate (data the
    PositionProvider already returns). Consistent with §1's "never fakes precision."
+   On a 360 dp screen the three-column schedule/estimate/actual table reads as a wall of
+   numbers; render it as a **vertical timeline with a "now" marker** (each row: event glyph,
+   label, single best time with superseded values struck through inline) — the airport-board
+   three-column view is a secondary, opt-in layout for avgeeks.
 4. **Inbound aircraft** *(v2, source-gated)*: "Your plane is arriving from Shanghai as
    CA1858, lands 12:40." This needs a provider licensed to expose the assigned aircraft's
    current prior leg; a registration alone is not enough, and AeroAPI Personal historical
@@ -764,6 +784,12 @@ Blipbird usability testing:
 10. **Share / Pickup mode**: read-only big-type card (ETA · terminal · progress) exportable
    as an image or serverless deep link containing only designator/date/leg. Aliases, API
    keys, provider IDs, and history are never encoded.
+
+**Loading states are skeletons, never spinners.** Every async surface (list first paint,
+detail sections, timeline) renders content-shaped placeholder skeletons, not a centered
+`CircularProgressIndicator`. Skeletons read as "premium and fast"; a spinner over an empty
+screen reads as "mid Android." On error, the skeleton stays with an inline retry affordance
+so the layout never collapses.
 
 ### 9.3 Disruption semantics (designed against Flighty's documented failure)
 
@@ -926,6 +952,46 @@ M0 asset-generation tasks (standard Android icon pipeline):
 
 Accent colors sampled from the icon (radar cyan ≈ `#19D3F3`-family, deep blue field)
 inform the Daylight theme's seed palette so launcher icon and app UI feel related.
+
+### 10.2 Design tokens & premium motion
+
+"Themes" is more than recoloring. A high-value app tokens the *whole* design system and
+every theme maps to the same token set, so swapping a theme changes the feel coherently
+rather than just the hue. Beyond the existing `ExtendedColors`, Blipbird defines:
+
+- **`BlipbirdTypography`** — a fixed type scale (display / headline / title / body / label
+  with weight and tracking), all numeric roles opted into **tabular figures**. The hero
+  countdown is a dedicated *display-numeral* role — variable-weight, optically sized, the
+  single biggest element on the detail screen — designed explicitly per theme the way a clock
+  face is designed, not just "big bold text."
+- **`BlipbirdMotion`** — durations, easings, and spring specs as *data*, not ad-hoc
+  `tween(300)` calls. Default to **spring-based, critically-damped motion** (the Material 3
+  Expressive feel) even on the 1.4 line; reserve linear/eased tweens for deterministic
+  progress. Each transition (row tap → detail, theme switch, status flip, sheet present) has
+  a named spec. All motion respects the system animator-duration scale, the system
+  reduce-motion intent, *and* the in-app reduce-motion toggle (§18 accessibility).
+- **`BlipbirdShapes`** — a corner-radius scale (e.g., 4 / 8 / 16 / 28 dp) and a 4 dp
+  spacing/whitespace rhythm applied consistently to cards, chips, and padding so the layout
+  reads as deliberately gridded, not default-M3.
+- **`BlipbirdElevation`** — a tonal/overlay elevation system rather than generic drop
+  shadows, paired with edge-to-edge content and translucent layered app bars on API 31+
+  (the standard "premium Android" tell). Cockpit uses true-near-black overlays carefully
+  (avoid pure `#000000`, which smears on penTile panels at low brightness — use ~`#05050A`).
+- **Iconography weight/family per theme** — Cockpit draws thin technical strokes, Daylight a
+  friendlier weight, High Contrast the heaviest. A single `Icons.Default` set across themes
+  reads cheap.
+
+**Premium-Android baseline requirements** that every theme shares: edge-to-edge with
+transparent system bars; predictive-back gesture support (detail → list reveals during the
+swipe); translucent, blur-backed floating layers; per-theme MapLibre style precedence
+(theme-map > system-dark > system-light). The pull-to-refresh indicator, attribution chip,
+and weather/celestial iconography are all spec'd per theme (size, threshold, success/failure
+states), never left as "theme-aware" hand-waving. A **theme schedule** (auto-switch to
+Cockpit near local sunset, Daylight near sunrise, optionally tied to the departure airport's
+daylight engine) is a v1 delighter, not v2.
+
+Without this token system, "five themes" collapses to "five recolors" and the app reads as
+themed Android rather than a designed product.
 
 ---
 
