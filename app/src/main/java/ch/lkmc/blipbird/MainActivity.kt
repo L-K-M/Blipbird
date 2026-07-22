@@ -54,10 +54,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Only seed the deep link on a fresh launch; on re-creation the saved back
-        // stack already reflects any navigation the user did since tapping it.
-        if (savedInstanceState == null) {
-            deepLinkFlights.value = intent.deepLinkFlightId()
+        // Always honor the launch intent's deep link (process death can restore
+        // saved state AND deliver a fresh notification intent in the same
+        // onCreate), then clear the extra so an in-process configuration change
+        // doesn't re-fire a link the user has already navigated away from.
+        intent.deepLinkFlightId()?.let { id ->
+            deepLinkFlights.value = id
+            intent.removeExtra("flightId")
         }
 
         setContent {
@@ -123,7 +126,14 @@ fun BlipbirdNav(
         deepLinkFlights.collect { flightId ->
             if (flightId != null) {
                 val target = Screen.Detail(flightId)
-                if (backStack.last() != target) backStack.add(target)
+                if (backStack.last() != target) {
+                    // Replace any details on top so back from a notification tap
+                    // returns to the list, not a trail of earlier deep links.
+                    while (backStack.size > 1 && backStack.last() is Screen.Detail) {
+                        backStack.removeAt(backStack.lastIndex)
+                    }
+                    backStack.add(target)
+                }
                 deepLinkFlights.value = null
             }
         }
