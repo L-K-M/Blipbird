@@ -95,7 +95,7 @@
     <string name="settings_quota">API usage this cycle</string>
     <string name="settings_about">About &amp; data attribution</string>
     <string name="onboarding_keys_title">Connect a data source</string>
-    <string name="onboarding_keys_body">Blipbird uses free, bring-your-own-key services for schedules and gates. Without a key you still get the live map, airline info and weather.</string>
+    <string name="onboarding_keys_body">Without a status-provider key, you can save flights, use themes, and see bundled airline info. Maps, airport details, weather, and live positions need route or aircraft details that may be unavailable. Configured status providers receive flight identifiers, dates, and credentials as needed.</string>
     <string name="onboarding_keys_skip">Skip for now</string>
 
     <!-- Notifications -->

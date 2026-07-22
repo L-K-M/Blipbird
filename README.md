@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml/badge.svg)](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml)
 
-**Latest release:** v<!-- version -->0.2.0<!-- /version --> · [Download](https://github.com/L-K-M/Blipbird/releases/latest)
+**Source version:** v<!-- version -->0.2.0<!-- /version --> (no packaged GitHub Release is currently published)
 
 **The calm, beautiful flight-day companion for Android.** Enter one or more flight
 numbers (`CA861`, `CCA861`, `CCA861/CA861`, or paste a whole list) with an optional
@@ -12,7 +12,7 @@ visualizing daylight/darkness and weather along the whole route, and sends
 notifications for the moments that matter — delays, gate changes, departure,
 landing, cancellation.
 
-Open-source, ad-free, no accounts, no analytics. All your data stays on the device.
+Open-source and ad-free, with no Blipbird account, backend, or analytics.
 
 ## Features (v0.1)
 
@@ -63,10 +63,25 @@ Blipbird composes free/BYO-key services — see `PLAN.md` §4 for the full strat
 3. Go to "Subscription"
 4. Your key will be there
 
-**Without any key** the app still works in limited mode: live map, airline/airport
-info, weather, themes — with an honest "connect a data source" CTA where status
-data would be. Paste keys in **Settings → Data sources** (stored AES-GCM-encrypted
-with an Android Keystore key, excluded from backups).
+**Without a status-provider key**, you can save flight numbers, use themes, and see
+bundled airline information. Schedules, status, gates, and route endpoints require
+a configured provider. Maps, airport details, weather, and live positions appear
+only when the required route, time, or aircraft identifiers are available; they
+are not guaranteed in zero-key mode. Paste keys in **Settings → Data sources**.
+
+## Privacy & network access
+
+Blipbird has no account system, Blipbird-operated backend, or analytics. Tracked
+flight numbers, optional dates/aliases, and settings are stored locally, but may be
+included in Android OS cloud backup or device transfer. Provider-derived operational
+data and API keys are excluded from those backups; keys are AES-GCM-encrypted with a
+device-bound Android Keystore key.
+
+Network features connect directly to third parties. A configured flight-status
+provider receives the flight identifier, optional date, and required credential.
+ADS-B, aviation weather, Open-Meteo, and OpenFreeMap hosts receive their respective
+queries and ordinary request metadata such as the device IP address. See
+**Settings → About & data attribution** for the providers in use.
 
 ## Building
 

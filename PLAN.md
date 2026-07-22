@@ -63,14 +63,15 @@ Design principles:
    applies to the big constraint surfaced in §4.1: the *status* layer (schedule, gates,
    delays, status-driven notifications) has **no fully keyless free source**, so the
    happy path is a guided ~3-minute BYO-key setup rather than "it just works" out of the
-   box — and a genuine zero-key mode (bundled airline/airport context, endpoint weather and
-   advisories, user-entered route/time, and high-confidence active positions) is designed as
-   a real first-class mode, not a broken state.
+   box. The current zero-key mode retains flight-number entry, bundled airline context, and
+   themes, but cannot promise airport, route, map, weather, or live-position features because
+   their required endpoints, times, or aircraft identifiers normally come from status data.
 4. **Private and open.** No account, analytics SDK, or Blipbird-operated data backend.
-   Blipbird stores aliases/settings locally (with user-controlled OS backup/export) and
-   keeps provider-derived operational data out of backup; flight identifiers and related
-   lookup parameters necessarily go directly to enabled providers, which onboarding and
-   the privacy screen disclose. Permissively licensed open-source (Apache-2.0
+   User-authored flights/settings may participate in Android OS backup or device transfer;
+   provider-derived operational data and keys are excluded. Flight identifiers, optional
+   dates, and credentials go directly to configured status providers as needed, while ADS-B,
+   weather, and map hosts receive their respective queries and ordinary request metadata.
+   Onboarding and Settings disclose this. Permissively licensed open-source (Apache-2.0
    recommended; license gate in §16) with reproducible builds and an F-Droid-friendly
    dependency set (no Google Play Services required for core features).
 5. **Personal, themable, delightful.** Themes go beyond dark/light — a retro split-flap
@@ -181,11 +182,11 @@ countdown, gate, or status-driven notification data. We mitigate rather than hid
 
 | Requirement | Zero-key behavior |
 |---|---|
-| Time to departure | ⚠️ Only from a user-entered scheduled time; route metadata does not provide a trustworthy schedule. User-supplied times are labeled as such |
+| Time to departure | ❌ The current app has no user-entered scheduled-time field; a fresh schedule needs a status key |
 | Gate numbers | ❌ Needs a status key — honest CTA shown in place |
 | Airline info | ✅ Bundled datasets; release-cleared runtime enrichment is optional |
-| Live map | ⚠️ For an active aircraft only when identity clears §5; a route guide also needs user-entered or release-cleared endpoints |
-| Airport info, endpoint weather/advisories | ✅ Bundled data + aviationweather.gov; the pressure-level ribbon forecast remains provider-gated |
+| Live map | ❌ Not generally available: the current app needs status-derived route/schedule data before it can render a route or start eligible ADS-B polling |
+| Airport info and weather | ❌ Bundled airport records and keyless weather services exist, but the current app needs status-derived endpoints/times before it can use them |
 | Notifications | ❌ Status changes need an approved status source. ADS-B takeoff/landing detection works only while a foreground screen is polling; background position polling is deliberately off |
 | Themes, pull-to-refresh, list/detail UI | ✅ Fully functional |
 
@@ -363,7 +364,7 @@ coverage, attribution, caching, and operational review.
 
 | Situation | Behavior |
 |---|---|
-| No status API key configured | Limited mode: bundled airline/airport data, endpoint weather/advisories, and an active high-confidence ADS-B position. Show a route guide only from user-entered or separately release-cleared endpoints. No provider schedule is implied; status card shows a "connect a data source" CTA |
+| No status API key configured | Current limited mode supports saving flight numbers, bundled airline identity, and themes. Do not promise airport details, routes, maps, weather, or live positions: the implemented UI normally needs status-derived endpoints, times, and polling eligibility first. The status card shows a "connect a data source" CTA |
 | Status API has no gate | "Gate —" placeholder; notification for gate only fires when a gate exists |
 | Flight not yet airborne | Countdown only when a provider or user supplied a time; map shows a great-circle guide, not a filed route |
 | Position lookup empty in-flight (oceanic gap) | "Last seen 24 min ago" + estimated ghost marker; map keeps flown track |
