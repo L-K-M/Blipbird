@@ -24,7 +24,6 @@ class SettingsRepository @Inject constructor(
         val NOTIF_CRITICAL = booleanPreferencesKey("notif_critical")
         val NOTIF_STATUS = booleanPreferencesKey("notif_status")
         val NOTIF_REMINDERS = booleanPreferencesKey("notif_reminders")
-        val ONBOARDING_DONE = booleanPreferencesKey("onboarding_done")
     }
 
     val theme: Flow<AppTheme> = context.settingsStore.data.map { p ->
@@ -34,11 +33,9 @@ class SettingsRepository @Inject constructor(
     val notifCritical: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_CRITICAL] ?: true }
     val notifStatus: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_STATUS] ?: true }
     val notifReminders: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_REMINDERS] ?: true }
-    val onboardingDone: Flow<Boolean> = context.settingsStore.data.map { it[Keys.ONBOARDING_DONE] ?: false }
 
     suspend fun setTheme(theme: AppTheme) = context.settingsStore.edit { it[Keys.THEME] = theme.name }
     suspend fun setNotifCritical(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_CRITICAL] = v }
     suspend fun setNotifStatus(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_STATUS] = v }
     suspend fun setNotifReminders(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_REMINDERS] = v }
-    suspend fun setOnboardingDone() = context.settingsStore.edit { it[Keys.ONBOARDING_DONE] = true }
 }

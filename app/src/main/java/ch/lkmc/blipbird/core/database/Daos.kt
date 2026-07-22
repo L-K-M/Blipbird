@@ -38,8 +38,6 @@ interface TrackedFlightDao {
     @Query("UPDATE tracked_flight SET dateLocal = :date WHERE id = :id")
     suspend fun pinDate(id: Long, date: String)
 
-    @Query("SELECT * FROM tracked_flight WHERE archived = 0 AND alias IS NOT NULL")
-    suspend fun aliased(): List<TrackedFlightEntity>
 }
 
 @Dao
@@ -52,12 +50,6 @@ interface StatusSnapshotDao {
 
     @Query("SELECT * FROM status_snapshot WHERE trackedFlightId = :flightId ORDER BY fetchedAt DESC LIMIT 1")
     fun observeLatest(flightId: Long): Flow<StatusSnapshotEntity?>
-
-    @Query("SELECT * FROM status_snapshot WHERE trackedFlightId = :flightId ORDER BY fetchedAt DESC LIMIT 2")
-    suspend fun latestTwo(flightId: Long): List<StatusSnapshotEntity>
-
-    @Query("SELECT * FROM status_snapshot WHERE trackedFlightId = :flightId ORDER BY fetchedAt ASC")
-    suspend fun history(flightId: Long): List<StatusSnapshotEntity>
 
     @Query("DELETE FROM status_snapshot WHERE expiresAt < :now")
     suspend fun pruneExpired(now: Long)
