@@ -37,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -59,7 +61,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.settings), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null) }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back)) }
                 },
             )
         },
@@ -160,8 +162,14 @@ fun SettingsScreen(
             // ---- Quota --------------------------------------------------
             SectionTitle(stringResource(R.string.settings_quota))
             state.quota.forEach { (provider, used, allowance) ->
+                // TalkBack reads "∞" poorly (or not at all); speak "unlimited".
+                val spoken = stringResource(
+                    R.string.quota_spoken, provider, used, allowance?.toString()
+                        ?: stringResource(R.string.quota_unlimited),
+                )
                 Text(
                     "$provider: $used / ${allowance ?: "∞"}",
+                    modifier = Modifier.semantics { contentDescription = spoken },
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
