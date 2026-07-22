@@ -74,7 +74,9 @@ object MetarDecoder {
         // Visibility — only when notable (below 10 km / 6 SM).
         val meters = tokens.firstNotNullOfOrNull { VIS_M.matchEntire(it) }
             ?.groupValues?.get(1)?.toInt()
-        if (meters != null && meters < 9999) {
+        // METAR meter visibility steps end at 9000; 9999 means "10 km or more",
+        // and near-9999 values must not round up to a misleading "10.0 km".
+        if (meters != null && meters <= 9000) {
             parts += when {
                 meters % 1000 == 0 -> "visibility ${meters / 1000} km"
                 meters >= 1000 -> "visibility ${"%.1f".format(Locale.ROOT, meters / 1000.0)} km"
@@ -85,13 +87,17 @@ object MetarDecoder {
                 val leading = m.groupValues[1].toDoubleOrNull() ?: 0.0
                 val whole = m.groupValues[2].toDouble()
                 val denom = m.groupValues[3].toDoubleOrNull()
-                // Round to a tenth so float noise can't turn "2" into "2.0".
-                val miles = ((leading + if (denom != null && denom > 0) whole / denom else whole) * 10)
-                    .roundToInt() / 10.0
+                // Hundredths keep common fractions honest (3/4 SM -> 0.75 mi)
+                // while float noise still can't turn "2" into "2.0".
+                val miles = ((leading + if (denom != null && denom > 0) whole / denom else whole) * 100)
+                    .roundToInt() / 100.0
                 if (miles < 6.0) {
-                    parts += if (miles < 1.0 || miles % 1.0 != 0.0)
-                        "visibility ${"%.1f".format(Locale.ROOT, miles)} mi"
-                    else "visibility ${miles.toInt()} mi"
+                    val text = when {
+                        miles % 1.0 == 0.0 -> miles.toInt().toString()
+                        (miles * 10) % 1.0 == 0.0 -> "%.1f".format(Locale.ROOT, miles)
+                        else -> "%.2f".format(Locale.ROOT, miles)
+                    }
+                    parts += "visibility $text mi"
                 }
             }
         }
