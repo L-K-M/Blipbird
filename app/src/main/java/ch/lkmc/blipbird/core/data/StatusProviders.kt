@@ -76,7 +76,7 @@ class AeroDataBoxProvider @Inject constructor(
             "enroute", "approaching" -> FlightStatus.EN_ROUTE
             "arrived" -> FlightStatus.ARRIVED
             "delayed" -> FlightStatus.DELAYED
-            "canceled", "cancelled" -> FlightStatus.CANCELLED
+            "canceled", "cancelled", "canceleduncertain" -> FlightStatus.CANCELLED
             "diverted" -> FlightStatus.DIVERTED
             else -> FlightStatus.UNKNOWN
         }
@@ -130,8 +130,12 @@ class AeroApiProvider @Inject constructor(
         val key = keys.aeroApiKey() ?: return StatusResult.NoKey
         val ident = designator.icao ?: designator.iata ?: return StatusResult.NotFound
         return try {
+            // The user enters a *departure-airport-local* date but AeroAPI takes UTC
+            // bounds. Start a day early so red-eyes whose local date maps to the
+            // previous UTC day (e.g. 00:30 JST = 15:30 UTC the day before) are found;
+            // the InstanceSelector picks the right candidate from the wider window.
             val (start, end) = dateLocal?.let {
-                "${it}T00:00:00Z" to "${it.plusDays(1)}T23:59:59Z"
+                "${it.minusDays(1)}T00:00:00Z" to "${it.plusDays(1)}T23:59:59Z"
             } ?: (null to null)
             val resp = api.flights(key, ident, start, end)
             if (resp.flights.isEmpty()) StatusResult.NotFound
