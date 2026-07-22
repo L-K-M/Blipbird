@@ -75,6 +75,26 @@ object NotificationPlanner {
             )
         }
 
+        // Status-only delay (B9): AeroDataBox frequently reports status=delayed
+        // with no revised time, which the timed path above can't see. Guarded on
+        // the bucket so a timestamped delay never notifies twice, once per path.
+        if (current.status == FlightStatus.DELAYED && prev?.status != FlightStatus.DELAYED &&
+            delayBucket < DELAY_THRESHOLD.toMinutes()
+        ) {
+            events += Event(EventType.DELAY, "delay:status")
+        }
+        // ...and its recovery: delayed status clearing without the timed path
+        // ever having seen a bucket (no estimate to shrink).
+        if (prev?.status == FlightStatus.DELAYED && current.status != FlightStatus.DELAYED &&
+            current.status != FlightStatus.CANCELLED && current.status != FlightStatus.DIVERTED &&
+            prevDelayBucket < DELAY_THRESHOLD.toMinutes() && !recovering
+        ) {
+            events += Event(
+                EventType.DELAY_RECOVERED, "delay-recovered:status",
+                null, (est ?: sched)?.toString(), delayMinutes = 0L,
+            )
+        }
+
         // Status transitions
         if (current.status == FlightStatus.CANCELLED && prev?.status != FlightStatus.CANCELLED) {
             events += Event(EventType.CANCELLED, "cancelled")

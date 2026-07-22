@@ -1,12 +1,12 @@
 # Blipbird — Review findings & work backlog
 
 The living successor to the July 2026 review documents: the Fable full-codebase
-review, the GLM 5.2 review, and both interim `ANALYSIS.md` backlogs. The raw
-point-in-time snapshots are archived under [`docs/reviews/`](docs/reviews/)
-(`fable.md`, `glm.md`, `glm-analysis.md`); **this file is the single source of
-truth going forward.** IDs are stable so PRs and discussions can keep
-referencing them: `B/G/P/V/F/I` from the Fable review, `glm x.y` from the GLM
-review.
+review, the GLM 5.2 review, the DeepSeek v4 review, and the interim
+`ANALYSIS.md` backlogs. The raw point-in-time snapshots are archived under
+[`docs/reviews/`](docs/reviews/) (`fable.md`, `glm.md`, `glm-analysis.md`,
+`ds4.md`); **this file is the single source of truth going forward.** IDs are
+stable so PRs and discussions can keep referencing them: `B/G/P/V/F/I` from the
+Fable review, `glm x.y` from the GLM review, `DS4-*` from the DeepSeek review.
 
 ---
 
@@ -46,23 +46,30 @@ here.
 **Superseded (closed unmerged):** #19 → #30 (its `countdownText` clamp was
 ported); #27 → #32 (alternative collision-free ID scheme noted below in B14n).
 
+### Second cycle (PRs #38–#55)
+
+| Area | PR(s) | Items | What landed |
+|------|-------|-------|-------------|
+| Geometry follow-ups | #39 (supersedes #48, #49) | B21, dateline guard | Flown-track source keyed on boundary timestamps + size; exact-±180° division guard; pole/dateline tests |
+| Daylight crossing | #47 | glm 1.18 | Exact-threshold samples no longer swallow a sunrise/sunset crossing; `ds4.md` review archived |
+| Reference re-import | #41 | B12 | Import versioned by an MD5 of the data-sources lockfile; wipe+refill inside one transaction; fingerprint persisted only after success |
+| Network hygiene | #43 (supersedes #52) | G6, G8 | 10 MB OkHttp disk cache; ADB minute-precision timestamps parse offset-first |
+| List sort | #45 | B23 | Landed/arrived flights sink below active ones, most recently landed first |
+| Notification planner | #40 + ported #53 (supersedes #54) | F8, F9, B9, glm 1.22, G9-part | Gate-assigned events, delay-recovered (bucket-shrink + back-on-schedule), status-only delay with double-fire guard, honest delay minutes in copy, 16-case planner test suite |
+| Accessibility | #42 + #50-part | glm 4.1, 4.3, 4.4/4.4b, glm 3.11 | Back-arrow content descriptions, timeline `heightIn` for 200 % font scale, spoken quota line, Cockpit `#05050A` background (kept `main`'s luminance-based StatusWord on-color over #50's per-status table) |
+| Timeline | #55-part | V13 | Derived Check-in/Boarding rows (and the ~ note) hidden once the flight departs (kept `main`'s continuous civil-twilight band over #55's discontinuous variant) |
+| Repo hygiene | #44 | G4, G2 | `.idea/` untracked; dead `RouteMap.kt`, 11 dead strings, dead `onboardingDone` setting, 3 dead DAO queries removed |
+| Detail actions | #46 | F3, F4 | Share sheet (status text summary) + add-to-calendar intent in the detail top bar; `statusText()` shared with the chip |
+| Release hardening | #38 | SOL-012 | Tag releases fail without all four signing secrets; apksigner verification + SHA-256 checksum published; unsigned APKs never released |
+| Privacy disclosures | #51 | SOL-011 | README/PLAN/onboarding copy states the real backup boundary, zero-key capability, and third-party network access; no absolute privacy claims |
+
+**Superseded in this cycle:** #48/#49 → already on `main` via #34 (+#39 for the
+track key); #52 → #43; #54 → #40; #53 → ported by hand onto #40's planner (its
+branch would have conflicted with the richer recovery model).
+
 ---
 
 ## Open bugs
-
-### B9 · Delay notifications can never fire from AeroDataBox status-only delays — MEDIUM
-`NotificationPlanner.diff` compares `scheduled` vs `estimated`; ADB frequently
-reports delays via a *status* of `delayed` with no revised time, which the
-planner ignores entirely. A "Delayed" push is the #1 reason to install a flight
-tracker. **Fix:** emit a DELAY event when `current.status == DELAYED &&
-prev?.status != DELAYED` even without timestamps, keeping the bucketed
-fingerprint path when times exist. *Held back because live ADB payloads couldn't
-be verified offline.*
-
-### B12 · Reference data never re-imports after an app update — MEDIUM
-`ReferenceImporter` guards on `airportCount() > 0`; a shipped update with
-regenerated CSVs never reaches the database. **Fix:** version the import (store
-the lockfile's `fetched` date or a CSV hash; clear + re-import on change).
 
 ### glm 1.10 · Cancelled/diverted/departed/landed re-fire after the 3-day prune — MEDIUM
 `EmittedEvent.expiresAt` shares the snapshot TTL; after prune the next refresh
@@ -91,27 +98,41 @@ ledger to the user DB or add real migrations for that table.
 A 29-min slip renders "Delayed 15m" (bucket floor). Show the real minutes (the
 bucket is a dedup key, not display copy).
 
-### glm 1.18 · Tangential sunrise/sunset sample can be lost — LOW
-`DaylightEngine.findCrossings` drops a sample landing exactly on the threshold
-(`e0 == 0.0` continue). Also B22: the bisection early-exit `return@repeat` is a
-no-op (harmless; always 24 iterations).
+### B22 · DaylightEngine bisection early-exit is a no-op — LOW (code health)
+`return@repeat` as the last statement just continues the loop; the precision
+early-exit never fires (harmless — always 24 iterations).
 
 ### B18 · Quota ledger check-then-record race — LOW
 `canSpend` + `record` are non-atomic; bounded overshoot near the soft stop.
-
-### B21 · MapLibre track source keyed on size only — LOW
-`remember(track.size)` — a pruned+appended track of equal length renders stale
-geometry. Key on last-fix timestamp + size.
-
-### B23 · Landed flights sort above imminent departures — LOW (design)
-Sorting by `nextEventAt` lets a flight landed 2 h ago outrank one departing in
-45 min. Landed rows should sink (and eventually auto-archive — F2).
 
 ### B14n · Notification ID scheme note
 The landed scheme is a mixed hash (astronomically unlikely but not impossible
 collisions). #27 proposed a provably collision-free alternative
 (`floorMod(flightId, 500M) * 4 + channelIndex`) — adopt if IDs ever matter
 forensically.
+
+### DS4-new: unique findings from the DeepSeek review (`docs/reviews/ds4.md`)
+- **DS4-B17 — `dateLocal` parsed without `runCatching`** in
+  `FlightRepository.refreshStatus`; the stored format is stable (`YYYY-MM-DD`)
+  but a malformed pin would crash the refresh loop. Defence-in-depth.
+- **DS4-G9 — `phaseTime` calls `Instant.now()` at composition time** (list
+  card); the ViewModel already ticks a shared clock — pass `now` through the
+  row data.
+- **DS4-G10 — No per-row data-freshness indicator in the list** (detail shows
+  "Updated X ago"; the list doesn't).
+- **DS4-P10 — `planeBitmap` renders on the composition thread** on first use
+  (cached after); consider pre-rendering or a vector drawable.
+- **DS4-V19 — Ribbon weather glyphs are evenly spaced** (`weight(1f)`) while
+  sample points are positioned along the great-circle fraction — glyphs drift
+  from their true positions (sharpens V7).
+- **DS4-V20 — Past-due countdown reads "Departs in 0m"** — switch to
+  "Departed"-style copy when the target has passed.
+- **DS4-V21 — Detail countdown freezes between 15 s ticks** vs the list's 30 s
+  cadence — unify tick sources, consider animation smoothing.
+- **DS4-F18 — "Track return flight"** button that inverts the city pair. *(S)*
+- **DS4-I12–I15 — Ideas:** shared live-progress link; tail-number "spotted"
+  badge when the tracked registration matches ADS-B; altitude-profile
+  sparkline from the fix history; timezone-hopping indicator ("UTC+2 → UTC+8").
 
 ### glm-A: further verified defects (from the GLM backlog)
 - **Future-dated ADS-B fixes treated as fresh** — `FlightPhaseMachine` uses

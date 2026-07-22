@@ -143,6 +143,48 @@ class NotificationPlannerTest {
         assertTrue(events.none { it.type == EventType.DELAY_RECOVERED })
     }
 
+    @Test fun `status-only delay fires on the transition without timestamps`() {
+        val events = NotificationPlanner.diff(
+            snapshot(),
+            snapshot(status = FlightStatus.DELAYED),
+        )
+        val e = single(events, EventType.DELAY)
+        assertEquals("delay:status", e.fingerprint)
+        assertNull(e.delayMinutes)
+        // Same state again: no repeat.
+        assertTrue(
+            NotificationPlanner.diff(
+                snapshot(status = FlightStatus.DELAYED),
+                snapshot(status = FlightStatus.DELAYED),
+            ).none { it.type == EventType.DELAY },
+        )
+    }
+
+    @Test fun `status delay with a timed estimate defers to the timed path`() {
+        val events = NotificationPlanner.diff(
+            snapshot(),
+            snapshot(status = FlightStatus.DELAYED, estDep = sched.plus(Duration.ofMinutes(29))),
+        )
+        val e = single(events, EventType.DELAY)
+        assertEquals("delay:15", e.fingerprint)
+    }
+
+    @Test fun `status-only delay clearing emits a recovery`() {
+        val events = NotificationPlanner.diff(
+            snapshot(status = FlightStatus.DELAYED),
+            snapshot(status = FlightStatus.ON_TIME),
+        )
+        val e = single(events, EventType.DELAY_RECOVERED)
+        assertEquals("delay-recovered:status", e.fingerprint)
+        // ...but not when the flight was cancelled instead.
+        assertTrue(
+            NotificationPlanner.diff(
+                snapshot(status = FlightStatus.DELAYED),
+                snapshot(status = FlightStatus.CANCELLED),
+            ).none { it.type == EventType.DELAY_RECOVERED },
+        )
+    }
+
     // ------------------------------------------------------------- transitions
 
     @Test fun `departed and landed fire once on the transition`() {

@@ -77,15 +77,23 @@ class NotificationEmitter @Inject constructor(
             NotificationPlanner.EventType.GATE_CHANGE ->
                 context.getString(R.string.notif_gate_change, event.oldValue ?: "?", event.newValue ?: "?")
             NotificationPlanner.EventType.DELAY -> {
-                // Real minutes for copy — the bucketed fingerprint is a dedup key,
-                // not display text (a 29-min slip used to read "Delayed 15m").
-                val mins = event.delayMinutes ?: event.fingerprint.substringAfter(':').toLongOrNull() ?: 0
-                context.getString(R.string.notif_delay, "${mins}m", timeString(event.newValue))
+                if (event.fingerprint == "delay:status") {
+                    // Provider reported "delayed" without a revised time.
+                    context.getString(R.string.notif_delay_status_only)
+                } else {
+                    // Real minutes for copy — the bucketed fingerprint is a dedup key,
+                    // not display text (a 29-min slip used to read "Delayed 15m").
+                    val mins = event.delayMinutes ?: event.fingerprint.substringAfter(':').toLongOrNull() ?: 0
+                    context.getString(R.string.notif_delay, "${mins}m", timeString(event.newValue))
+                }
             }
             NotificationPlanner.EventType.DELAY_RECOVERED -> {
                 val mins = event.delayMinutes ?: 0
-                if (mins <= 0) context.getString(R.string.notif_back_on_time, timeString(event.newValue))
-                else context.getString(R.string.notif_delay_recovered, "${mins}m", timeString(event.newValue))
+                when {
+                    mins > 0 -> context.getString(R.string.notif_delay_recovered, "${mins}m", timeString(event.newValue))
+                    event.newValue != null -> context.getString(R.string.notif_back_on_time, timeString(event.newValue))
+                    else -> context.getString(R.string.status_on_time)
+                }
             }
             NotificationPlanner.EventType.CANCELLED -> context.getString(R.string.notif_cancelled)
             NotificationPlanner.EventType.DIVERTED -> context.getString(R.string.notif_diverted, event.newValue ?: "?")

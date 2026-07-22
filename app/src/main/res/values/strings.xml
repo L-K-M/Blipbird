@@ -105,6 +105,7 @@
     <string name="notif_gate_change">Gate %1$s → %2$s</string>
     <string name="notif_gate_assigned">Gate %1$s</string>
     <string name="notif_delay">Delayed %1$s — now %2$s</string>
+    <string name="notif_delay_status_only">Flight is delayed</string>
     <string name="notif_delay_recovered">Delay shortened to %1$s — now %2$s</string>
     <string name="notif_back_on_time">Back on schedule — departing %1$s</string>
     <string name="notif_cancelled">Flight cancelled</string>
