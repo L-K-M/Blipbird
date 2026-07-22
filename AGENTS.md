@@ -43,8 +43,9 @@ python3 scripts/generate_icons.py            # media-sources/icon.png -> mipmaps
   tag matches the committed `versionName`, re-runs tests + lint, builds
   `assembleRelease`, signs with the keystore secrets
   (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
-  `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) or attaches the unsigned APK
-  with a warning, then publishes the GitHub Release.
+  `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`), verifies the signature, and
+  publishes the signed APK plus its SHA-256 checksum. Missing signing secrets
+  fail the workflow before the build; unsigned APKs are never published.
 - Dependabot: weekly `github-actions` + `gradle` update PRs.
 
 ## Releasing

@@ -7,11 +7,12 @@
 #   - asserts the tag matches the committed versionName — the APK is built
 #     from the committed version, so a mismatched tag would ship a build
 #     labeled with a version it isn't
-#   - builds the release APK and signs it with the upload keystore from
-#     secrets (ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD /
-#     ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD), falling back to attaching
-#     the unsigned APK with a warning while no keystore is configured
-#   - publishes a GitHub Release with generated notes
+#   - requires all four signing secrets (ANDROID_KEYSTORE_BASE64 /
+#     ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD)
+#     before building; a tag must never publish an unsigned APK
+#   - signs the release APK, verifies its signature and certificate with the
+#     selected Android SDK apksigner, and generates a SHA-256 checksum
+#   - publishes the signed APK and checksum in a GitHub Release
 
 name: Release
 
@@ -32,6 +33,29 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
+
+      - name: Validate release signing configuration
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "::error::Release signing is not fully configured; missing secrets: ${missing[*]}"
+            exit 1
+          fi
 
       - uses: gradle/actions/wrapper-validation@v5
 
@@ -70,28 +94,42 @@ jobs:
         run: |
           set -euo pipefail
           UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
-
-          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            OUT="blipbird-${GITHUB_REF_NAME}-unsigned.apk"
-            cp "$UNSIGNED" "$OUT"
-            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret set; attaching the unsigned release APK."
-            echo "apk=$OUT" >> "$GITHUB_OUTPUT"
-            exit 0
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::Neither ANDROID_SDK_ROOT nor ANDROID_HOME is set."
+            exit 1
           fi
+          BUILD_TOOLS_DIRS=("$SDK_ROOT"/build-tools/*)
+          if [ ! -d "${BUILD_TOOLS_DIRS[0]}" ]; then
+            echo "::error::No Android SDK Build Tools installation found under $SDK_ROOT."
+            exit 1
+          fi
+          BUILD_TOOLS="$(printf '%s\n' "${BUILD_TOOLS_DIRS[@]}" | sort -V | tail -n 1)"
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          if [ ! -x "$ZIPALIGN" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::error::Selected Android SDK Build Tools are missing zipalign or apksigner: $BUILD_TOOLS"
+            exit 1
+          fi
+          echo "Using Android SDK Build Tools ${BUILD_TOOLS##*/} for APK signing and verification."
 
-          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)"
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > keystore.jks
           ALIGNED="aligned.apk"
           OUT="blipbird-${GITHUB_REF_NAME}.apk"
-          "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
-          "$BUILD_TOOLS/apksigner" sign \
+          CHECKSUM="${OUT}.sha256"
+          trap 'rm -f keystore.jks "$ALIGNED"' EXIT
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > keystore.jks
+          "$ZIPALIGN" -p -f 4 "$UNSIGNED" "$ALIGNED"
+          "$APKSIGNER" sign \
             --ks keystore.jks \
             --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
             --ks-key-alias "$ANDROID_KEY_ALIAS" \
             --key-pass "pass:$ANDROID_KEY_PASSWORD" \
             --out "$OUT" "$ALIGNED"
-          rm -f keystore.jks "$ALIGNED"
+          "$APKSIGNER" verify --verbose --print-certs "$OUT"
+          sha256sum "$OUT" > "$CHECKSUM"
           echo "apk=$OUT" >> "$GITHUB_OUTPUT"
+          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -99,4 +137,6 @@ jobs:
           name: Blipbird ${{ github.ref_name }}
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
-          files: ${{ steps.sign.outputs.apk }}
+          files: |
+            ${{ steps.sign.outputs.apk }}
+            ${{ steps.sign.outputs.checksum }}
