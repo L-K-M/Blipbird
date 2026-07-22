@@ -25,6 +25,7 @@ import ch.lkmc.blipbird.ui.settings.SettingsScreen
 import ch.lkmc.blipbird.ui.theme.BlipbirdTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 
 /** Minimal explicit back stack (documented deviation from PLAN.md's Nav3 pick). */
@@ -68,6 +69,7 @@ class MainActivity : ComponentActivity() {
             BlipbirdTheme(theme = theme) {
                 BlipbirdNav(
                     deepLinkFlights = deepLinkFlights,
+                    onDeepLinkConsumed = { deepLinkFlights.value = null },
                     onFirstTrack = { requestNotificationPermission() },
                 )
             }
@@ -76,7 +78,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.deepLinkFlightId()?.let { deepLinkFlights.value = it }
+        setIntent(intent)
+        intent.deepLinkFlightId()?.let { id ->
+            deepLinkFlights.value = id
+            intent.removeExtra("flightId")
+        }
     }
 
     private fun Intent?.deepLinkFlightId(): Long? =
@@ -114,7 +120,8 @@ private const val SAVED_SETTINGS = -2L
 
 @Composable
 fun BlipbirdNav(
-    deepLinkFlights: MutableStateFlow<Long?>,
+    deepLinkFlights: StateFlow<Long?>,
+    onDeepLinkConsumed: () -> Unit,
     onFirstTrack: () -> Unit,
 ) {
     val backStack = rememberSaveable(saver = BackStackSaver) {
@@ -134,7 +141,7 @@ fun BlipbirdNav(
                     }
                     backStack.add(target)
                 }
-                deepLinkFlights.value = null
+                onDeepLinkConsumed()
             }
         }
     }
