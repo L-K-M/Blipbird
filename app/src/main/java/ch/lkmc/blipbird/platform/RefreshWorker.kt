@@ -44,7 +44,15 @@ class RefreshWorker @AssistedInject constructor(
         if (flights.isEmpty()) {
             // Nothing to watch: stop waking the device every 15 minutes.
             // FlightRepository.track() re-arms via BackgroundRefreshController.
-            WorkManager.getInstance(applicationContext).cancelUniqueWork(UNIQUE_NAME)
+            // Re-check right before cancelling to narrow the race with a
+            // concurrent track() whose KEEP enqueue no-ops against this
+            // still-running work. (The re-check must precede the cancel: the
+            // cancel also cancels this worker's own coroutine, so nothing
+            // after it is guaranteed to run.) A track() landing after the
+            // cancel schedules fresh work, so that side has no race.
+            if (repository.activeFlights().isEmpty()) {
+                WorkManager.getInstance(applicationContext).cancelUniqueWork(UNIQUE_NAME)
+            }
             return Result.success()
         }
 
