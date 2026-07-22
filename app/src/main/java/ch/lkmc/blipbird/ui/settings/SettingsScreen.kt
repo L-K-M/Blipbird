@@ -28,6 +28,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +40,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.datastore.AppTheme
@@ -130,12 +134,24 @@ fun SettingsScreen(
             var exactGranted by remember {
                 mutableStateOf(!exactSupported || alarmManager.canScheduleExactAlarms())
             }
+            // Re-check on resume: the grant happens in the system Settings UI, so the
+            // old eager re-read right after startActivity always saw the *old* state
+            // and left the button label stale ("Allow precise alerts" after granting).
+            val lifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner, exactSupported) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME && exactSupported) {
+                        exactGranted = alarmManager.canScheduleExactAlarms()
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            }
             Button(
                 enabled = !exactGranted,
                 onClick = {
                     if (exactSupported) {
                         context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
-                        exactGranted = alarmManager.canScheduleExactAlarms()
                     }
                 },
             ) {
