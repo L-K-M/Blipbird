@@ -149,6 +149,23 @@ class MetarDecoderTest {
         assertTrue(d.text.contains("visibility 0.5 mi"), d.text)
     }
 
+    @Test fun `mixed-number statute-mile visibility joins across the space`() {
+        val d = MetarDecoder.decode("KSFO 221156Z 28006KT 1 1/2SM BR OVC004 12/11 A3001")
+        assertTrue(d.text.contains("visibility 1.5 mi"), d.text)
+    }
+
+    @Test fun `unknown intensity variants fall back to the base phenomenon`() {
+        val d = MetarDecoder.decode("UUEE 221200Z 36008KT 2000 +DZ OVC003 04/03 Q1002")
+        assertTrue(d.text.contains("heavy drizzle"), d.text)
+    }
+
+    @Test fun `mps winds convert to knots`() {
+        val d = MetarDecoder.decode("UUEE 221200Z 36010G20MPS 9999 OVC020 04/03 Q1002")
+        assertEquals(19, d.windSpeedKt)
+        assertEquals(39, d.windGustKt)
+        assertTrue(d.text.contains("wind 360° 19 kt gusting 39"), d.text)
+    }
+
     @Test fun `unknown input falls back gracefully`() {
         val d = MetarDecoder.decode("XXXX")
         assertEquals("See raw report", d.text)

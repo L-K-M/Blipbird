@@ -1,6 +1,7 @@
 package ch.lkmc.blipbird.domain
 
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * Plain-language rendering of the essentials of a METAR. Deliberately partial:
@@ -13,9 +14,11 @@ import java.util.Locale
  */
 object MetarDecoder {
 
-    private val WIND = Regex("^(\\d{3}|VRB)(\\d{2,3})(?:G(\\d{2,3}))?KT$")
+    private val WIND = Regex("^(\\d{3}|VRB)(\\d{2,3})(?:G(\\d{2,3}))?(KT|MPS)$")
     private val VIS_M = Regex("^(\\d{4})$")
-    private val VIS_SM = Regex("^(\\d+)(?:/(\\d+))?SM$")
+    private val VIS_SM = Regex("^(?:(\\d+) )?(\\d+)(?:/(\\d+))?SM$")
+    private val VIS_SM_FRACTION = Regex("^\\d+/\\d+SM$")
+    private const val MPS_TO_KT = 1.94384
     private val TEMP = Regex("^(M?\\d{2})/(M?\\d{2})$")
     private val CLOUD = Regex("^(FEW|SCT|BKN|OVC)(\\d{3})(?:CB|TCU)?$")
 
@@ -47,7 +50,7 @@ object MetarDecoder {
     )
 
     fun decode(raw: String): Decoded {
-        val tokens = raw.trim().split(Regex("\\s+"))
+        val tokens = joinMixedNumberVisibility(raw.trim().split(Regex("\\s+")))
         val parts = mutableListOf<String>()
         var tempC: Double? = null
         var windDir: Int? = null
@@ -63,9 +66,6 @@ object MetarDecoder {
             parts += "$kind at ${"%,d".format(Locale.ROOT, feet)} ft"
         }
 
-        // All present-weather phenomena, in report order.
-        parts += tokens.mapNotNull { WX[it] }.distinct()
-
         // Visibility — only when notable (below 10 km / 6 SM).
         tokens.firstNotNullOfOrNull { VIS_M.matchEntire(it) }?.let { m ->
             val meters = m.groupValues[1].toInt()
@@ -77,20 +77,36 @@ object MetarDecoder {
                 }
             }
         } ?: tokens.firstNotNullOfOrNull { VIS_SM.matchEntire(it) }?.let { m ->
-            val whole = m.groupValues[1].toDouble()
-            val denom = m.groupValues[2].toDoubleOrNull()
-            val miles = if (denom != null && denom > 0) whole / denom else whole
+            val leading = m.groupValues[1].toDoubleOrNull() ?: 0.0
+            val whole = m.groupValues[2].toDouble()
+            val denom = m.groupValues[3].toDoubleOrNull()
+            val miles = leading + if (denom != null && denom > 0) whole / denom else whole
             if (miles < 6.0) {
-                parts += if (miles < 1.0) "visibility ${"%.1f".format(Locale.ROOT, miles)} mi"
+                parts += if (miles < 1.0 || miles % 1.0 != 0.0)
+                    "visibility ${"%.1f".format(Locale.ROOT, miles)} mi"
                 else "visibility ${miles.toInt()} mi"
             }
         }
 
+        // All present-weather phenomena, in report order; unknown intensity
+        // variants fall back to the base code with a heavy/light prefix.
+        parts += tokens.mapNotNull { token ->
+            WX[token] ?: WX[token.removePrefix("+").removePrefix("-")]?.let { base ->
+                when (token.firstOrNull()) {
+                    '+' -> "heavy $base"
+                    '-' -> "light $base"
+                    else -> base
+                }
+            }
+        }.distinct()
+
         tokens.firstNotNullOfOrNull { WIND.matchEntire(it) }?.let { m ->
             val dirRaw = m.groupValues[1]
+            val mps = m.groupValues[4] == "MPS"
+            fun toKt(v: Int): Int = if (mps) (v * MPS_TO_KT).roundToInt() else v
             windDir = dirRaw.toIntOrNull()
-            windKt = m.groupValues[2].toInt()
-            gustKt = m.groupValues[3].toIntOrNull()
+            windKt = toKt(m.groupValues[2].toInt())
+            gustKt = m.groupValues[3].toIntOrNull()?.let(::toKt)
             parts += buildString {
                 when {
                     windKt == 0 -> append("calm wind")
@@ -110,5 +126,23 @@ object MetarDecoder {
         val text = if (parts.isEmpty()) "See raw report" else
             parts.joinToString(", ").replaceFirstChar { it.uppercase() }
         return Decoded(text, tempC, windDir, windKt, gustKt)
+    }
+
+    /** Re-joins US mixed-number visibility split by whitespace: "1" + "1/2SM" → "1 1/2SM". */
+    private fun joinMixedNumberVisibility(rawTokens: List<String>): List<String> {
+        val out = ArrayList<String>(rawTokens.size)
+        var i = 0
+        while (i < rawTokens.size) {
+            val cur = rawTokens[i]
+            val next = rawTokens.getOrNull(i + 1)
+            if (next != null && cur.toIntOrNull() != null && VIS_SM_FRACTION.matches(next)) {
+                out += "$cur $next"
+                i += 2
+            } else {
+                out += cur
+                i++
+            }
+        }
+        return out
     }
 }
