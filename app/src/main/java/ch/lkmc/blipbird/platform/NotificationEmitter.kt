@@ -91,6 +91,9 @@ class NotificationEmitter @Inject constructor(
     }
 
     private fun notify(flightId: Long, channel: String, title: String, text: String) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return
         val intent = Intent(context, MainActivity::class.java).apply {
             putExtra("flightId", flightId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -107,7 +110,11 @@ class NotificationEmitter @Inject constructor(
             .setContentIntent(pending)
             .setAutoCancel(true)
             .build()
-        NotificationManagerCompat.from(context)
-            .notify((flightId % Int.MAX_VALUE).toInt() * 10 + channel.hashCode() % 10, notification)
+        try {
+            NotificationManagerCompat.from(context)
+                .notify((flightId % Int.MAX_VALUE).toInt() * 10 + channel.hashCode() % 10, notification)
+        } catch (_: SecurityException) {
+            // Permission revoked between the check above and the call.
+        }
     }
 }

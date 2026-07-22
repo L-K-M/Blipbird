@@ -3,6 +3,7 @@ package ch.lkmc.blipbird.ui.settings
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -124,12 +125,14 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(6.dp))
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            var exactGranted by remember { mutableStateOf(alarmManager.canScheduleExactAlarms()) }
+            var exactGranted by remember { mutableStateOf(canUseExactAlarms(alarmManager)) }
             Button(
                 enabled = !exactGranted,
                 onClick = {
-                    context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
-                    exactGranted = alarmManager.canScheduleExactAlarms()
+                    if (Build.VERSION.SDK_INT >= 31) {
+                        context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+                    }
+                    exactGranted = canUseExactAlarms(alarmManager)
                 },
             ) {
                 Text(if (exactGranted) "Granted" else "Allow precise alerts")
@@ -156,6 +159,10 @@ fun SettingsScreen(
         }
     }
 }
+
+/** Below API 31 exact alarms need no special access. */
+private fun canUseExactAlarms(alarmManager: AlarmManager): Boolean =
+    Build.VERSION.SDK_INT < 31 || alarmManager.canScheduleExactAlarms()
 
 @Composable
 private fun SectionTitle(text: String) {

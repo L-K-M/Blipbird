@@ -202,6 +202,15 @@ always runs all 24 iterations).
 (`nextEventAt` = landing time, past) outranks one departing in 45 min. Active/upcoming
 flights should lead; landed ones should sink (and eventually auto-archive — see F2).
 
+### B24 · Unguarded API 31+ calls crash on Android 8–11 — HIGH *(found by CI lint)*
+`ReminderScheduler.kt:53` and `SettingsScreen.kt:127` call
+`AlarmManager.canScheduleExactAlarms()` (API 31) with no `SDK_INT` guard on a
+`minSdk 26` app — `NoSuchMethodError` at runtime on Android 8–11 the moment the
+settings screen opens or a refresh reconciles reminders. Lint also flags the
+unchecked `NotificationManagerCompat.notify` (`NotificationEmitter.kt:110`).
+**Status: fixed directly on this branch** (SDK guards + permission check + catch),
+which is also what turns the CI lint gate green.
+
 ---
 
 ## G — General issues
@@ -213,7 +222,7 @@ flights should lead; landed ones should sink (and eventually auto-archive — se
   whole `ATTRIBUTION_TEXT` (`SettingsScreen.kt`), "Weather data by Open-Meteo.com"
   (`FlightDetailScreen.kt:127`). Localization is currently impossible.
 - **G2 — Dead code:** `RouteMap.kt` (the whole offline canvas map — 175 lines, no
-  callers since the MapLibre migration), `ProviderKeyStore`'s… fine; unused strings
+  callers since the MapLibre migration), unused strings
   (`status_boarding`, `timeline_scheduled/estimated/actual`, `estimated_chip`,
   `sunrise_at`, `sunset_at`, `ribbon_unavailable`, `weather_unavailable`,
   `attribution_openfreemap`, `onboarding_keys_skip`), unused `onboardingDone`
