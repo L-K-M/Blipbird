@@ -30,7 +30,6 @@
     <string name="status_scheduled">Scheduled</string>
     <string name="status_on_time">On time</string>
     <string name="status_delayed">Delayed</string>
-    <string name="status_boarding">Boarding</string>
     <string name="status_departed">Departed</string>
     <string name="status_en_route">En route</string>
     <string name="status_approaching">Approaching</string>
@@ -56,26 +55,17 @@
     <string name="observed_ago">observed %1$s ago</string>
     <string name="value_unknown">—</string>
     <string name="timeline">Timeline</string>
-    <string name="timeline_scheduled">Sched</string>
-    <string name="timeline_estimated">Est</string>
-    <string name="timeline_actual">Actual</string>
-    <string name="estimated_chip">est.</string>
     <string name="derived_note">Times marked ~ are Blipbird estimates, not airline data.</string>
     <string name="operated_by">Operated by %1$s</string>
     <string name="flight_ribbon">Along the route</string>
-    <string name="ribbon_unavailable">Route projection unavailable — missing schedule times.</string>
     <string name="weather">Weather</string>
-    <string name="weather_unavailable">Weather unavailable</string>
     <string name="weather_route_pending">Route forecast available closer to departure</string>
     <string name="airline">Airline</string>
     <string name="live_map">Live map</string>
     <string name="map_no_position">No live position — showing planned route</string>
     <string name="last_seen_ago">Last seen %1$s ago</string>
-    <string name="sunrise_at">Sunrise %1$s</string>
-    <string name="sunset_at">Sunset %1$s</string>
     <string name="ribbon_side_left">left side</string>
     <string name="ribbon_side_right">right side</string>
-    <string name="attribution_openfreemap">© OpenMapTiles © OpenStreetMap contributors</string>
 
     <!-- Settings -->
     <string name="settings">Settings</string>
@@ -102,7 +92,6 @@
     <string name="settings_about">About &amp; data attribution</string>
     <string name="onboarding_keys_title">Connect a data source</string>
     <string name="onboarding_keys_body">Blipbird uses free, bring-your-own-key services for schedules and gates. Without a key you still get the live map, airline info and weather.</string>
-    <string name="onboarding_keys_skip">Skip for now</string>
 
     <!-- Notifications -->
     <string name="channel_critical">Critical changes</string>
