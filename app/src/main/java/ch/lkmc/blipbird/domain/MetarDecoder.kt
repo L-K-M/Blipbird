@@ -59,8 +59,13 @@ object MetarDecoder {
 
         if ("CAVOK" in tokens) parts += "clear skies and good visibility"
 
-        // Most significant (last reported) cloud layer, with convective marker.
-        tokens.mapNotNull { CLOUD.matchEntire(it) }.lastOrNull()?.let { m ->
+        // Ceiling = first (lowest-reported) BKN/OVC layer — `BKN025 OVC100` is a
+        // 2,500 ft ceiling, not "overcast at 10,000 ft" — else the first cloud
+        // layer, with convective marker.
+        val clouds = tokens.mapNotNull { CLOUD.matchEntire(it) }
+        val ceiling = clouds.firstOrNull { it.groupValues[1] == "BKN" || it.groupValues[1] == "OVC" }
+            ?: clouds.firstOrNull()
+        ceiling?.let { m ->
             val kind = CLOUD_NAME[m.groupValues[1]] ?: return@let
             val feet = m.groupValues[2].toInt() * 100
             val convective = when (m.groupValues[3]) {
