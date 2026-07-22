@@ -25,9 +25,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
+import okhttp3.Cache
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
+import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -39,7 +41,11 @@ object AppModule {
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
     @Provides @Singleton
-    fun okHttp(): OkHttpClient = OkHttpClient.Builder()
+    fun okHttp(@ApplicationContext context: Context): OkHttpClient = OkHttpClient.Builder()
+        // Honors upstream Cache-Control/ETag (aviationweather.gov and Open-Meteo
+        // both send them): repeat requests within validity cost no network and
+        // conditional hits cost a 304 instead of a full body.
+        .cache(Cache(File(context.cacheDir, "http"), 10L * 1024 * 1024))
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->
