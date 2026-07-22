@@ -94,7 +94,7 @@ jobs:
           echo "apk=$OUT" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: Blipbird ${{ github.ref_name }}
           prerelease: ${{ contains(github.ref_name, '-') }}
