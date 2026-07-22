@@ -48,7 +48,9 @@ class NotificationEmitter @Inject constructor(
                 CHANNEL_REMINDERS -> 2
                 else -> 3
             }
-            return ((flightId % 500_000_000L).toInt()) * 4 + index
+            // floorMod: Room ids are always positive, but keep the ID space
+            // non-negative even for a hypothetical negative input.
+            return Math.floorMod(flightId, 500_000_000L).toInt() * 4 + index
         }
     }
 
