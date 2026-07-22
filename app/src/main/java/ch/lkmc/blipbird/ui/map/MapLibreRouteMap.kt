@@ -94,9 +94,9 @@ fun MapLibreRouteMap(
     val planeLat = lastFix?.lat ?: projected?.first
     val planeLon = lastFix?.lon ?: projected?.second
     val planeBearing = lastFix?.trackDeg ?: projected?.third ?: 0.0
-    // Size alone misses a pruned+appended track of equal length; the newest
-    // fix's timestamp changes whenever the geometry does.
-    val trackJson = remember(track.size, track.lastOrNull()?.at) {
+    // Size alone misses a pruned+appended track of equal length; the boundary
+    // timestamps change whenever the window moves at either end.
+    val trackJson = remember(track.size, track.firstOrNull()?.at, track.lastOrNull()?.at) {
         if (track.size < 2) EMPTY_FC
         else multiLineJson(splitAtAntimeridian(track.map { it.lon to it.lat }))
     }

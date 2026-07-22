@@ -87,6 +87,14 @@ class GreatCircleTest {
             for (p in segment) {
                 assertFalse(p.lat.isNaN() || p.lon.isNaN(), "dateline endpoints produced NaN: $p")
             }
+            // ±180 are the same meridian but opposite map edges: a segment must
+            // never connect them directly or it draws across the whole world.
+            for (i in 1 until segment.size) {
+                assertTrue(
+                    kotlin.math.abs(segment[i].lon - segment[i - 1].lon) <= 180.0,
+                    "segment spans the projected world: ${segment[i - 1]} -> ${segment[i]}",
+                )
+            }
         }
     }
 }
