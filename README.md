@@ -99,10 +99,12 @@ the top of this README, commits, tags `vX.Y.Z`, and pushes. The tag triggers
 [`release.yml`](.github/workflows/release.yml), which re-runs tests + lint,
 builds the release APK, signs it when the `ANDROID_KEYSTORE_BASE64` /
 `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`
-secrets are configured (attaching an unsigned APK with a warning otherwise),
-and publishes the GitHub Release. Pull requests are additionally reviewed by
-GLM 5.2 via [`zai-code-review.yml`](.github/workflows/zai-code-review.yml)
-when the `ZAI_API_KEY` secret is set.
+secrets are all configured, verifies the APK signature and signing certificate,
+generates a SHA-256 checksum, and publishes both as GitHub Release assets. If any
+signing secret is absent, the workflow fails before building or publishing; it
+never publishes an unsigned APK. Pull requests are additionally reviewed by GLM
+5.2 via [`zai-code-review.yml`](.github/workflows/zai-code-review.yml) when the
+`ZAI_API_KEY` secret is set.
 
 ## Architecture
 
