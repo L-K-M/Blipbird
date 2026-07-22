@@ -104,7 +104,11 @@ fun MapLibreRouteMap(
     val planeJson = remember(planeLat, planeLon) {
         if (planeLat != null && planeLon != null) pointsJson(listOf(planeLon to planeLat)) else EMPTY_FC
     }
-    val nightJson = remember(lastFix?.at?.epochSecond?.div(600)) {
+    // Key on wall-clock (10-min buckets), not on lastFix: when there is no live
+    // fix (planned-route view, no ADS-B match) the lastFix-based key is null
+    // forever and the terminator was computed once at composition and never
+    // advanced. Wall-clock advances regardless of fixes.
+    val nightJson = remember(System.currentTimeMillis() / 600_000) {
         nightPolygonJson(Instant.now())
     }
 

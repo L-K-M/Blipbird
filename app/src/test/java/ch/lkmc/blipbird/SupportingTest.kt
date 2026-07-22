@@ -9,6 +9,7 @@ import java.time.Instant
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -43,6 +44,29 @@ class GreatCircleTest {
     @Test fun `zero distance is safe`() {
         val p = GreatCircle.intermediate(jfk, jfk, 0.5)
         assertEquals(jfk.lat, p.lat, 1e-9)
+    }
+
+    @Test fun `near-antipodal intermediate does not blow up`() {
+        // Antipodal along the equator: angularDistance == PI, sin(d) ~ 0, so the
+        // slerp divided by ~0 and returned garbage before the guard.
+        val a = GreatCircle.Point(0.0, 0.0)
+        val b = GreatCircle.Point(0.0, 180.0)
+        val mid = GreatCircle.intermediate(a, b, 0.5)
+        assertFalse(mid.lat.isNaN() || mid.lon.isNaN(), "antipodal must not be NaN: $mid")
+        assertTrue(mid.lat in -90.0..90.0 && mid.lon in -180.0..180.0, "antipodal must be bounded: $mid")
+    }
+
+    @Test fun `antimeridian segments meet at the dateline`() {
+        val nrt = GreatCircle.Point(35.7653, 140.3856)
+        val lax = GreatCircle.Point(33.9416, -118.4085)
+        val segments = GreatCircle.routeSegments(nrt, lax)
+        assertTrue(segments.size >= 2, "pacific route should split at the antimeridian")
+        val left = segments[0].last()
+        val right = segments[1].first()
+        assertTrue(kotlin.math.abs(left.lon) > 179.0 && kotlin.math.abs(right.lon) > 179.0,
+            "dateline vertices expected near ±180: $left / $right")
+        assertTrue(kotlin.math.abs(left.lat - right.lat) < 1.0,
+            "dateline crossing latitude should match across the split: ${left.lat} vs ${right.lat}")
     }
 }
 
