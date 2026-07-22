@@ -91,13 +91,12 @@ class NotificationPlannerTest {
     }
 
     @Test fun `further slip moves to the next bucket`() {
-        val e = single(
-            NotificationPlanner.diff(
-                snapshot(estDep = sched.plus(Duration.ofMinutes(20))),
-                snapshot(estDep = sched.plus(Duration.ofMinutes(50))),
-            ),
-            EventType.DELAY,
+        val events = NotificationPlanner.diff(
+            snapshot(estDep = sched.plus(Duration.ofMinutes(20))),
+            snapshot(estDep = sched.plus(Duration.ofMinutes(50))),
         )
+        assertTrue(events.none { it.type == EventType.DELAY_RECOVERED })
+        val e = single(events, EventType.DELAY)
         assertEquals("delay:45", e.fingerprint)
         assertEquals(50L, e.delayMinutes)
     }
@@ -108,8 +107,20 @@ class NotificationPlannerTest {
             snapshot(estDep = sched.plus(Duration.ofMinutes(20))),
         )
         val e = single(events, EventType.DELAY_RECOVERED)
-        assertEquals("delay-recovered:15", e.fingerprint)
+        assertEquals("delay-recovered:45->15", e.fingerprint)
         assertEquals(20L, e.delayMinutes)
+        assertTrue(events.none { it.type == EventType.DELAY }, "recovery must not also report a delay")
+    }
+
+    @Test fun `delay shrinking but still above threshold is only a recovery`() {
+        val events = NotificationPlanner.diff(
+            snapshot(estDep = sched.plus(Duration.ofMinutes(50))),
+            snapshot(estDep = sched.plus(Duration.ofMinutes(40))),
+        )
+        val e = single(events, EventType.DELAY_RECOVERED)
+        assertEquals("delay-recovered:45->30", e.fingerprint)
+        assertEquals(40L, e.delayMinutes)
+        assertTrue(events.none { it.type == EventType.DELAY }, "recovery must not also report a delay")
     }
 
     @Test fun `estimate reverting to schedule emits back-on-time recovery`() {
@@ -118,7 +129,7 @@ class NotificationPlannerTest {
             snapshot(estDep = null),
         )
         val e = single(events, EventType.DELAY_RECOVERED)
-        assertEquals("delay-recovered:0", e.fingerprint)
+        assertEquals("delay-recovered:30->0", e.fingerprint)
         assertEquals(0L, e.delayMinutes)
         assertEquals(sched.toString(), e.newValue)
         assertTrue(events.none { it.type == EventType.DELAY })

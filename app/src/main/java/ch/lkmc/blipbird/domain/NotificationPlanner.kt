@@ -25,6 +25,9 @@ object NotificationPlanner {
     /** First delay notification at ≥ this threshold; further slips at ≥ this step. */
     private val DELAY_THRESHOLD: Duration = Duration.ofMinutes(15)
 
+    /** Dedup granularity: slips and recoveries re-notify per bucket of this size. */
+    private const val DELAY_BUCKET_MINUTES = 15L
+
     fun diff(previous: StatusSnapshot?, current: StatusSnapshot): List<Event> {
         val events = mutableListOf<Event>()
         val prev = previous
@@ -47,7 +50,10 @@ object NotificationPlanner {
         val est = current.depTimes.estimated
         val delayBucket = delayBucketMinutes(current)
         val prevDelayBucket = prev?.let { delayBucketMinutes(it) } ?: 0
-        if (sched != null && est != null && est.isAfter(sched)) {
+        // A shrinking delay is exclusively a recovery — never also a DELAY, or the
+        // user would get "delayed 20m" and "delay shortened to 20m" side by side.
+        val recovering = prevDelayBucket >= DELAY_THRESHOLD.toMinutes() && delayBucket < prevDelayBucket
+        if (!recovering && sched != null && est != null && est.isAfter(sched)) {
             val delay = Duration.between(sched, est)
             if (delay >= DELAY_THRESHOLD) {
                 events += Event(
@@ -57,10 +63,12 @@ object NotificationPlanner {
                 )
             }
         }
-        if (prevDelayBucket >= DELAY_THRESHOLD.toMinutes() && delayBucket < prevDelayBucket) {
+        if (recovering) {
             val nowDepartingAt = est ?: sched
+            // Fingerprint encodes both endpoints so the same destination bucket
+            // reached from a different (notified) delay still counts as news.
             events += Event(
-                EventType.DELAY_RECOVERED, "delay-recovered:$delayBucket",
+                EventType.DELAY_RECOVERED, "delay-recovered:$prevDelayBucket->$delayBucket",
                 prev?.depTimes?.estimated?.toString(), nowDepartingAt?.toString(),
                 delayMinutes = if (sched != null && est != null && est.isAfter(sched))
                     Duration.between(sched, est).toMinutes() else 0L,
@@ -92,6 +100,6 @@ object NotificationPlanner {
         val sched = s.depTimes.scheduled ?: return 0
         val est = s.depTimes.estimated ?: return 0
         if (!est.isAfter(sched)) return 0
-        return (Duration.between(sched, est).toMinutes() / 15) * 15
+        return (Duration.between(sched, est).toMinutes() / DELAY_BUCKET_MINUTES) * DELAY_BUCKET_MINUTES
     }
 }
