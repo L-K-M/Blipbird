@@ -35,10 +35,9 @@ object NotificationPlanner {
         }
 
         // Status-only delay: provider says "delayed" but may not have revised times.
-        // Fires on the status transition itself; timed slip buckets fire separately.
-        if (current.status == FlightStatus.DELAYED && prev?.status != FlightStatus.DELAYED) {
-            events += Event(EventType.DELAY, "delay:status")
-        }
+        // Deferred until after the timed-slip check to avoid dual notifications.
+        val statusBecameDelayed =
+            current.status == FlightStatus.DELAYED && prev?.status != FlightStatus.DELAYED
 
         // Delay recovered: was delayed, now back on-schedule
         if (prev?.status == FlightStatus.DELAYED && current.status != FlightStatus.DELAYED
@@ -56,6 +55,11 @@ object NotificationPlanner {
                 val bucket = (delay.toMinutes() / 15) * 15   // re-notify per 15-min slip bucket
                 events += Event(EventType.DELAY, "delay:$bucket", sched.toString(), est.toString())
             }
+        }
+
+        // Status-only fallback: emit only when no bucketed slip was produced
+        if (statusBecameDelayed && events.none { it.type == EventType.DELAY }) {
+            events += Event(EventType.DELAY, "delay:status")
         }
 
         // Status transitions
