@@ -104,12 +104,14 @@ fun FlightRibbon(
         Row(Modifier.fillMaxWidth()) {
             Text(depCode, style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.weight(1f))
+            val leftSide = stringResource(R.string.ribbon_side_left)
+            val rightSide = stringResource(R.string.ribbon_side_right)
             daylight.events.forEach { e ->
                 // The sun's azimuth vs the course at the event point tells the
                 // passenger which side of the cabin the show is on.
                 val side = when (cabinSide(e, daylight)) {
-                    CabinSide.LEFT -> " · " + stringResource(R.string.ribbon_side_left)
-                    CabinSide.RIGHT -> " · " + stringResource(R.string.ribbon_side_right)
+                    CabinSide.LEFT -> " · $leftSide"
+                    CabinSide.RIGHT -> " · $rightSide"
                     null -> ""
                 }
                 Text(
