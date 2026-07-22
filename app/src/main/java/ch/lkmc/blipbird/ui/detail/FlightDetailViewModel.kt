@@ -22,9 +22,13 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -77,6 +81,23 @@ class FlightDetailViewModel @Inject constructor(
     private var pollJob: Job? = null
     private var lastComputedSnapshotAt: Instant? = null
 
+    // Declared above `init` so their initializers don't run after bind() resets
+    // them (Kotlin runs property initializers and init blocks in declaration order).
+    private var boundId: Long = -1
+    private val snapshot = MutableStateFlow<StatusSnapshot?>(null)
+    private val lastFix = MutableStateFlow<PositionFix?>(null)
+    private val track = MutableStateFlow<List<PositionFix>>(emptyList())
+
+    /**
+     * One shared minute-tick (PLAN.md §6 Heartbeat) so the hero countdown / ETA
+     * re-derives from a single time source. Without this, `Instant.now()` baked
+     * into the [uiState] combine never updates and the countdown is frozen until
+     * the next network write.
+     */
+    private val clock: SharedFlow<Instant> = flow {
+        while (isActive) { emit(Instant.now()); delay(15_000) }
+    }.distinctUntilChanged().shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
     fun setFlightId(id: Long) {
         if (flightId.value == id) return
         flightId.value = id
@@ -86,11 +107,6 @@ class FlightDetailViewModel @Inject constructor(
     init {
         if (flightId.value > 0) bind(flightId.value)
     }
-
-    private var boundId: Long = -1
-    private val snapshot = MutableStateFlow<StatusSnapshot?>(null)
-    private val lastFix = MutableStateFlow<PositionFix?>(null)
-    private val track = MutableStateFlow<List<PositionFix>>(emptyList())
 
     private fun bind(id: Long) {
         if (boundId == id) return
@@ -116,7 +132,7 @@ class FlightDetailViewModel @Inject constructor(
     }
 
     val uiState: StateFlow<DetailUiState> = combine(
-        listOf(flightId, flightEntity, snapshot, lastFix, track, daylight, routeWeather, airportWeather, enriched, airlineName, refreshing)
+        listOf(flightId, flightEntity, snapshot, lastFix, track, daylight, routeWeather, airportWeather, enriched, airlineName, refreshing, clock)
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val id = values[0] as Long
@@ -130,6 +146,7 @@ class FlightDetailViewModel @Inject constructor(
         val (dep, arr) = values[8] as Pair<AirportRef?, AirportRef?>
         val airline = values[9] as String?
         val busy = values[10] as Boolean
+        val now = values[11] as Instant
 
         val designator = flight?.let {
             Designator(it.designatorIata, it.designatorIcao, it.flightNumber, it.suffix).display
@@ -141,7 +158,7 @@ class FlightDetailViewModel @Inject constructor(
             alias = flight?.alias,
             airlineName = airline,
             snapshot = snap,
-            view = FlightPhaseMachine.derive(snap, fix, Instant.now()),
+            view = FlightPhaseMachine.derive(snap, fix, now),
             depAirport = dep ?: snap?.departure,
             arrAirport = arr ?: snap?.arrival,
             lastFix = fix,
