@@ -31,6 +31,14 @@ object GreatCircle {
         val d = angularDistance(a, b)
         if (d < 1e-9) return a
         val sinD = sin(d)
+        if (sinD < 1e-9) {
+            // Near-antipodal (d≈π): slerp divides by sinD≈0 and returns garbage,
+            // which breaks the route polyline, terminator, and daylight sampling
+            // for polar / near-antipodal routes. Fall back to a stable linear
+            // interpolation — for antipodal points no unique great circle exists
+            // anyway, and bounded is better than NaN.
+            return Point(a.lat + (b.lat - a.lat) * f, a.lon + (b.lon - a.lon) * f)
+        }
         val fa = sin((1 - f) * d) / sinD
         val fb = sin(f * d) / sinD
         val f1 = Math.toRadians(a.lat); val l1 = Math.toRadians(a.lon)
@@ -61,8 +69,21 @@ object GreatCircle {
         val segments = mutableListOf<MutableList<Point>>(mutableListOf(pts.first()))
         for (i in 1 until pts.size) {
             val prev = pts[i - 1]; val cur = pts[i]
-            if (kotlin.math.abs(cur.lon - prev.lon) > 180.0) segments += mutableListOf(cur)
-            else segments.last() += cur
+            if (kotlin.math.abs(cur.lon - prev.lon) > 180.0) {
+                // Antimeridian crossing: insert the dateline vertex on both
+                // segments so the polyline doesn't visibly break across the date
+                // line (the old code started the new segment at `cur`, leaving a
+                // one-step gap between +180 and -180).
+                val eastward = cur.lon - prev.lon < 0
+                val crossLon = if (eastward) 180.0 else -180.0
+                val unwrappedCurLon = if (eastward) cur.lon + 360.0 else cur.lon - 360.0
+                val frac = (crossLon - prev.lon) / (unwrappedCurLon - prev.lon)
+                val crossLat = prev.lat + (cur.lat - prev.lat) * frac
+                segments.last() += Point(crossLat, crossLon)
+                segments += mutableListOf(Point(crossLat, -crossLon), cur)
+            } else {
+                segments.last() += cur
+            }
         }
         return segments.filter { it.size >= 2 }
     }
