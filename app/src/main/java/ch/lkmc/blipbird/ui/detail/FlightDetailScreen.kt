@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -106,7 +107,7 @@ fun FlightDetailScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 actions = { StatusWord(state.view.status); Spacer(Modifier.padding(end = 12.dp)) },
@@ -560,7 +561,12 @@ private fun TimelineRow(
         NodeState.PENDING -> cs.outlineVariant
     }
 
-    Row(Modifier.height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Min-height rather than fixed so large accessibility fonts grow the row
+    // instead of clipping; IntrinsicSize keeps the rail canvas bounded.
+    Row(
+        Modifier.heightIn(min = 44.dp).height(androidx.compose.foundation.layout.IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         // rail
         Canvas(Modifier.width(26.dp).fillMaxSize()) {
             val cx = size.width / 2

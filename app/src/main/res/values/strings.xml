@@ -21,6 +21,7 @@
     <string name="flight_archived">Flight archived</string>
     <string name="flight_deleted">Flight deleted</string>
     <string name="undo">Undo</string>
+    <string name="back">Back</string>
 
     <!-- Status words -->
     <string name="status_scheduled">Scheduled</string>
@@ -93,6 +94,8 @@
     <string name="settings_precise_alerts">Precise alerts</string>
     <string name="settings_precise_alerts_desc">Uses exact alarms for boarding and landing reminders. Requires special access.</string>
     <string name="settings_quota">API usage this cycle</string>
+    <string name="quota_spoken">%1$s: %2$s of %3$s requests used</string>
+    <string name="quota_unlimited">unlimited</string>
     <string name="settings_about">About &amp; data attribution</string>
     <string name="onboarding_keys_title">Connect a data source</string>
     <string name="onboarding_keys_body">Blipbird uses free, bring-your-own-key services for schedules and gates. Without a key you still get the live map, airline info and weather.</string>
