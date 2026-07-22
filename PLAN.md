@@ -114,7 +114,7 @@ M0 rather than treating this table as a permanent compatibility matrix:
 | Concern | Choice | Version (Jul 2026) | Why |
 |---|---|---|---|
 | Language | Kotlin (K2) | 2.4.10 | Standard; explicitly pin the supported Kotlin override rather than inheriting AGP's older built-in default |
-| Build | AGP + Gradle version catalogs, Kotlin DSL | AGP 9.3.0 / Gradle 9.5.0 | Current stable pair; keep plugin versions in one catalog |
+| Build | AGP + Gradle version catalogs, Kotlin DSL | AGP 9.3.0 / Gradle 9.6.1 | Current stable pair; keep plugin versions in one catalog. (Reconciled with `gradle/libs.versions.toml` and `AGENTS.md`; confirm exact patch at M0.) |
 | UI | Jetpack Compose (BOM) | BOM 2026.06.01 | The 2026 default for new Android UI |
 | Design system | Material 3 | 1.4.0 | Stable line; plan a hop to 1.5 Expressive only when stable. Many Expressive APIs have graduated, but the 1.5 line and remaining APIs are still preview |
 | SDK levels | targetSdk/compileSdk **37**, minSdk **26** | — | Android 17 / API 37 became final June 16, 2026. Play's Aug 31 floor is only API 36, but a new app should target current stable after behavior-change testing; API 37 also enforces the adaptive large-screen work already planned. minSdk 26 gives `java.time` + notification channels natively |
