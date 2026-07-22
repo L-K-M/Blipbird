@@ -17,15 +17,21 @@ import ch.lkmc.blipbird.domain.FlightDates
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -74,6 +80,17 @@ class FlightListViewModel @Inject constructor(
     private val refreshing = MutableStateFlow(false)
     private val addError = MutableStateFlow<String?>(null)
 
+    /**
+     * One shared minute-tick (PLAN.md §6 Heartbeat) so every row's countdown
+     * re-derives from a single time source instead of each row holding its own
+     * timer. Without this, `Instant.now()` baked into [rowFlow] never updates and
+     * the "Departs in 2 h 14 m" label is frozen until the next network write.
+     * Multicast via shareIn so N rows share one upstream ticker.
+     */
+    private val clock: SharedFlow<Instant> = flow {
+        while (isActive) { emit(Instant.now()); delay(30_000) }
+    }.distinctUntilChanged().shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
     /** Reference-airport hits keyed by IATA/ICAO; misses are rare and just re-query. */
     private val airportCache = ConcurrentHashMap<String, ch.lkmc.blipbird.core.database.AirportEntity>()
 
@@ -91,8 +108,8 @@ class FlightListViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ListUiState())
 
     private fun rowFlow(flight: TrackedFlightEntity) =
-        repository.observeSnapshot(flight.id).map { snapshot: StatusSnapshot? ->
-            val view = FlightPhaseMachine.derive(snapshot, null, Instant.now())
+        combine(repository.observeSnapshot(flight.id), clock) { snapshot: StatusSnapshot?, now: Instant ->
+            val view = FlightPhaseMachine.derive(snapshot, null, now)
             val designator = Designator(flight.designatorIata, flight.designatorIcao, flight.flightNumber, flight.suffix)
             val dep = resolve(snapshot?.departure)
             val arr = resolve(snapshot?.arrival)
