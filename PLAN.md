@@ -58,8 +58,9 @@ Design principles:
    position coverage has gaps. Blipbird always shows *when* data was last updated, renders
    missing fields gracefully ("Gate —"), and never fakes precision.
 4. **Private and open.** All user data (tracked flights, aliases, stats) stays on device.
-   No accounts, no analytics. AGPL-compatible open-source with reproducible builds and an
-   F-Droid-friendly dependency set (no Google Play Services required for core features).
+   No accounts, no analytics. Permissively licensed open-source (Apache-2.0 recommended;
+   license gate in §16) with reproducible builds and an F-Droid-friendly dependency set
+   (no Google Play Services required for core features).
 5. **Personal, themable, delightful.** Themes go beyond dark/light — a retro split-flap
    board, a cockpit night mode, pastel skies — with micro-interactions (flip animations,
    phase-aware haptics) that make checking your flight a small pleasure.
@@ -79,11 +80,14 @@ Research on the competitive landscape (July 2026) found a genuine opening:
 - **Flightradar24 / FlightAware** are enthusiast radar apps — great for watching the sky,
   weak for the "my flight day" workflow; FR24's free tier shows aggressive ads inside the map.
 - New Flighty-alikes for Android (e.g. *Aviate*, announced June 2026) are emerging, which
-  validates demand — but none is open-source, privacy-first, and themable.
+  validates demand. (Research confirmed these entrants exist but did not audit their
+  licensing, privacy posture, or theming — Blipbird's wedge is chosen because no
+  *established* player occupies it, not because the newcomers were proven to lack it.)
 
-**Positioning:** the open-source, ad-free, design-obsessed flight-day app for Android, with
-platform-native superpowers iOS apps can't copy there (Android 16 Live Updates, Glance
-widgets, Material You dynamic color).
+**Positioning:** the open-source, ad-free, design-obsessed flight-day app for Android.
+Material You dynamic color ships at launch; the other Android-native superpowers iOS apps
+can't copy there — Android 16 Live Updates and Glance widgets — are explicit roadmap items
+(v2, with a first "next flight" widget targeted for M4).
 
 ---
 
@@ -108,7 +112,7 @@ Decisions verified against current versions and 2026 Play policy (all fact-check
 | Images | Coil (`coil-compose`, `coil-network-okhttp`, `coil-svg`) | 3.5.x | Airline logos with shared OkHttp cache |
 | Pull-to-refresh | material3 `PullToRefreshBox` | in material3 | The settled M3 API (still `@ExperimentalMaterial3Api`-annotated but stable in practice) |
 | Map | **MapLibre Native** via `org.maplibre.compose:maplibre-compose` | 0.13.x / native 11.x | Open-source, **no API key, no billing**, F-Droid-friendly. Compose wrapper is pre-1.0 → pin the version; classic `MapView` in `AndroidView` is the proven fallback |
-| Map tiles | **OpenFreeMap** (primary), MapTiler/Protomaps (config fallback) | — | OpenFreeMap: no key, no registration, no request limits, commercial use allowed (verified on openfreemap.org); donation-funded/no SLA → keep the tile-source URL remotely configurable |
+| Map tiles | **OpenFreeMap** (primary); failover: project-hosted Protomaps PMTiles, then BYO-key MapTiler | — | OpenFreeMap: no key, no registration, no request limits, commercial use allowed (verified on openfreemap.org); donation-funded/no SLA → tile-source URL remotely configurable. Fallbacks carry real constraints (verified): MapTiler free tier = per-user API key, 100k tiles/mo, non-commercial/evaluation, hard-stops when exceeded; Protomaps hosted free tier = non-commercial ≤1M tiles/mo. The keyless failover is therefore a PMTiles archive self-hosted by the project on static hosting — never a shared key |
 | Widgets | Jetpack Glance | current | Home-screen "next flight" + "in-flight" widgets |
 
 **Modularization:** start as a light split — `:app`, `:core:model`, `:core:data`,
@@ -139,19 +143,41 @@ graceful degradation. All claims below were verified against official sources in
 | ~~Amadeus Self-Service~~ | — | — | — | — | **Eliminated: portal decommissioned, keys disabled July 17 2026 (verified)** |
 | ~~FR24 official API~~ | no free tier ($9/mo) | ❌ no gates/schedules/delay status | — | — | It's a positions product, not a status product |
 
-**Key architectural consequence — BYO keys:** an open-source repo must not ship embedded
-API keys, and AeroAPI's Personal tier is licensed per-person anyway. Onboarding therefore
-includes a friendly "connect a data source" flow where the user pastes their own free
-RapidAPI (AeroDataBox) and/or FlightAware key, stored in Android Keystore-encrypted
-DataStore. The app works without any status key in **map-only mode** (positions + routes
-from the free ADS-B plane, no gates/schedule) so first-run isn't a brick wall.
+**Key architectural consequence — BYO keys (an explicit requirements deviation):** an
+open-source repo must not ship embedded API keys, and AeroAPI's Personal tier is licensed
+per-person anyway. This deviates from the ideal "enter a flight number and everything just
+works": **without a user-supplied key there is no schedule, countdown, gate, or
+delay/boarding notification data.** We mitigate rather than hide this:
+
+- Onboarding treats key setup as the **guided happy path**, not an optional extra: a
+  step-by-step flow (~3 minutes) with deep links to the RapidAPI/FlightAware signup pages,
+  paste-and-validate (an immediate test call confirms the key works), and a clear
+  free-tier explanation. Skipping is possible but explicitly labeled as limited mode.
+- Keys are stored via a custom DataStore `Serializer` that AES-GCM-encrypts the payload
+  with a key held in AndroidKeyStore (~100 LOC + tests — there is no first-party encrypted
+  DataStore, and `androidx.security-crypto` is deprecated; budgeted in M1). If the
+  Keystore key is invalidated, the recovery path is a re-prompt for API keys.
+- **Zero-key requirements coverage** (what works with no key at all):
+
+| Requirement | Zero-key behavior |
+|---|---|
+| Time to departure | ⚠️ Only if schedule known from adsbdb route + user-entered date/time; otherwise "connect a source" CTA |
+| Gate numbers | ❌ Needs a status key — honest CTA shown in place |
+| Airline info | ✅ Bundled datasets + adsbdb |
+| Live map | ✅ Free ADS-B plane (with the callsign caveat in §4.5) |
+| Airport info, weather | ✅ Bundled data + aviationweather.gov |
+| Notifications (status-driven) | ❌ Needs a status key; position-driven events (takeoff/landing detected from ADS-B) still work for airborne flights |
+| Themes, pull-to-refresh, list/detail UI | ✅ Fully functional |
 
 ### 4.2 Live aircraft positions — `PositionProvider`
 
 The "readsb v2" aggregator family all expose the **identical ADSBExchange-v2 JSON schema**
-(`{"ac":[{hex, flight, r, t, lat, lon, alt_baro, gs, track, seen_pos, …}]}`), so one DTO +
-one client covers three interchangeable providers with failover — verified by live tests
-(same aircraft returned by all three with sub-second data freshness):
+(`{"ac":[{hex, flight, r, t, lat, lon, alt_baro, gs, track, seen_pos, …}]}`), so one DTO
+covers three interchangeable providers with failover — verified by live tests (same
+aircraft returned by all three with sub-second data freshness). Caveat: the *response
+schema* is identical but the *URL paths* are not — adsb.fi uses `/v2/registration/{reg}`
+(not `/v2/reg/`) and `/v3/lat/{lat}/lon/{lon}/dist/{d}` (not `/v2/point/…`) — so the
+provider abstraction carries a per-provider path map:
 
 | Provider | Auth | Query by callsign | Rate limit | License |
 |---|---|---|---|---|
@@ -165,8 +191,12 @@ one client covers three interchangeable providers with failover — verified by 
 **OpenSky's special trick** (live-verified, works anonymously): `GET
 /tracks/all?icao24={hex}&time=0` returns the **full waypoint path of the current flight** —
 the cheapest way to draw the already-flown polyline without accumulating points client-side.
-We refresh it every 2–5 min and append our own polled points in between. (Marked
-"experimental" by OpenSky → wrap in try/fallback to client-side accumulation.)
+OpenSky is *not* free-for-unlimited though: anonymous access is a **400-credit/day budget**
+at 1 credit/call. So: refresh the track at most **every 5 min, only while the map is
+foregrounded**, count OpenSky calls in the quota ledger (§8), rely on client-side point
+accumulation between refreshes, and offer optional OpenSky OAuth2 client credentials in the
+BYO-keys flow (registered tier: 4,000 credits/day). (Endpoint marked "experimental" by
+OpenSky → wrap in try/fallback to pure client-side accumulation.)
 
 **Polling policy:** 8–10 s while the live map is foregrounded (positions are ~1 s fresh
 upstream; marker interpolation makes 10 s look smooth), 30–60 s for list view, zero when
@@ -227,7 +257,9 @@ arrival-airport TAF as "expected weather at landing."
 | Status API has no gate | "Gate —" placeholder; notification for gate only fires when a gate exists |
 | Flight not yet airborne | Countdown UI; position section shows scheduled route arc |
 | Position lookup empty in-flight (oceanic gap) | "Last seen 24 min ago" + estimated ghost marker; map keeps flown track |
-| Callsign ≠ flight number (e.g. BA545 flies as BAW5GU) | Fall back to registration → `/v2/reg/{reg}`, then poll by hex (see §5) |
+| Callsign ≠ flight number (e.g. BA545 flies as BAW5GU) | Fall back to registration (from status payload) → `/v2/reg/{reg}` (adsb.fi: `/v2/registration/`), then poll by hex (see §5) |
+| Callsign ≠ flight number **in zero-key mode** (no status payload → no registration) | No silent empty map: show the route arc + an honest "live position for this airline needs a connected data source" CTA. Detect the case heuristically via a bundled flag on airlines known to fly alphanumeric ATC callsigns |
+| Flight beyond a provider's window (AeroAPI = −10 d…+2 d) | Fall through to the provider that covers it (AeroDataBox: ±365 d). AeroAPI-only users adding a flight >2 days out see "full status available from 2 days before departure" plus bundled/adsbdb schedule skeleton — never a bare empty state |
 | Quota nearly exhausted | Adaptive cadence backs off; banner explains reduced freshness |
 | All providers down | Room cache renders last-known everything + "last updated" stamp |
 
@@ -252,22 +284,39 @@ user input ("CA861", "CCA861", "Mom's flight" → alias table)
   ├─ 2. Normalize via bundled airline table (IATA↔ICAO), validated at runtime
   │     by adsbdb /v0/callsign/{cs} (returns both forms + airline + route)
   │
-  ├─ 3. Status lookup: AeroDataBox accepts either form directly (verified);
+  ├─ 3. Date resolution (the "perhaps a date" rule): an explicit date is used
+  │     as-is (dateLocalRole=Departure, in the DEPARTURE airport's IANA zone).
+  │     Dateless input resolves to the NEXT scheduled occurrence within 7 days,
+  │     evaluated in the departure airport's zone. If an instance departed
+  │     within the last ~6 h AND another is upcoming (or several same-day
+  │     instances exist), show a disambiguation sheet instead of guessing.
+  │
+  ├─ 4. Status lookup: AeroDataBox accepts either form directly (verified);
   │     AeroAPI prefers ICAO → feed it the ICAO form.
+  │     Multi-leg numbers (one number flying A→B→C) return several legs →
+  │     leg-selection sheet; the chosen leg index is stored on the tracked
+  │     flight (tracking both legs as a grouped trip is the v2 upgrade).
   │     Resolve codeshares to the OPERATING flight; display
   │     "CA861 · operated by …" when the user tracked a marketing number.
   │
-  ├─ 4. Position lookup: try /v2/callsign/{ICAO form}.
-  │     Empty? → get registration from status payload → /v2/reg/{reg}.
-  │     Found either way → cache the icao24 hex; poll /v2/icao/{hex}
-  │     thereafter (the stable key for the rest of the flight).
+  ├─ 5. Position lookup: try /v2/callsign/{ICAO form}.
+  │     Empty? → get registration from status payload → /v2/reg/{reg}
+  │     (adsb.fi: /v2/registration/). Found either way → cache the icao24
+  │     hex; poll /v2/icao/{hex} thereafter (the stable key for the rest
+  │     of the flight).
   │
-  └─ 5. Sanity check: adsbdb/hexdb route for the callsign must match the
-        user's origin/destination, so we never track a same-callsign stranger.
+  └─ 6. Identity confidence check: compare adsbdb/hexdb route for the callsign
+        against the flight's origin/destination. Match → high confidence.
+        Mismatch → a WARNING that triggers the registration→hex fallback,
+        NOT a hard rejection: the community route DB is date-unaware and
+        wrong for irregular ops (verified caveat), and the status API's own
+        registration/route is always the higher-trust signal when available.
 ```
 
-Aliases are first-class: a saved name maps to (flight designator, optional recurring
-date rule, notification profile). No competitor does named recurring flights well.
+Aliases are first-class **saved flights**: a `SavedFlight` entity maps a name to a flight
+designator plus a notification profile (see §7); MVP scope is single upcoming occurrence
+per alias (re-resolved each time via the date rule above), and *recurring* date rules
+("every Friday") are v2. No competitor does named recurring flights well.
 
 ---
 
@@ -320,12 +369,19 @@ Principles:
 Core Room entities (abridged):
 
 ```kotlin
-TrackedFlight(id, designatorIata, designatorIcao, date?, alias?,
-              notificationProfileId, createdAt, archived)
+TrackedFlight(id, designatorIata, designatorIcao, date?, legIndex?,
+              savedFlightId?, notificationProfileId, createdAt, archived)
+
+SavedFlight(id, name,                         // "Mom's flight home" — first-class alias
+            designatorIata, designatorIcao,
+            recurrenceRule?,                  // v2; null in MVP
+            notificationProfileId)
 
 FlightSnapshot(trackedFlightId, fetchedAt, provider,
                status,                    // enum incl. Unknown
-               depAirport, arrAirport,    // FK → Airport
+               depAirportIcao, arrAirportIcao,   // PLAIN code columns — resolved via
+                                                 // lookup at read time, NO enforced FK
+                                                 // into the read-only bundled table
                schedDep/estDep/actDep, schedArr/estArr/actArr,   // Instants, out/off/on/in where available
                depTerminal?, depGate?, depCheckInDesk?,
                arrTerminal?, arrGate?, baggageBelt?,
@@ -338,11 +394,22 @@ PositionFix(trackedFlightId, at, lat, lon, altitudeFt?, groundSpeedKt?,
 
 TrackPolyline(trackedFlightId, points: encoded, source, refreshedAt)
 
-Airport(icao, iata, name, city, country, lat, lon, tz)          // bundled
-Airline(icao, iata, name, alliance?, callsign?)                 // bundled + runtime-enriched
+// Bundled reference tables use a synthetic PK with UNIQUE indexes on icao and
+// iata separately (airports with IATA but no ICAO exist); provider-returned
+// airports missing from the bundle are upserted into RuntimeAirport from
+// adsbdb payloads so unknown airports can never fail a snapshot write.
+Airport(id, icao?, iata?, name, city, country, lat, lon, tz)    // bundled
+RuntimeAirport(id, icao?, iata?, name?, city?, lat?, lon?, tz?) // runtime upserts
+Airline(id, icao?, iata?, name, alliance?, callsign?)           // bundled + enriched
 AircraftTypeName(icaoType, marketingName)                       // bundled
 
 NotificationProfile(id, perEventToggles: Map<EventType, Bool>, quietHours?)
+EmittedEvent(trackedFlightId, eventType, dedupKey, emittedAt)   // notification dedup
+                                                                // ledger — persisted so
+                                                                // dedup survives process death
+QuotaLedgerEntry(provider, periodKey, unitsUsed)   // periodKey = provider billing cycle
+                                                   // (RapidAPI cycles run from subscription
+                                                   // date, NOT calendar months)
 FlightLogEntry(...)                                             // v2: passport/stats
 ```
 
@@ -355,27 +422,40 @@ on-device route punctuality stat (Flighty's "Arrival Forecast" analog, purely lo
 ## 8. Refresh engine & quota budget
 
 Free tiers are tight: **AeroDataBox ≈ 300 status lookups/month; AeroAPI ≈ 1,000/month**
-(both verified). Positions are effectively unmetered at polite rates. So: **poll positions
-generously, poll status stingily, on an adaptive schedule** driven by time-to-departure:
+(both verified). ADS-B positions are effectively unmetered at polite rates (OpenSky is the
+exception — credit-budgeted, see §4.2). So: **poll positions generously, poll status
+stingily, on an adaptive schedule** driven by time-to-departure.
 
-| Phase | Status fetch cadence | Position cadence |
+Cadence tiers are **non-overlapping, boundaries explicit, most-specific-window-wins**;
+tier transitions cancel-and-re-enqueue the periodic WorkManager request:
+
+| Window (non-overlapping) | Status fetch cadence | Position cadence |
 |---|---|---|
 | > 48 h out | on app open / manual only | — |
-| 48 h → 24 h | every 6 h (WorkManager periodic) | — |
-| 24 h → 3 h | every 2 h | — |
-| 3 h → boarding | every 30 min; one-time delayed workers anchor check-in/boarding alerts | — |
-| Gate-critical window (T−75 → T+30 min) | every 15 min (WorkManager floor) | 30–60 s if map open |
-| En route | hourly (ETA drift) | 8–10 s foreground map · 30–60 s list · 0 background |
-| Approach/landed | every 15 min until gate + baggage resolved, then stop | — |
+| 48 h → 24 h | every 6 h, **only on days the app was opened** | — |
+| 24 h → 3 h | every 3 h | — |
+| 3 h → T−75 min | every 30 min | — |
+| **Gate-critical: T−75 min → T+30 min** | every 15 min (WorkManager floor; tighter with exact-alarm grant, see §12.2) | 30–60 s if map open |
+| T+30 min → (landing − 45 min) | every 2 h (mid-cruise ETA drift is slow; ADS-B already yields position-derived ETA) | 8–10 s foreground map · 30–60 s list · 0 background |
+| Approach (landing − 45 min) → arrival gate + baggage resolved | every 15 min; **stop as soon as arrival gate + belt are known** (baggage comes from that same fetch) | same as above until landed |
 
-Budget math: a typical tracked flight consumes ~15–25 status lookups end-to-end → the free
-AeroDataBox tier alone comfortably covers ~10–15 tracked flights/month; users with both
-keys get failover headroom. A local quota ledger tracks calls per provider per month,
-drives the adaptive backoff, and surfaces usage in Settings so the "reduced freshness"
-banner never surprises anyone.
+Rules that keep the budget honest:
 
-ETag/If-Modified-Since via OkHttp cache wherever providers support it; pull-to-refresh
-always bypasses cache but is debounced (min 30 s between forced status refreshes per flight).
+- **Anchor workers reuse snapshots:** a notification anchor (§12.2) only fetches if the
+  latest snapshot is older than ~10 min; otherwise it diffs against what refresh already
+  brought in. Anchor fetches and pull-to-refresh calls **are counted in the ledger**.
+- Pull-to-refresh bypasses HTTP cache but is debounced (min 30 s per flight).
+- ETag/If-Modified-Since via OkHttp cache wherever providers support it.
+
+**Budget math (recomputed from the table above):** tracked from 48 h out — 48–24 h ≈ 4
+(if the app is opened both days), 24–3 h ≈ 7, 3 h→T−75 ≈ 3–4, gate-critical ≈ 7, en-route
+0 (short-haul) to ~5 (12-h long-haul), approach ≈ 2–4 → **≈ 23–31 lookups per flight,
+plus a handful of manual refreshes → ~25–35 total**. The free AeroDataBox tier (~300)
+therefore covers **~8–10 tracked flights/month** on its own; adding a free AeroAPI
+Personal key (~1,000 lookups) raises the combined ceiling to ~35–40 flights/month with
+failover headroom. The quota ledger (per provider, per *billing cycle* — RapidAPI cycles
+run from subscription date, not calendar months) drives adaptive backoff and surfaces
+usage in Settings, so the "reduced freshness" banner never surprises anyone.
 
 ---
 
@@ -388,7 +468,7 @@ One airport-board line per flight (Flighty's proven formula, translated to Mater
 ```
 ┌────────────────────────────────────────────────────────┐
 │ ◉CA  CA861 · Mom's flight home            ON TIME ●    │
-│ PEK ✈ GVA          Boards 14:10 · Gate C27             │
+│ PEK ✈ GVA          Boards ~14:10 · Gate C27            │
 │ ▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░  Departs in 2 h 14 m            │
 └────────────────────────────────────────────────────────┘
 ```
@@ -400,7 +480,10 @@ One airport-board line per flight (Flighty's proven formula, translated to Mater
   "Departs in 2 h 14 m" → "Lands in 1 h 12 m" → "Landed 14:32 · Bag belt 5".
 - Countdown granularity adapts: days → `h m` → `m s` inside the last hour.
 - Thin phase progress bar; gate/terminal chip once known.
-- Sorted by next-event time. Swipe to archive; long-press to edit alias/notifications.
+- **Tap opens the detail view.** Swipe to archive; long-press to edit alias/notifications.
+- Sorted by next-event time.
+- Add-flight flow accepts **batch input**: paste "CA861, LX1612" (comma/space/newline
+  separated) and each number resolves through the §5 pipeline into its own row.
 - `PullToRefreshBox` with a themed indicator (see §10); persistent "Updated 3 m ago" stamp.
 - Empty state: friendly onboarding — add a flight, pick sample flight to demo the UI.
 
@@ -416,6 +499,12 @@ Ordered by usefulness (Flighty-verified order, plus our additions):
    → takeoff → cruise → descent → landing → gate arrival → baggage. Three-column
    scheduled/estimated/actual presentation; superseded estimates get struck through, not
    overwritten (trust through transparency). Live row pulses.
+   **Derived rows are labeled as estimates** (`~` prefix + "est." chip) because no status
+   API supplies them (verified): *boarding* = scheduled departure − N min (N from a small
+   airline/aircraft-size table, default 40); *check-in opens* = airline policy table or
+   T−3 h heuristic; *doors/pushback* = the `out` timestamp when the provider sends it;
+   *cruise/descent* = inferred from ADS-B altitude + vertical rate (data the
+   PositionProvider already returns). Consistent with §1's "never fakes precision."
 4. **Inbound aircraft** *(v2, Flighty's most-praised anxiety-killer)*: "Your plane is
    arriving from Shanghai as CA1858, lands 12:40" — derived from the registration's previous
    leg; late-inbound warning feeds the delay heads-up.
@@ -450,15 +539,15 @@ Themes are Blipbird's signature. Implementation (standard, verified pattern):
 - **Each theme pairs with a matching MapLibre style URL** so the map re-themes too, and
   with its own pull-to-refresh flourish and typography accents.
 
-Launch themes:
+Theme roster (launch = first three, per §14 scoping; Solari/Skyfade follow in v2):
 
-| Theme | Vibe |
-|---|---|
-| **Daylight** (default) | Clean Material 3; **Dynamic** variant uses Material You wallpaper color (Android 12+) |
-| **Cockpit** | Near-black AMOLED, avionics green/amber accents, EFIS-style progress arc |
-| **Solari** | Retro split-flap departure board: yellow-on-black mono type, values flip with a split-flap animation on change |
-| **Skyfade** | Pastel dawn/dusk gradients that shift with local time at the departure airport |
-| **High Contrast** | WCAG-AAA, large type, maximal legibility |
+| Theme | Ships | Vibe |
+|---|---|---|
+| **Daylight** (default) | Launch | Clean Material 3; **Dynamic** variant uses Material You wallpaper color (Android 12+) |
+| **Cockpit** | Launch | Near-black AMOLED, avionics green/amber accents, EFIS-style progress arc |
+| **High Contrast** | Launch | WCAG-AAA, large type, maximal legibility |
+| **Solari** | v2 | Retro split-flap departure board: yellow-on-black mono type, values flip with a split-flap animation on change |
+| **Skyfade** | v2 | Pastel dawn/dusk gradients that shift with local time at the departure airport |
 
 Micro-interactions (theme-aware): split-flap flip on any status/gate value change;
 pull-to-refresh as a plane accelerating down a runway; distinct haptic patterns per event
@@ -498,6 +587,7 @@ MVP: **check-in open · delay (and further slips) · gate change · boarding cal
 departure (pushback/takeoff) · landing soon (~45 min out) · landed · arrival gate +
 baggage belt · cancellation · diversion**.
 v2: aircraft/registration change · inbound-plane-late early warning.
+(Check-in and boarding are *derived* times per §9.2 — their notifications say "~".)
 
 One **notification channel per event class** so Android-level muting works naturally;
 quiet-hours setting suppresses non-critical classes (never cancellation/gate-change).
@@ -505,22 +595,36 @@ quiet-hours setting suppresses non-critical classes (never cancellation/gate-cha
 ### 12.2 Scheduling mechanics (2026 policy-verified)
 
 - **Baseline (no special permissions):** WorkManager one-time delayed workers anchored to
-  the next known event (e.g. T−45 min before boarding: fetch fresh status → post
-  notification → schedule the next anchor). Periodic refresh rides the §8 cadence. Inexact
-  timing (±minutes) is fine for check-in/boarding-window alerts.
-- **Precision upgrade (opt-in):** `SCHEDULE_EXACT_ALARM` is denied by default on
-  Android 14+ but **may be requested by any app via the special-access screen** — our
-  fact-check confirmed Play policy itself directs non-alarm/calendar apps to it (it is
-  `USE_EXACT_ALARM` that's restricted to alarm/calendar apps and would fail review).
-  Settings offers "Precise alerts" which deep-links to the grant
-  (`ACTION_REQUEST_SCHEDULE_EXACT_ALARM`, checked via `canScheduleExactAlarms()`), used
-  only for time-critical alerts (boarding call, landing-soon). Degrades silently to
-  WorkManager when not granted.
+  the next known event (e.g. ~T−45 min before estimated boarding: reuse the latest
+  snapshot if fresher than ~10 min, else fetch → diff → post → schedule the next anchor).
+  Periodic refresh rides the §8 cadence.
+  **Honest latency bound:** WorkManager guarantees no exactness — periodic work has flex
+  windows and Doze/App-Standby batching defers work on exactly the stationary-phone flight
+  day. Real-world delivery of *detected* disruptions (gate change, delay, cancellation) in
+  baseline mode is **best-effort ~15–45 min**, and the UI's notification settings say so.
+- **Precision upgrade (opt-in, recommended in onboarding):** `SCHEDULE_EXACT_ALARM` is
+  denied by default on Android 14+ but **may be requested by any app via the
+  special-access screen** — our fact-check confirmed Play policy itself directs
+  non-alarm/calendar apps to it (it is `USE_EXACT_ALARM` that's restricted to
+  alarm/calendar apps and would fail review). Settings offers "Precise alerts"
+  (`ACTION_REQUEST_SCHEDULE_EXACT_ALARM`, checked via `canScheduleExactAlarms()`). When
+  granted, exact alarms do two jobs: (a) fire scheduled alerts (boarding call,
+  landing-soon) on time, and (b) **drive the entire gate-critical refresh loop** —
+  `setExactAndAllowWhileIdle` (its ~1-per-9-min idle throttle accommodates a 15-min
+  cadence) triggers an expedited `OneTimeWorkRequest` fetch-and-diff during
+  T−75 → T+30, shrinking disruption-detection latency to ~15 min even in Doze.
+  Degrades silently to baseline when not granted. (A user-visible opt-in "flight day"
+  foreground service for the gate-critical window is a possible later addition if field
+  telemetry—i.e. bug reports—shows the alarm path insufficient.)
+- **Offline branch (defined behavior):** if an anchor worker's fetch fails (airplane mode,
+  dead zone), it posts from the last cached snapshot with a "projected" label rather than
+  skipping silently — the M3-scoped subset of the v2 offline mode (§14).
 - **`POST_NOTIFICATIONS`** runtime permission (API 33+) requested in context — at the
   moment the user tracks their first flight, with a rationale screen.
 - Event *detection* (gate change, delay) happens in refresh workers by diffing the new
   `FlightSnapshot` against the previous one; `NotificationPlanner` decides emissions —
-  pure, unit-tested, and immune to duplicate-notification bugs via emitted-event ledger.
+  pure and unit-tested. Dedup rides the **persisted `EmittedEvent` ledger** (§7), so
+  duplicate suppression survives process death.
 
 ---
 
@@ -530,12 +634,19 @@ The Android-native answer to iOS Live Activities (verified current):
 
 - **Android 16 `Notification.ProgressStyle` Live Update**: flight-phase progress bar with
   colored **segments** (boarding / taxi / cruise / descent) and milestone **points**
-  (takeoff, landing), `setProgressTrackerIcon(plane)` as the moving tracker — surfacing as
-  status-bar chip, lock screen, and AOD (chip/AOD surfaces arrived in QPR1; OEM eligibility
-  caveats apply). Google Wallet already uses this pattern for flights — users know it.
+  (takeoff, landing), `setProgressTrackerIcon(plane)` as the moving tracker. The
+  chip/lock-screen/AOD surfaces all arrived in Android 16 **QPR1**, not the first stable
+  release (verified) — pre-QPR1 devices get only the in-drawer ProgressStyle notification;
+  OEM eligibility caveats apply. Google Wallet already uses this pattern for flights —
+  users know it.
 - **Pre-API-36 fallback:** ongoing notification with standard progress + big-text state.
 - **Glance widgets:** "Next flight" (countdown · gate · status) and "In flight"
   (progress · ETA), matching lock-screen-glance value.
+- **What advances progress between refreshes:** background position polling is zero (§4.2)
+  and WorkManager floors at 15 min, so the widget/Live Update progress advances on
+  **projected time from the cached flight record** (the same pre-computed schedule that
+  powers offline mode), truth-ed up whenever a periodic/anchor worker lands a fresh
+  snapshot. Respect Live Update posting-frequency limits; no foreground service needed.
 - **Offline in-flight mode** (Flighty's deliberate trick, verified): before scheduled
   takeoff, pre-compute and cache the full expected flight record (times, phases, projected
   progress) so the app, widget, and Live Update keep working with zero connectivity,
@@ -552,39 +663,50 @@ pipeline (CSV → SQLite asset in CI), empty list + add-flight flow with parser/
 **Exit:** add `CA861`, see it resolved (airline, route, airports) from bundled data + adsbdb.
 
 ### M1 — Status MVP (week 3–5)
-`FlightStatusProvider` with AeroDataBox + AeroAPI implementations, BYO-key onboarding,
-Room snapshot pipeline, list view with real status/countdown/progress, detail view hero +
-key-facts grid + event timeline, pull-to-refresh, adaptive refresh engine v1, "last
-updated" stamps, disruption semantics.
+`FlightStatusProvider` with **AeroDataBox only** (the provider interface isolates adding
+AeroAPI later), BYO-key onboarding incl. the encrypted-DataStore key store (§4.1 — budgeted
+here), Room snapshot pipeline, **alias/SavedFlight entry in the add-flight flow + display
+in list/detail**, list view with real status/countdown/progress, detail view hero +
+key-facts grid + event timeline (incl. derived-time rules), pull-to-refresh, adaptive
+refresh engine v1, "last updated" stamps, disruption semantics.
 **Exit:** track a real flight end-to-end on status alone; unit tests for phase machine,
-parser, planner; provider failover proven with fault injection.
+parser, planner, derived times.
 
-### M2 — Live map (week 6–8)
-Position provider chain (adsb.lol → airplanes.live → adsb.fi), identity→hex resolution,
-OpenSky track polyline, MapLibre screen (flown/remaining path, interpolated rotated marker,
-staleness ghost), detail-hero map snippet, foreground polling loop with lifecycle-aware
-start/stop, OpenFreeMap themed styles.
+### M2 — Live map + second provider (week 6–8)
+Position provider chain (adsb.lol → airplanes.live → adsb.fi, with per-provider path map),
+identity→hex resolution, OpenSky track polyline, MapLibre screen (flown/remaining path,
+interpolated rotated marker, staleness ghost), detail-hero map snippet, foreground polling
+loop with lifecycle-aware start/stop, OpenFreeMap themed styles. **AeroAPI as second
+status provider + failover fault-injection tests.** Start the F-Droid inclusion RFP now
+(their review queue takes weeks and is outside our control).
 **Exit:** watch a live flight cross the map smoothly; airplane-mode replay renders cached
-track.
+track; status failover proven with fault injection.
 
 ### M3 — Notifications (week 9–10)
-Channels, `POST_NOTIFICATIONS` flow, WorkManager anchors, snapshot-diff event detection,
-notification planner + ledger, per-flight profiles, optional exact-alarm upgrade path,
+Channels, `POST_NOTIFICATIONS` flow, anchor workers (snapshot-reuse rule), snapshot-diff
+event detection, notification planner + persisted `EmittedEvent` ledger, per-flight
+profiles, exact-alarm upgrade path incl. the alarm-driven gate-critical loop, the
+minimal offline projection branch (anchor posts from cached snapshot labeled "projected"),
 METAR/TAF weather cards.
-**Exit:** full notification lifecycle observed on a real flight (boarding → landed) with
-airplane-mode resilience.
+**Exit:** full notification lifecycle observed on a real tracked flight (boarding →
+landed) from a *ground observer's* phone, including one induced offline interval handled
+via the projection branch. (Full offline in-flight mode remains v2.)
 
 ### M4 — Polish & release (week 11–13)
-Solari/Skyfade/High-Contrast themes + split-flap animation + haptics + themed
-pull-to-refresh, accessibility audit (TalkBack, contrast, touch targets), quota ledger UI,
-About/attribution screen, Play listing + F-Droid metadata, baseline profiles.
+Launch themes locked to **three** (Daylight incl. Dynamic, Cockpit, High Contrast), haptics
++ themed pull-to-refresh, **"Next flight" Glance widget** (cheap once the state layer
+exists), accessibility audit (TalkBack, contrast, touch targets), quota ledger UI,
+About/attribution screen, Play listing (F-Droid RFP already in flight since M2),
+baseline profiles.
 **Exit:** public beta.
 
 ### v2 (post-launch)
-Android 16 ProgressStyle Live Updates + Glance widgets · inbound-aircraft section + late
-warning · offline pre-computed in-flight mode · flight log + Passport stats (flights, km,
-hours, airports, airlines, aircraft-type badges, shareable year card — all on-device) ·
-airport-health chip · pickup/share mode · multi-flight trip grouping.
+**Solari split-flap theme + flip-animation engine · Skyfade theme** · Android 16
+ProgressStyle Live Updates + "In flight" Glance widget · inbound-aircraft section + late
+warning · full offline pre-computed in-flight mode · recurring alias date rules · flight
+log + Passport stats (flights, km, hours, airports, airlines, aircraft-type badges,
+shareable year card — all on-device) · airport-health chip · pickup/share mode ·
+multi-flight trip grouping (absorbs multi-leg tracking).
 
 ### Delighters (ongoing)
 Day/night terminator + sunrise callouts · landing confetti · route on-time forecast from
@@ -615,20 +737,32 @@ locally accumulated snapshots · AR "point at the sky" long-shot.
 
 ## 16. Licensing, attribution & privacy
 
-- **App license:** Apache-2.0 or MIT for our code (final call at M0), compatible with every
-  dependency chosen. Repo currently carries a LICENSE file — verify and align.
+- **App license — recommendation: Apache-2.0** (explicit patent grant; compatible with
+  every dependency chosen). ⚠️ The repo's current `LICENSE` is **the Unlicense**
+  (public-domain dedication, verified). If that was a deliberate choice it can stand —
+  but the decision must be confirmed as a **hard M0-week-1 gate, before any external PR
+  is accepted**: once outside contributions land, relicensing needs every contributor's
+  consent. Either way, a `NOTICE` file will state that upstream *data-source terms*
+  (non-commercial ADS-B feeds, adsbdb no-rebundling, AeroAPI personal-use) bind
+  deployments regardless of how permissive the code license is.
 - **Attribution screen (required by our data diet):** OurAirports (PD, courtesy credit) ·
-  mwgg/Airports (MIT) · OpenTravelData (CC-BY — credit + license link) · Wikipedia aircraft
-  types (CC BY-SA) · adsb.lol (ODbL) · airplanes.live / adsb.fi (courtesy + their
-  non-commercial terms) · OpenSky Network · adsbdb (+ its credited route-data owners) ·
-  hexdb.io · aviationweather.gov · OpenFreeMap "© OpenMapTiles © OpenStreetMap" (MapLibre
-  renders map attribution automatically) · trademark notice for airline logos.
+  mwgg/Airports (MIT) · OpenTravelData (CC-BY — credit + license link + **indicate
+  changes**, since we filter to active carriers) · Wikipedia aircraft types (CC BY-SA) ·
+  adsb.lol (ODbL) · airplanes.live / adsb.fi (courtesy + their non-commercial terms) ·
+  OpenSky Network · adsbdb (+ its credited route-data owners) · hexdb.io ·
+  **airport-data.com (aircraft photo thumbnails served via adsbdb)** · aviationweather.gov
+  · OpenFreeMap "© OpenMapTiles © OpenStreetMap" (MapLibre renders map attribution
+  automatically) · trademark notice for airline logos.
 - **License red lines (verified in research):** never bundle or re-export adsbdb/hexdb route
   databases; never ship scraped logo packs; respect AeroAPI Personal = personal use → BYO
   key by design; contact adsb.lol before production launch.
-- **Privacy:** no accounts, no analytics, no server. API keys in Keystore-encrypted
-  DataStore. Flight history stays on device; export/erase built in from day one. The only
-  network calls are to the data providers the user can see listed.
+- **Privacy:** no accounts, no analytics, no server. API keys in the Keystore-backed
+  encrypted DataStore (§4.1). Flight history stays on device; export/erase built in from
+  day one. Network calls go only to the data providers listed on the attribution screen
+  **plus one disclosed exception: the signed provider-config JSON fetched from the
+  project's repo** (§17) — listed in the same screen, integrity-checked (signature
+  verified against a key baked into the app), and **opt-out** (F-Droid builds default to
+  opt-in) so it cannot function as a silent kill-switch.
 
 ---
 
@@ -636,12 +770,12 @@ locally accumulated snapshots · AR "point at the sky" long-shot.
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| A free API dies or adds auth (see: Amadeus portal shutdown, ADSBExchange free tier, ADSB One archive — all happened recently) | **High, eventually** | Everything behind provider interfaces with failover chains; remote-config JSON (fetched from the repo) can reorder/disable providers without an app update; nightly live smoke tests |
+| A free API dies or adds auth (see: Amadeus portal shutdown, ADSBExchange free tier, ADSB One archive — all happened recently) | **High, eventually** | Everything behind provider interfaces with failover chains; **signed, disclosed, opt-out** provider-config JSON (fetched from the repo, see §16 privacy note) can reorder/disable providers without an app update; nightly live smoke tests |
 | Free-tier quota exhaustion for heavy users | Medium | Adaptive cadence + quota ledger + visible usage + cheap upgrade path (user's own $5 tiers) |
 | Gate data missing/wrong for many airports | Certain, sometimes | Best-effort UI ("Gate —"), never fabricate; notifications conditional on data existing |
 | Callsign ≠ flight number breaks position lookup | Medium (mostly EU carriers) | Registration→hex fallback chain (§5); verified route sanity check |
 | maplibre-compose pre-1.0 API churn | Medium | Pin version; `AndroidView` fallback is mature and feature-equivalent |
-| OpenFreeMap outage (no SLA) | Low/Medium | Tile-source failover to MapTiler free key / Protomaps; map degrades to route-line-on-blank gracefully |
+| OpenFreeMap outage (no SLA) | Low/Medium | Keyless failover to a project-hosted Protomaps PMTiles archive on static hosting; MapTiler only as a per-user BYO-key option (its free tier is 100k tiles/mo, non-commercial, hard-stops — a shared key would violate both its terms and our no-embedded-keys rule); map degrades to route-line-on-blank gracefully |
 | Play policy drift (target SDK, alarms, notifications) | Annual certainty | Targets verified for 2026 (SDK 36 by Aug 31); alarms strategy already the policy-preferred one; revisit each Play policy cycle |
 | Flighty-alikes land on Android first (Aviate etc.) | Medium | Ship the calm-open-source-themable wedge; their existence proves the market |
 | ToS ambiguity on aggregator "non-commercial" terms for an open-source app | Low | App is free/no-ads; contact maintainers pre-launch (adsb.lol asks for exactly this); document permissions received |
@@ -656,7 +790,7 @@ locally accumulated snapshots · AR "point at the sky" long-shot.
 | Status fallback | `GET aeroapi.flightaware.com/aeroapi/flights/{ident}` | `x-apikey` (user's) | $5/mo credit ≈ 1,000 calls, 10 res/min |
 | Ident disambiguation | `GET …/flights/{ident}/canonical` | same | $0.001/call |
 | Live position | `GET api.adsb.lol/v2/callsign/{cs}` · `/v2/reg/{reg}` · `/v2/icao/{hex}` | none | dynamic; be polite |
-| Position fallback | `GET api.airplanes.live/v2/…` · `GET opendata.adsb.fi/api/v2/…` | none | 1 req/s each |
+| Position fallback | `GET api.airplanes.live/v2/…` · `GET opendata.adsb.fi/api/v2/…` (adsb.fi paths differ: `/v2/registration/`, `/v3/lat/…/lon/…/dist/`) | none | 1 req/s each |
 | Flown track | `GET opensky-network.org/api/tracks/all?icao24={hex}&time=0` | anon (400 credits/day) or OAuth2 | 1 credit/call |
 | Callsign→route/airline | `GET api.adsbdb.com/v0/callsign/{cs}` | none | unpublished; cache |
 | Hex/route fallback | `GET hexdb.io/api/v1/route/icao/{cs}` | none | 1,000 / 5 min |
