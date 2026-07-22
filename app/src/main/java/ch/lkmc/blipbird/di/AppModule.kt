@@ -25,9 +25,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
+import okhttp3.Cache
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
+import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -39,9 +41,10 @@ object AppModule {
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
     @Provides @Singleton
-    fun okHttp(): OkHttpClient = OkHttpClient.Builder()
+    fun okHttp(@ApplicationContext context: Context): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        .cache(Cache(File(context.cacheDir, "http"), 10L * 1024 * 1024))
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
                 .header("User-Agent", "Blipbird/0.1 (+https://github.com/L-K-M/Blipbird)")
