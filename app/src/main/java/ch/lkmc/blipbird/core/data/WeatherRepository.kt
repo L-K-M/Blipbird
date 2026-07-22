@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.intOrNull
 import java.time.Instant
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -53,8 +54,10 @@ class WeatherRepository @Inject constructor(
     suspend fun routeWeather(points: List<Triple<Double, Double, Instant>>): List<WeatherSample> {
         if (points.isEmpty()) return emptyList()
         return try {
-            val lats = points.joinToString(",") { "%.3f".format(it.first) }
-            val lons = points.joinToString(",") { "%.3f".format(it.second) }
+            // Locale.ROOT: device locales with comma decimal separators would
+            // otherwise produce an invalid coordinate list.
+            val lats = points.joinToString(",") { "%.3f".format(Locale.ROOT, it.first) }
+            val lons = points.joinToString(",") { "%.3f".format(Locale.ROOT, it.second) }
             val element = openMeteo.forecast(lats, lons)
             val parsed: List<OpenMeteoPoint> = when (element) {
                 is JsonArray -> element.map { json.decodeFromJsonElement(OpenMeteoPoint.serializer(), it) }
