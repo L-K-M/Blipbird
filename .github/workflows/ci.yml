@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Supply-chain gate: reject a tampered gradle-wrapper.jar.
       - uses: gradle/actions/wrapper-validation@v5
