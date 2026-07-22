@@ -63,6 +63,7 @@ class NotificationEmitter @Inject constructor(
     override suspend fun post(flightId: Long, designator: String, event: NotificationPlanner.Event) {
         if (!canPost()) return
         val (channel, enabled) = when (event.type) {
+            NotificationPlanner.EventType.GATE_ASSIGNED,
             NotificationPlanner.EventType.GATE_CHANGE,
             NotificationPlanner.EventType.CANCELLED,
             NotificationPlanner.EventType.DIVERTED -> CHANNEL_CRITICAL to settings.notifCritical.first()
@@ -71,11 +72,20 @@ class NotificationEmitter @Inject constructor(
         if (!enabled) return
 
         val text = when (event.type) {
+            NotificationPlanner.EventType.GATE_ASSIGNED ->
+                context.getString(R.string.notif_gate_assigned, event.newValue ?: "?")
             NotificationPlanner.EventType.GATE_CHANGE ->
                 context.getString(R.string.notif_gate_change, event.oldValue ?: "?", event.newValue ?: "?")
             NotificationPlanner.EventType.DELAY -> {
-                val mins = event.fingerprint.substringAfter(':').toLongOrNull() ?: 0
+                // Real minutes for copy — the bucketed fingerprint is a dedup key,
+                // not display text (a 29-min slip used to read "Delayed 15m").
+                val mins = event.delayMinutes ?: event.fingerprint.substringAfter(':').toLongOrNull() ?: 0
                 context.getString(R.string.notif_delay, "${mins}m", timeString(event.newValue))
+            }
+            NotificationPlanner.EventType.DELAY_RECOVERED -> {
+                val mins = event.delayMinutes ?: 0
+                if (mins <= 0) context.getString(R.string.notif_back_on_time, timeString(event.newValue))
+                else context.getString(R.string.notif_delay_recovered, "${mins}m", timeString(event.newValue))
             }
             NotificationPlanner.EventType.CANCELLED -> context.getString(R.string.notif_cancelled)
             NotificationPlanner.EventType.DIVERTED -> context.getString(R.string.notif_diverted, event.newValue ?: "?")

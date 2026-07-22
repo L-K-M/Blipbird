@@ -11,38 +11,68 @@ import java.time.Duration
  */
 object NotificationPlanner {
 
-    enum class EventType { GATE_CHANGE, DELAY, CANCELLED, DIVERTED, DEPARTED, LANDED }
+    enum class EventType { GATE_ASSIGNED, GATE_CHANGE, DELAY, DELAY_RECOVERED, CANCELLED, DIVERTED, DEPARTED, LANDED }
 
     data class Event(
         val type: EventType,
         val fingerprint: String,
         val oldValue: String? = null,
         val newValue: String? = null,
+        /** Real delay minutes for display copy; the bucket is only a dedup key. */
+        val delayMinutes: Long? = null,
     )
 
     /** First delay notification at ≥ this threshold; further slips at ≥ this step. */
     private val DELAY_THRESHOLD: Duration = Duration.ofMinutes(15)
 
+    /** Dedup granularity: slips and recoveries re-notify per bucket of this size. */
+    private const val DELAY_BUCKET_MINUTES = 15L
+
     fun diff(previous: StatusSnapshot?, current: StatusSnapshot): List<Event> {
         val events = mutableListOf<Event>()
         val prev = previous
 
-        // Gate change (only when both sides known — a gate appearing is not a "change")
+        // Gate: the first assignment is at least as valuable as a change, but uses
+        // a distinct fingerprint namespace so a later change BACK to the same gate
+        // can still notify as a change.
         val oldGate = prev?.depGate
         val newGate = current.depGate
+        if (prev != null && oldGate == null && newGate != null) {
+            events += Event(EventType.GATE_ASSIGNED, "gate-assigned:$newGate", null, newGate)
+        }
         if (oldGate != null && newGate != null && oldGate != newGate) {
             events += Event(EventType.GATE_CHANGE, "gate:$newGate", oldGate, newGate)
         }
 
-        // Delay vs schedule, crossing the threshold or slipping further
+        // Delay vs schedule, crossing the threshold or slipping further — and the
+        // happier direction: a delay shrinking by a bucket, or vanishing entirely.
         val sched = current.depTimes.scheduled
         val est = current.depTimes.estimated
-        if (sched != null && est != null && est.isAfter(sched)) {
+        val delayBucket = delayBucketMinutes(current)
+        val prevDelayBucket = prev?.let { delayBucketMinutes(it) } ?: 0
+        // A shrinking delay is exclusively a recovery — never also a DELAY, or the
+        // user would get "delayed 20m" and "delay shortened to 20m" side by side.
+        val recovering = prevDelayBucket >= DELAY_THRESHOLD.toMinutes() && delayBucket < prevDelayBucket
+        if (!recovering && sched != null && est != null && est.isAfter(sched)) {
             val delay = Duration.between(sched, est)
             if (delay >= DELAY_THRESHOLD) {
-                val bucket = (delay.toMinutes() / 15) * 15   // re-notify per 15-min slip bucket
-                events += Event(EventType.DELAY, "delay:$bucket", sched.toString(), est.toString())
+                events += Event(
+                    EventType.DELAY, "delay:$delayBucket",
+                    sched.toString(), est.toString(),
+                    delayMinutes = delay.toMinutes(),
+                )
             }
+        }
+        if (recovering) {
+            val nowDepartingAt = est ?: sched
+            // Fingerprint encodes both endpoints so the same destination bucket
+            // reached from a different (notified) delay still counts as news.
+            events += Event(
+                EventType.DELAY_RECOVERED, "delay-recovered:$prevDelayBucket->$delayBucket",
+                prev?.depTimes?.estimated?.toString(), nowDepartingAt?.toString(),
+                delayMinutes = if (sched != null && est != null && est.isAfter(sched))
+                    Duration.between(sched, est).toMinutes() else 0L,
+            )
         }
 
         // Status transitions
@@ -63,5 +93,13 @@ object NotificationPlanner {
             events += Event(EventType.LANDED, "landed", null, nowLanded.toString())
         }
         return events
+    }
+
+    /** 15-min delay bucket of a snapshot, 0 when not delayed (or no estimate). */
+    private fun delayBucketMinutes(s: StatusSnapshot): Long {
+        val sched = s.depTimes.scheduled ?: return 0
+        val est = s.depTimes.estimated ?: return 0
+        if (!est.isAfter(sched)) return 0
+        return (Duration.between(sched, est).toMinutes() / DELAY_BUCKET_MINUTES) * DELAY_BUCKET_MINUTES
     }
 }
