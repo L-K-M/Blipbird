@@ -782,7 +782,13 @@ Ordered by flight-day usefulness, informed by the competitor benchmark but valid
 Blipbird usability testing:
 
 1. **Hero**: big countdown/ETA, status banner, origin→destination with local times +
-   timezone labels ("14:10 CST · your time 08:10"), live map snippet (expands full-screen).
+   timezone labels ("14:10 CST · your time 08:10"). Instead of a literal (and on a phone,
+   too-small-to-be-useful, too-busy-to-be-beautiful) map snippet in the hero, render a
+   **stylized route diagram**: origin code → great-circle arc → destination code, the plane's
+   fractional position along the arc, and the §9.4 daylight gradient painted along it. Uses
+   zero map tiles, is glanceable, and reads as *designed* rather than generic. Tapping it
+   expands to the full interactive §11 map. The full map still exists; the hero just stops
+   trying to be one.
 2. **Key facts grid**: dep terminal/gate/check-in desk, arr terminal/gate/baggage belt,
    aircraft type + registration, duration, distance. Photos remain out until a source grants
    documented per-image display rights. **The grid adapts to phase, honoring §1's
@@ -822,7 +828,12 @@ Blipbird usability testing:
 9. **About the airline**: name, alliance, radio callsign ("AIR CHINA"), and trusted contact links.
 10. **Share / Pickup mode**: read-only big-type card (ETA · terminal · progress) exportable
    as an image or serverless deep link containing only designator/date/leg. Aliases, API
-   keys, provider IDs, and history are never encoded.
+   keys, provider IDs, and history are never encoded. **Pickup Mode is a first-class screen,
+   not just a shareable card:** the person meeting the flight gets a full-screen, always-on,
+   brightness-pinned display — huge ETA/countdown, terminal + belt, "lands in 47 min," route
+   diagram — basically Google-Maps-navigation for the arrivals hall. This is *the* flight-day
+   use case for non-flyers; long-press the hero countdown to enter it, and it survives screen
+   timeout via a wakelock while foregrounded.
 
 **Loading states are skeletons, never spinners.** Every async surface (list first paint,
 detail sections, timeline) renders content-shaped placeholder skeletons, not a centered
@@ -857,8 +868,29 @@ uncertainty visible:
  PEK ─────────────────────────────────────────────── GVA
  │ ☀ daylight  │▒ dusk ▒│   ★ night   │▒ dawn ▒│  ☀   │
  │  ☁ 80%   🌧 showers  │  ✦ clear    │ ☁ 40%  │  ⛅   │
- 14:10        17:52 🌇                 05:41 🌅   06:30
+ 14:10        17:52 🌅                 05:41 🌅   06:30
 ```
+
+**Distilling the ribbon into one sentence (the relatable half).** Most travelers do not
+want a ribbon; they want an answer. Derive a single headline callout from the same
+`ProjectedRouteProfile` — *"You'll see the sunrise at 05:41, about 1 h 19 min before
+landing"* (or *"no sunrise on this daytime flight"*) — and show it above/beside the ribbon.
+When the §9.4 window-side model is confident, append *"projected on the left/right side."*
+This is the ribbon's mass-market face; the ribbon itself remains for avgeeks.
+
+**Ribbon axis — a deliberate decision, not a default.** The strip is *time*-axis (x =
+elapsed time), which matches how daylight/weather actually unfold and how the user
+experiences the flight. But users intuitively read it as *space* ("where am I over the
+ocean right now?"), and the §11 map is spatial. Reconcile by: (1) painting the plane's
+*current* position on the ribbon at its time-axis location, (2) tapping a ribbon segment
+recenters the §11 map on the corresponding great-circle point, and (3) offering a
+distance-axis toggle for users who think spatially. Acknowledge the tension rather than
+hide it.
+
+**Time-travel scrubber.** Drag a finger along the ribbon to scrub the projected
+weather/light at any point in the flight; the §11 plane marker ghosts to that projected
+position and the headline callout updates. This makes the ribbon interactive rather than
+just readable, and reuses the same offline `DaylightEngine` math.
 
 **Projection inputs and provenance:** build one `ProjectedRouteProfile` before rendering or
 fetching weather. For time, select each milestone's best reported value (actual, then
@@ -1047,11 +1079,15 @@ themed Android rather than a designed product.
      fixes; an approved OpenSky import is optional enrichment, never a dependency.
   3. **Route guide**: dashed great-circle arc to destination, explicitly not presented as
      the filed route or the path the aircraft will actually fly.
-  4. **Plane marker**: `SymbolLayer` icon rotated to heading; animated interpolation
-     from the previously rendered fix to a newly received fix over a short bounded tween;
-     continuous motion between unknown future fixes would be extrapolation. Any optional
-     velocity projection is time-bounded and uses the "estimated" ghost style. Show "last
-     seen X min ago" as soon as `seen_pos` goes stale.
+  4. **Plane marker**: `SymbolLayer` icon rotated to **ground track** (what ADS-B reports),
+     never labeled "heading" — fuselage heading is not guaranteed (§9.4). Animated
+     interpolation from the previously rendered fix to a newly received fix over a
+     critically-damped spring (not a linear tween), tweened in screen space after camera
+     projection; continuous motion between unknown future fixes would be extrapolation. Any
+     optional velocity projection is time-bounded and uses the "estimated" ghost style. Show
+     "last seen X min ago" as soon as `seen_pos` goes stale. A short, fading **contrail**
+     trails the marker for the last few minutes — pure cosmetic, reuses the flown-track
+     geometry, reads as "premium."
   5. Origin/destination pins with gate labels.
   6. **Projected light along the route:** tint route-guide segments by the §9.4 light band
      at passage time and mark approximate cabin-visible crossings. Labels remain projected
@@ -1066,7 +1102,16 @@ themed Android rather than a designed product.
      (§4.4), validity- and altitude-filtered.
 - **Camera:** auto-follow with manual override; "recenter" FAB; detail-hero snippet is a
   non-interactive lite view into the same composable.
-- Altitude/speed/track readout strip under the map (avgeek candy, hidden until data exists).
+- Altitude/speed/track readout strip under the map (avgeek candy, hidden until data exists);
+  tappable to expand into a derived avgeek panel (Mach from ground-speed + altitude, outside
+  air temp, headwind component).
+- **Gesture vocabulary** is explicit: pan, pinch-zoom, double-tap zoom-in, two-finger tilt,
+  and two-finger rotate (with a **north-up / track-up toggle** — essential for avgeeks, with
+  north-up as the accessible default so the map never disorients casual users). Predictive
+  back from the full-screen map returns to detail.
+- **Tap-to-reverse-geocode (offline).** Long-press anywhere on the map (or a ribbon segment)
+  resolves the nearest bundled city/landmark — fully offline, answers "what is that down
+  there?" on a window stare. Cheap, on-brand, no extra data source.
 
 ---
 
@@ -1109,6 +1154,11 @@ the user's channel settings or Do Not Disturb.
   `RECEIVE_BOOT_COMPLETED` receiver rebuilds enabled reminders, app startup rechecks
   `canScheduleExactAlarms()`, and the permission-grant broadcast reschedules them. Revocation
   degrades to WorkManager without nagging the user.
+- **Cabin sunrise/sunset alarm (delighter).** Combine the §9.4 `DaylightEngine` with exact
+  alarms: opt in to "wake me ~20 min before the cabin sunrise" (or sunset) on an overnight
+  flight. Fires only when the projected crossing confidence margin passes and the flight is
+  actually overnight; reconciled like any other reminder (rescheduled/cancelled on profile or
+  milestone change, rebuilt on reboot). A genuinely novel integration nobody else ships.
 - A desired-alarm reconciler uses one stable `PendingIntent` identity per flight/event. It
   replaces or cancels reminders whenever their source milestone changes, the flight becomes
   cancelled/diverted/terminal, the event/profile is disabled, or the flight is archived,
@@ -1259,7 +1309,15 @@ multi-flight trip grouping (absorbs multi-leg tracking).
 ### Delighters (ongoing)
 Projected sunrise-side callouts only when the route/heading confidence margin passes ·
 landing confetti · route on-time forecast only from retention-cleared local snapshots · AR
-"point at the sky" long-shot.
+"point at the sky" long-shot · **"Will I see the sunrise/sunset?" headline** distilled from
+the ribbon · **Pickup Mode** full-screen always-on arrivals-hall display · **route-diagram
+hero** replacing the too-small map snippet · **time-travel ribbon scrubber** · **cabin
+sunrise/sunset alarm** · **tap-to-reverse-geocode** "what is that down there?" · **fading
+contrail** on the plane marker · **engine-start haptic** when ADS-B ground speed crosses
+takeoff roll · **copy-ETA / share-ETA** long-press on the hero · **connection-risk
+indicator** derived from same-day tracked flights vs bundled minimum-connect times ·
+**theme schedule** (auto Cockpit at sunset) · **constellation overlay** on night segments
+(offline star math, v2) · **lifetime/year stats card** (on-device Passport, v2).
 
 ---
 
