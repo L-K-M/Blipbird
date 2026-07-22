@@ -227,6 +227,19 @@ screens and coalesces duplicate requests. Retry network failures, 429 (respectin
 expected empty result is negatively cached briefly. Send a distinct User-Agent and obtain
 written production guidance from every provider whose published terms are unclear.
 
+**Rate-limit bucket policy.** "The coordinator enforces each provider's limit" is the
+intent; the implementation is an explicit **per-host token bucket** living in the
+`ProviderRequestCoordinator` (§6). Each provider maps to one bucket with a `capacity` and a
+`refillRate` derived from its documented limit (airplanes.live / adsb.fi 1 token/s,
+aviationweather 100 tokens/min, Open-Meteo the published per-minute/per-hour/per-day
+figures enforced as *separate* nested buckets). Providers with *unpublished* limits
+(adsb.lol) get a deliberately conservative bucket (e.g., 1 token/2 s) until a provider
+statement says otherwise. Requests `tryAcquire` before dispatch; on exhaustion, the call is
+queued for the next refill tick rather than fired-and-retried, which is what actually keeps
+you under limit. `Retry-After` from a 429 *temporarily lowers* that bucket's refill rate.
+The same bucket model backs the §8 spend stops at the provider boundary; the two never
+diverge.
+
 **Coverage honesty:** all free sources are terrestrial community ADS-B — excellent over
 Europe/NA/Japan/Australia, gaps over oceans, Siberia, parts of Africa, thin inside mainland
 China. The UI shows "last seen X min ago" via `seen_pos` staleness and optionally
@@ -475,7 +488,10 @@ v2 and must never silently retarget an already tracked instance.
 ├─────────────────────────── Platform ─────────────────────────────┤
 │  WorkManager workers (refresh, notification lead-ups)             │
 │  NotificationEmitter (channels, ProgressStyle Live Updates)       │
-│  ProviderRequestCoordinator · RetentionPruner · Glance widgets    │
+│  ProviderRequestCoordinator · ProviderHealth/CircuitBreaker       │
+│  · RateLimitBuckets · RetentionPruner · Glance widgets            │
+│  Clock (injectable Instant + monotonic source) · Heartbeat        │
+│  CrashRouter (local, redacted uncaught-exception sink)            │
 │  DataStore (settings, keys via Keystore)                          │
 └───────────────────────────────────────────────────────────────────┘
 ```
@@ -516,6 +532,28 @@ Principles:
   Countdown math on `Instant` only. Never dataset UTC offsets (verified stale in older
   datasets). Device tzdata self-updates via the Time Zone Data Mainline module on
   Android 10+ (verified); unknown-zone fallback renders fixed-offset with an "approx." flag.
+- **A single injectable `Clock` is the only source of "now."** Every read of wall-clock
+  time (`Instant.now()`, `System.currentTimeMillis()`, `Clock.systemUTC()`) and every
+  monotonic read (`System.nanoTime`/`elapsedRealtime`) in domain, data, and platform layers
+  goes through one `core.time.Clock` interface (`now(): Instant`, `monotonicMillis(): Long`).
+  Production wires `SystemClock`-backed implementations; tests inject a `FakeClock` they can
+  advance deterministically. This is what actually makes the "pure decision cores" unit-
+  testable across DST, date-line, and "is it T−45 yet?" boundaries — without it the phase
+  machine, cadence policy, and notification planner all hide untestable wall-clock reads.
+- **Failover is a real component, not a paragraph.** `ProviderHealth`/`CircuitBreaker` holds
+  per-provider state `CLOSED → OPEN → HALF_OPEN`: it opens after N consecutive
+  timeout/5xx/dns failures within a window, stays open for a cool-down, and probes with one
+  request in `HAL_OPEN` before closing. The coordinator routes around an `OPEN` provider and
+  surfaces its state to the diagnostics screen (§18). 401/403 and spend-stop are *not*
+  circuit-breaker states (they do not self-heal); they are separate disable signals that
+  require user/key action, and failover never routes around them.
+- **Countdowns tick on one shared Heartbeat.** A single process-wide
+  `Heartbeat: Flow<Instant>` (a minute tick, switching to a second tick only inside the
+  foreground detail hero near an event) is collected once per screen; list rows re-derive
+  their countdown strings from the emitted instant rather than each spinning up its own
+  `launch { while (active) { delay(60_000) } }`. This avoids a thundering herd of timers at
+  the top of each minute and the row-wide recomposition that is the classic list-jank
+  footgun.
 
 ---
 
@@ -708,7 +746,8 @@ One airport-board line per flight (Flighty's proven formula, translated to Mater
   "Departs in 2 h 14 m" → "Lands in 1 h 12 m" → "Landed 14:32 · Bag belt 5".
 - Countdown granularity adapts: days → `h m` → minutes. Second-by-second updates are
   reserved for the foreground detail hero near an event, avoiding a constantly recomposing
-  list and false precision around provider estimates.
+  list and false precision around provider estimates. Driven by the single shared
+  `Heartbeat` flow (§6), never per-row timers.
 - Thin phase progress bar; gate/terminal chip once known.
 - **Tap opens the detail view.** Swipe to archive; long-press to edit alias/notifications.
 - Sorted by next-event time.
@@ -1268,6 +1307,7 @@ landing confetti · route on-time forecast only from retention-cleared local sna
 | Weather is stale, region-limited, or misread as safety guidance | Medium | Observation/forecast/advisory labels and age, worldwide-vs-regional capability checks, independent degradation, and prominent non-navigation disclaimer |
 | Play/F-Droid policy or target SDK drifts | Annual certainty | Target/compile API 37 after behavior testing and run a dependency, policy, privacy, and anti-feature checklist each release |
 | Flighty-alikes land on Android first (Aviate etc.) | Medium | Ship the calm-open-source-themable wedge; their existence proves the market |
+| Uncaught exception leaks PII or silently kills debuggability | Medium | A `CrashRouter` installed via `Thread.setDefaultUncaughtExceptionHandler` writes a **local, aggressively redacted** crash record (no keys, aliases, payloads, exact itinerary, or stable device IDs — the same redaction rules as the support export) and never auto-uploads anything. The user can share it from the diagnostics screen. This is decided at M0 so logging is wired correctly once; "add crash reporting later" leaks into every file. No backend, no analytics SDK, no third-party crash sink — the privacy stance is not negotiable for a crash feature |
 
 ---
 
