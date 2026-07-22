@@ -33,6 +33,24 @@ class NotificationEmitter @Inject constructor(
         const val CHANNEL_CRITICAL = "critical"
         const val CHANNEL_STATUS = "status"
         const val CHANNEL_REMINDERS = "reminders"
+
+        /** Stable per-channel index for notification-ID composition. */
+        private val CHANNEL_INDEX = mapOf(
+            CHANNEL_CRITICAL to 0,
+            CHANNEL_STATUS to 1,
+            CHANNEL_REMINDERS to 2,
+        )
+
+        /**
+         * One notification slot per flight and channel: id = flightId * 4 + index.
+         * The old scheme used channel.hashCode() % 10, which can be negative and
+         * lets two flight/channel pairs collide (a gate change silently
+         * overwriting another flight's delay alert).
+         */
+        internal fun notificationId(flightId: Long, channel: String): Int {
+            val index = CHANNEL_INDEX[channel] ?: 3
+            return ((flightId % 500_000_000L).toInt()) * 4 + index
+        }
     }
 
     fun createChannels() {
@@ -112,7 +130,7 @@ class NotificationEmitter @Inject constructor(
             .build()
         try {
             NotificationManagerCompat.from(context)
-                .notify((flightId % Int.MAX_VALUE).toInt() * 10 + channel.hashCode() % 10, notification)
+                .notify(notificationId(flightId, channel), notification)
         } catch (_: SecurityException) {
             // Permission revoked between the check above and the call.
         }
