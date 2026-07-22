@@ -93,4 +93,35 @@ class InstanceSelectorTest {
     @Test fun `empty list yields null`() {
         assertNull(InstanceSelector.select(emptyList(), now))
     }
+
+    // ---- secondLookupDate: the "nearest returned only tomorrow" repair -------
+
+    @Test fun `nearest-only-tomorrow triggers a today lookup in departure tz`() {
+        // now = 20:16 UTC = 04:16 next day in Asia/Shanghai. Provisional departs
+        // tomorrow 02:45 CST — different Shanghai-local date, >4 h out → re-check
+        // today (Shanghai "today", i.e. the date of the flight already airborne).
+        val tomorrow = instance(schedDep = now.plus(Duration.ofHours(22).plusMinutes(29)))
+        val date = InstanceSelector.secondLookupDate(tomorrow, now)
+        assertEquals(java.time.LocalDate.of(2026, 7, 23), date)
+    }
+
+    @Test fun `same-local-date provisional needs no second lookup`() {
+        // Departs in 10 h but still on the same Shanghai-local date (2026-07-23:
+        // now is 04:16 there, departure 14:16 there).
+        val laterToday = instance(schedDep = now.plus(Duration.ofHours(10)))
+        assertNull(InstanceSelector.secondLookupDate(laterToday, now))
+    }
+
+    @Test fun `imminent departure needs no second lookup even across midnight`() {
+        val soon = instance(schedDep = now.plus(Duration.ofHours(2)))
+        assertNull(InstanceSelector.secondLookupDate(soon, now))
+    }
+
+    @Test fun `already-departed provisional needs no second lookup`() {
+        val airborne = instance(
+            schedDep = now.plus(Duration.ofHours(22)),
+            actDep = now.minus(Duration.ofHours(1)),
+        )
+        assertNull(InstanceSelector.secondLookupDate(airborne, now))
+    }
 }

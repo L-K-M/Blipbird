@@ -150,7 +150,7 @@ private const val EMPTY_FC = """{"type":"FeatureCollection","features":[]}"""
 
 private fun multiLineJson(segments: List<List<Pair<Double, Double>>>): String {
     val coords = segments.filter { it.size >= 2 }.joinToString(",") { seg ->
-        seg.joinToString(",", prefix = "[", postfix = "]") { (lon, lat) -> "[%.5f,%.5f]".format(lon, lat) }
+        seg.joinToString(",", prefix = "[", postfix = "]") { (lon, lat) -> "[%.5f,%.5f]".format(java.util.Locale.US, lon, lat) }
     }
     if (coords.isEmpty()) return EMPTY_FC
     return """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},""" +
@@ -159,7 +159,7 @@ private fun multiLineJson(segments: List<List<Pair<Double, Double>>>): String {
 
 private fun pointsJson(points: List<Pair<Double, Double>>): String {
     val features = points.joinToString(",") { (lon, lat) ->
-        """{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[%.5f,%.5f]}}""".format(lon, lat)
+        """{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[%.5f,%.5f]}}""".format(java.util.Locale.US, lon, lat)
     }
     return """{"type":"FeatureCollection","features":[$features]}"""
 }
@@ -167,7 +167,7 @@ private fun pointsJson(points: List<Pair<Double, Double>>): String {
 private fun nightPolygonJson(at: Instant): String {
     val ring = DaylightEngine.nightPolygon(at, stepDeg = 3.0).toMutableList()
     if (ring.first().lat != ring.last().lat || ring.first().lon != ring.last().lon) ring += ring.first()
-    val coords = ring.joinToString(",") { "[%.3f,%.3f]".format(it.lon, it.lat.coerceIn(-89.9, 89.9)) }
+    val coords = ring.joinToString(",") { "[%.3f,%.3f]".format(java.util.Locale.US, it.lon, it.lat.coerceIn(-89.9, 89.9)) }
     return """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},""" +
         """"geometry":{"type":"Polygon","coordinates":[[$coords]]}}]}"""
 }

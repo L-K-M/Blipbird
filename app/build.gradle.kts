@@ -93,7 +93,12 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     implementation(libs.suncalc)
-    implementation(libs.maplibre.compose)
+    // MapLibre Native 13.x defaults to the Vulkan renderer; several OEM Vulkan
+    // drivers (notably Huawei) crash at surface init. Use the OpenGL variant.
+    implementation(libs.maplibre.compose) {
+        exclude(group = "org.maplibre.gl", module = "android-sdk")
+    }
+    implementation(libs.maplibre.android.opengl)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)

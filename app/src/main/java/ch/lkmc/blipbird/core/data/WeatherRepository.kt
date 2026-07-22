@@ -53,8 +53,8 @@ class WeatherRepository @Inject constructor(
     suspend fun routeWeather(points: List<Triple<Double, Double, Instant>>): List<WeatherSample> {
         if (points.isEmpty()) return emptyList()
         return try {
-            val lats = points.joinToString(",") { "%.3f".format(it.first) }
-            val lons = points.joinToString(",") { "%.3f".format(it.second) }
+            val lats = points.joinToString(",") { "%.3f".format(java.util.Locale.US, it.first) }
+            val lons = points.joinToString(",") { "%.3f".format(java.util.Locale.US, it.second) }
             val element = openMeteo.forecast(lats, lons)
             val parsed: List<OpenMeteoPoint> = when (element) {
                 is JsonArray -> element.map { json.decodeFromJsonElement(OpenMeteoPoint.serializer(), it) }

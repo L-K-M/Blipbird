@@ -148,6 +148,26 @@ fun SettingsScreen(
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
 
+            // ---- Diagnostics -------------------------------------------
+            val crashFile = java.io.File(context.filesDir, "last_crash.txt")
+            if (crashFile.exists()) {
+                SectionTitle("Diagnostics")
+                var showCrash by remember { mutableStateOf(false) }
+                Button(onClick = { showCrash = !showCrash }) {
+                    Text(if (showCrash) "Hide last crash log" else "Show last crash log")
+                }
+                if (showCrash) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        remember { runCatching { crashFile.readText().take(4000) }.getOrDefault("unreadable") },
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                HorizontalDivider(Modifier.padding(vertical = 16.dp))
+            }
+
             // ---- Attribution -------------------------------------------
             SectionTitle(stringResource(R.string.settings_about))
             Text(ATTRIBUTION_TEXT, style = MaterialTheme.typography.bodySmall,

@@ -45,4 +45,26 @@ object InstanceSelector {
 
         return pool.maxByOrNull { it.depTimes.best ?: Instant.MIN }
     }
+
+    /**
+     * A provider's dateless "nearest" lookup can return ONLY the next day's
+     * instance even while today's is in the air (AeroDataBox resolves "nearest"
+     * to a single date). When the provisional selection departs on a different
+     * *departure-airport-local* date than today and is comfortably in the
+     * future, the caller should run one more lookup for today's local date and
+     * re-select over the merged candidates. Returns that date, or null when no
+     * second lookup is needed.
+     */
+    fun secondLookupDate(provisional: StatusSnapshot?, now: Instant): java.time.LocalDate? {
+        if (provisional == null) return null
+        val sched = provisional.depTimes.scheduled ?: return null
+        val zone = provisional.departure?.tz
+            ?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() }
+            ?: java.time.ZoneOffset.UTC
+        val today = now.atZone(zone).toLocalDate()
+        val provisionalDate = sched.atZone(zone).toLocalDate()
+        val farFuture = provisional.depTimes.best?.isAfter(now.plus(Duration.ofHours(4))) == true
+        val alreadyStarted = (provisional.depTimes.actual ?: provisional.depTimes.runwayActual) != null
+        return if (provisionalDate != today && farFuture && !alreadyStarted) today else null
+    }
 }

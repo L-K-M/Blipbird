@@ -27,8 +27,26 @@ class BlipbirdApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        installCrashLogger()
         notificationEmitter.createChannels()
         RefreshWorker.schedule(this)
         appScope.launch { referenceImporter.ensureImported() }
+    }
+
+    /**
+     * Persist the last uncaught exception to files/last_crash.txt (surfaced in
+     * Settings → Diagnostics) so device-only crashes are debuggable without adb.
+     */
+    private fun installCrashLogger() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            runCatching {
+                java.io.File(filesDir, "last_crash.txt").writeText(
+                    "${java.time.Instant.now()}\nthread: ${thread.name}\n" +
+                        android.util.Log.getStackTraceString(throwable)
+                )
+            }
+            previous?.uncaughtException(thread, throwable)
+        }
     }
 }

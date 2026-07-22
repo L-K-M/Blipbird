@@ -101,7 +101,17 @@ class FlightRepository @Inject constructor(
 
         val designator = flight.designator()
         val date = flight.dateLocal?.let { java.time.LocalDate.parse(it) }
-        val candidates = statusProviders.fetchCandidates(designator, date)
+        var candidates = statusProviders.fetchCandidates(designator, date)
+
+        // Dateless lookups may resolve "nearest" to tomorrow while today's flight
+        // is mid-air; double-check today (departure-airport local) when suspicious.
+        if (date == null) {
+            val provisional = ch.lkmc.blipbird.domain.InstanceSelector.select(candidates, Instant.now())
+            ch.lkmc.blipbird.domain.InstanceSelector.secondLookupDate(provisional, Instant.now())?.let { today ->
+                candidates = candidates + statusProviders.fetchCandidates(designator, today)
+            }
+        }
+
         val snapshot = ch.lkmc.blipbird.domain.InstanceSelector.select(candidates, Instant.now())
             ?: return null
 
