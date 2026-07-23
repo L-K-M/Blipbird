@@ -1,10 +1,15 @@
 # Blipbird 🐦📡
 
+A flight companion for Android.
+
 [![CI](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml/badge.svg)](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml)
 
 **Source version:** v<!-- version -->0.2.0<!-- /version --> (no packaged GitHub Release is currently published)
 
-**The calm, beautiful flight-day companion for Android.** Enter one or more flight
+> [!IMPORTANT]
+> LLM Disclosure: Jetty was built with substantial help from large language models.
+
+Enter one or more flight
 numbers (`CA861`, `CCA861`, `CCA861/CA861`, or paste a whole list) with an optional
 date and a friendly name, and Blipbird shows a departure-board list of your
 flights, a rich detail dossier with a live-updating route map, a **flight ribbon**
