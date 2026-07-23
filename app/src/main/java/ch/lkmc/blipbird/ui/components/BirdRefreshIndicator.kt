@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -25,6 +26,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.sin
@@ -45,6 +48,26 @@ fun BirdRefreshIndicator(
     modifier: Modifier = Modifier,
 ) {
     val reduceMotion = rememberReducedMotion()
+
+    // Haptic tick the instant the pull passes the trigger threshold, so you feel
+    // "far enough" without watching the bird (V3 — pull-to-refresh haptic). Fires
+    // once per crossing (re-armed only after the pull relaxes below threshold);
+    // the system honors the user's global haptic setting. Lives here so both the
+    // list and detail pull-to-refresh get it from the one shared indicator.
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(state) {
+        var armed = false
+        snapshotFlow { state.distanceFraction >= 1f }.collect { pastThreshold ->
+            if (pastThreshold) {
+                if (!armed) {
+                    armed = true
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                }
+            } else {
+                armed = false
+            }
+        }
+    }
 
     // Release swoop: a quick dive-and-recover the moment the refresh starts.
     // Settled value is 1 so the bird sits level while idle or pulling.
