@@ -4,7 +4,7 @@ A flight companion for Android.
 
 [![CI](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml/badge.svg)](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml)
 
-**Source version:** v<!-- version -->0.2.0<!-- /version --> (no packaged GitHub Release is currently published)
+**Source version:** v<!-- version -->1.0.0<!-- /version --> (no packaged GitHub Release is currently published)
 
 > [!IMPORTANT]
 > LLM Disclosure: Blipbird was built with substantial help from large language models.
