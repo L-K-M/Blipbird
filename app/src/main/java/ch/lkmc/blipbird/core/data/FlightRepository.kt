@@ -4,6 +4,7 @@ import ch.lkmc.blipbird.core.database.EmittedEventEntity
 import ch.lkmc.blipbird.core.database.OpsDatabase
 import ch.lkmc.blipbird.core.database.PositionFixEntity
 import ch.lkmc.blipbird.core.database.StatusSnapshotEntity
+import ch.lkmc.blipbird.core.database.StatusLookupAttemptEntity
 import ch.lkmc.blipbird.core.database.TrackedFlightEntity
 import ch.lkmc.blipbird.core.database.UserDatabase
 import ch.lkmc.blipbird.core.model.AirportRef
@@ -16,6 +17,8 @@ import ch.lkmc.blipbird.core.model.TrackRequest
 import ch.lkmc.blipbird.core.database.ReferenceDao
 import ch.lkmc.blipbird.domain.FlightDates
 import ch.lkmc.blipbird.domain.InstanceSelector
+import ch.lkmc.blipbird.domain.LookupBackoffPolicy
+import ch.lkmc.blipbird.domain.LookupOutcome
 import ch.lkmc.blipbird.domain.NotificationPlanner
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -54,6 +57,7 @@ class FlightRepository @Inject constructor(
     private val snapshotDao get() = opsDb.statusSnapshotDao()
     private val fixDao get() = opsDb.positionFixDao()
     private val emittedDao get() = opsDb.emittedEventDao()
+    private val lookupAttemptDao get() = opsDb.statusLookupAttemptDao()
 
     companion object {
         /** Snapshots/fixes kept for landing + 3 days, then pruned. */
@@ -113,6 +117,7 @@ class FlightRepository @Inject constructor(
         snapshotDao.deleteForFlight(id)
         fixDao.deleteForFlight(id)
         emittedDao.deleteForFlight(id)
+        lookupAttemptDao.deleteForFlight(id)
     }
 
     // ------------------------------------------------------------------ status
@@ -121,6 +126,9 @@ class FlightRepository @Inject constructor(
         snapshotDao.observeLatest(flightId).map { it?.toModel() }
 
     suspend fun latestSnapshot(flightId: Long): StatusSnapshot? = snapshotDao.latest(flightId)?.toModel()
+
+    suspend fun isStatusLookupEligible(flightId: Long, now: Instant): Boolean =
+        lookupAttemptDao.byFlightId(flightId)?.nextEligibleAt?.let { now.toEpochMilli() >= it } ?: true
 
     /**
      * Fetch fresh status via the provider chain, persist, diff, notify.
@@ -136,7 +144,9 @@ class FlightRepository @Inject constructor(
 
         val designator = flight.designator()
         val date = flight.dateLocal?.let { java.time.LocalDate.parse(it) }
-        var candidates = statusProviders.fetchCandidates(designator, date)
+        val attemptedAt = Instant.now()
+        val lookups = mutableListOf(statusProviders.fetchCandidates(designator, date))
+        var candidates = lookups.last().candidates
 
         if (date != null) {
             // Providers with UTC-window queries can return neighbouring instances;
@@ -152,18 +162,29 @@ class FlightRepository @Inject constructor(
             val now = Instant.now()
             val provisional = InstanceSelector.select(candidates, now)
             InstanceSelector.secondLookupDate(provisional, now)?.let { today ->
-                candidates = candidates + statusProviders.fetchCandidates(designator, today)
+                val todayLookup = statusProviders.fetchCandidates(designator, today)
+                lookups += todayLookup
+                candidates = candidates + todayLookup.candidates
                 val stillSuspicious = InstanceSelector.secondLookupDate(
                     InstanceSelector.select(candidates, now), now,
                 ) != null
                 if (stillSuspicious) {
-                    candidates = candidates + statusProviders.fetchCandidates(designator, today.minusDays(1))
+                    val yesterdayLookup = statusProviders.fetchCandidates(designator, today.minusDays(1))
+                    lookups += yesterdayLookup
+                    candidates = candidates + yesterdayLookup.candidates
                 }
             }
         }
 
-        val snapshot = InstanceSelector.select(candidates, Instant.now())
-            ?: return null
+        val snapshot = InstanceSelector.select(candidates, Instant.now()) ?: run {
+            recordLookupAttempt(
+                flightId = flightId,
+                outcome = lookups.failureOutcome(),
+                requestedDate = date,
+                attemptedAt = attemptedAt,
+            )
+            return null
+        }
 
         // Pin the resolved instance's departure-local date onto the tracked flight so
         // later dateless refreshes can never drift to the next day's instance
@@ -186,6 +207,7 @@ class FlightRepository @Inject constructor(
 
         val entity = snapshot.toEntity(flightId)
         snapshotDao.insert(entity)
+        recordLookupAttempt(flightId, LookupOutcome.SUCCESS, date, attemptedAt)
 
         // Diff against previous and emit through the persisted dedup ledger.
         val events = NotificationPlanner.diff(previous?.toModel(), snapshot)
@@ -246,6 +268,32 @@ class FlightRepository @Inject constructor(
     private fun expiryFor(snapshot: StatusSnapshot?): Long {
         val anchor = snapshot?.arrTimes?.best ?: Instant.now()
         return anchor.plus(RETENTION).toEpochMilli()
+    }
+
+    private suspend fun recordLookupAttempt(
+        flightId: Long,
+        outcome: LookupOutcome,
+        requestedDate: java.time.LocalDate?,
+        attemptedAt: Instant,
+    ) {
+        val previous = lookupAttemptDao.byFlightId(flightId)
+        val previousOutcome = previous?.outcome?.let { value ->
+            runCatching { LookupOutcome.valueOf(value) }.getOrNull()
+        }
+        val failures = LookupBackoffPolicy.consecutiveFailures(
+            outcome, previousOutcome, previous?.consecutiveFailures ?: 0,
+        )
+        lookupAttemptDao.upsert(
+            StatusLookupAttemptEntity(
+                trackedFlightId = flightId,
+                attemptedAt = attemptedAt.toEpochMilli(),
+                outcome = outcome.name,
+                consecutiveFailures = failures,
+                nextEligibleAt = LookupBackoffPolicy.nextEligibleAt(
+                    outcome, failures, requestedDate, attemptedAt,
+                ).toEpochMilli(),
+            )
+        )
     }
 
     // ------------------------------------------------------------------ mapping
@@ -363,19 +411,37 @@ class StatusProviderChain @Inject constructor(
     private val aeroApi: AeroApiProvider,
     private val quota: QuotaLedger,
 ) {
-    suspend fun fetchCandidates(designator: Designator, date: java.time.LocalDate?): List<StatusSnapshot> {
+    data class Lookup(val candidates: List<StatusSnapshot>, val outcome: LookupOutcome)
+
+    suspend fun fetchCandidates(designator: Designator, date: java.time.LocalDate?): Lookup {
+        var sawNotFound = false
+        var sawTransientError = false
         for (provider in listOf<FlightStatusProvider>(aeroDataBox, aeroApi)) {
             if (!quota.canSpend(provider.name, provider.unitsPerLookup)) continue
             when (val result = provider.fetch(designator, date)) {
                 is StatusResult.Found -> {
                     quota.record(provider.name, provider.unitsPerLookup)
-                    return result.flights
+                    return Lookup(result.flights, LookupOutcome.SUCCESS)
                 }
-                is StatusResult.NotFound -> { quota.record(provider.name, provider.unitsPerLookup); continue }
+                is StatusResult.NotFound -> {
+                    quota.record(provider.name, provider.unitsPerLookup)
+                    sawNotFound = true
+                }
                 is StatusResult.NoKey -> continue
-                is StatusResult.Error -> continue
+                is StatusResult.Error -> if (result.retryable) sawTransientError = true
             }
         }
-        return emptyList()
+        val outcome = when {
+            sawNotFound -> LookupOutcome.NOT_FOUND
+            sawTransientError -> LookupOutcome.TRANSIENT_ERROR
+            else -> LookupOutcome.NONRETRYABLE_ERROR
+        }
+        return Lookup(emptyList(), outcome)
     }
+}
+
+private fun List<StatusProviderChain.Lookup>.failureOutcome(): LookupOutcome = when {
+    any { it.outcome == LookupOutcome.NOT_FOUND || it.outcome == LookupOutcome.SUCCESS } -> LookupOutcome.NOT_FOUND
+    any { it.outcome == LookupOutcome.TRANSIENT_ERROR } -> LookupOutcome.TRANSIENT_ERROR
+    else -> LookupOutcome.NONRETRYABLE_ERROR
 }

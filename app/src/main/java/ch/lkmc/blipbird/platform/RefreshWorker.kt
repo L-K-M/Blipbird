@@ -72,7 +72,7 @@ class RefreshWorker @AssistedInject constructor(
             if (deadline != null && now.isAfter(deadline)) continue
 
             val due = when {
-                snapshot == null -> true   // never fetched
+                snapshot == null -> repository.isStatusLookupEligible(flight.id, now)
                 interval == null -> false  // out of any refresh window
                 else -> Duration.between(snapshot.fetchedAt, now) >= interval
             }
