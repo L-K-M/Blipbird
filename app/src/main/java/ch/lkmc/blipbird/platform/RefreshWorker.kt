@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import ch.lkmc.blipbird.core.data.BackgroundRefreshController
 import ch.lkmc.blipbird.core.data.FlightRepository
+import ch.lkmc.blipbird.core.model.Designator
 import ch.lkmc.blipbird.domain.CadencePolicy
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import dagger.assisted.Assisted
@@ -34,6 +35,7 @@ class RefreshWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val repository: FlightRepository,
     private val reminders: ReminderScheduler,
+    private val notifications: NotificationEmitter,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -76,9 +78,21 @@ class RefreshWorker @AssistedInject constructor(
                 interval == null -> false  // out of any refresh window
                 else -> Duration.between(snapshot.fetchedAt, now) >= interval
             }
+            var refreshed = false
             if (due) {
                 val fresh = repository.refreshStatus(flight.id)
-                if (fresh != null) reminders.reconcile(flight.id)
+                if (fresh != null) {
+                    reminders.reconcile(flight.id)
+                    refreshed = true  // refreshStatus reconciled the ongoing card
+                }
+            }
+            if (!refreshed) {
+                // Keep the ongoing in-flight card's time-derived progress moving
+                // between provider refreshes (F6) — a worker pass is exactly the
+                // "legitimate update" cadence PLAN.md §13 allows for reposting.
+                val name = flight.alias
+                    ?: Designator(flight.designatorIata, flight.designatorIcao, flight.flightNumber, flight.suffix).display
+                notifications.syncOngoing(flight.id, name, snapshot)
             }
         }
         return Result.success()

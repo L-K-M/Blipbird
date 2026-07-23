@@ -129,9 +129,6 @@ forensically.
   section. *(S)*
 - **F5 — "Boarding" as a real status** — ADB `boarding`/`gateClosed` collapse
   into SCHEDULED; `strings.xml` already ships the word. *(M)*
-- **F6 — Ongoing in-flight notification** (`Notification.ProgressStyle` on API
-  36+, plain progress below; PLAN §13). *(M)* **Owner pick (July 2026): the
-  next cycle's flagship feature.**
 - **F7 — "Next flight" Glance widget.** *(M)*
 - **F10 — Layover awareness** — chained tracked flights: connection time +
   buffer warnings. *(M)*
