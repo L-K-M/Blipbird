@@ -7,7 +7,7 @@ A flight companion for Android.
 **Source version:** v<!-- version -->0.2.0<!-- /version --> (no packaged GitHub Release is currently published)
 
 > [!IMPORTANT]
-> LLM Disclosure: Jetty was built with substantial help from large language models.
+> LLM Disclosure: Blipbird was built with substantial help from large language models.
 
 Enter one or more flight
 numbers (`CA861`, `CCA861`, `CCA861/CA861`, or paste a whole list) with an optional
