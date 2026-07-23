@@ -95,8 +95,10 @@ resurfacing in every review. Each notes what would flip the call.
   and the named push/pop screen transitions landed (July 2026); still open:
   migrating component-embedded specs (status-chip color flip, sheet present)
   onto the tokens, and the in-app reduce-motion toggle (§18).
-- **V3 — remainder: haptics** (PLAN M4): the pull-to-refresh threshold haptic
-  landed (shared `BirdRefreshIndicator`); still open: swipe-to-dismiss thresholds.
+- **V3 — remainder: swipe-to-dismiss haptic.** The pull-to-refresh threshold
+  haptic landed (#69); a swipe-to-dismiss threshold haptic was tried and reverted
+  — firing mid-drag read as the archive/delete committing before finger-release.
+  Revisit only if it can fire on the release-commit without that premature feel.
 - **V6 — remainder: no loading state while resolving.** The add sheet's date
   field is now a `DatePickerDialog` (read-only, clearable) and silent date parse
   errors are gone with it (glm 5.8); still open: no in-sheet progress indicator
@@ -116,11 +118,11 @@ resurfacing in every review. Each notes what would flip the call.
 
 ## Missing features (value ÷ effort ordered)
 
-- **F2 — remainder: auto-archive on landing.** The "Past flights" section
-  landed — archived flights are now browsable from the list top bar, and each can
-  be restored or permanently deleted (closing the recoverability gap where an
-  archived flight vanished once the undo snackbar dismissed). Still open:
-  automatically archiving landed flights after ~24 h. *(S)*
+- **F2 — remainder: auto-archive on landing.** The archived-flights screen
+  landed — reached from a deemphasized link at the bottom of the list, with
+  restore and permanent-delete (closing the recoverability gap where an archived
+  flight vanished once the undo snackbar dismissed). Still open: automatically
+  archiving landed flights after ~24 h. *(S)*
 - **F5 — "Boarding" as a real status** — ADB `boarding`/`gateClosed` collapse
   into SCHEDULED; `strings.xml` already ships the word. *(M)*
 - **F7 — "Next flight" Glance widget.** *(M)*

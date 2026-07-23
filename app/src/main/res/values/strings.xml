@@ -34,8 +34,8 @@
     <string name="flight_deleted">Flight deleted</string>
     <string name="undo">Undo</string>
     <string name="restore">Restore</string>
-    <string name="archived_title">Past flights</string>
-    <string name="archived_empty_title">No past flights</string>
+    <string name="archived_title">Archived flights</string>
+    <string name="archived_empty_title">No archived flights</string>
     <string name="archived_empty_body">Flights you archive land here. Restore one to track it again, or remove it for good.</string>
     <string name="delete_forever_title">Delete flight?</string>
     <string name="delete_forever_body">This removes the flight and its history for good, and can\'t be undone.</string>
