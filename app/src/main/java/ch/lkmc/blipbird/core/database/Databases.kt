@@ -19,7 +19,13 @@ abstract class UserDatabase : RoomDatabase() {
     }
 }
 
-/** Provider-derived + reference data; excluded from backup, fully rebuildable. */
+/**
+ * Provider-derived + reference data; excluded from backup. Rebuildable by design
+ * with one exception (glm 1.20): `quota_ledger` holds real per-cycle spend
+ * accounting that cannot be reconstructed from anything on-device — dropping this
+ * DB resets the estimate to zero, so schema changes must migrate it (they do
+ * since v1→2), never fall back to a destructive recreate.
+ */
 @Database(
     entities = [
         StatusSnapshotEntity::class,

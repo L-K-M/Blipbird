@@ -1,5 +1,7 @@
 package ch.lkmc.blipbird.core.data
 
+import androidx.room.withTransaction
+import ch.lkmc.blipbird.core.database.OpsDatabase
 import ch.lkmc.blipbird.core.database.QuotaLedgerDao
 import java.time.YearMonth
 import java.time.ZoneOffset
@@ -14,6 +16,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class QuotaLedger @Inject constructor(
+    private val db: OpsDatabase,
     private val dao: QuotaLedgerDao,
 ) {
     data class Budget(val softStop: Long, val cycleAllowance: Long)
@@ -25,13 +28,30 @@ class QuotaLedger @Inject constructor(
 
     fun periodKey(): String = YearMonth.now(ZoneOffset.UTC).toString()
 
-    suspend fun canSpend(provider: String, units: Long): Boolean {
+    /**
+     * Atomically reserve [units] for [provider] this period, but only if that keeps
+     * usage at or under the soft stop. Reading the current total and adding to it
+     * run in one DB transaction (B18): without it, two concurrent lookups could
+     * each pass a separate check-then-record and overshoot the cap. Returns whether
+     * the units were recorded — [refund] them if the lookup turns out non-billable.
+     */
+    suspend fun trySpend(provider: String, units: Long): Boolean {
         val budget = budgets[provider] ?: return true
-        val used = dao.used(provider, periodKey()) ?: 0
-        return used + units <= budget.softStop
+        return db.withTransaction {
+            val used = dao.used(provider, periodKey()) ?: 0
+            if (used + units > budget.softStop) {
+                false
+            } else {
+                dao.add(provider, periodKey(), units)
+                true
+            }
+        }
     }
 
-    suspend fun record(provider: String, units: Long) = dao.add(provider, periodKey(), units)
+    /** Give back units reserved by [trySpend] when no billable request was made. */
+    suspend fun refund(provider: String, units: Long) {
+        if (budgets.containsKey(provider)) dao.add(provider, periodKey(), -units)
+    }
 
     suspend fun used(provider: String): Long = dao.used(provider, periodKey()) ?: 0
 
