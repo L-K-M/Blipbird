@@ -18,16 +18,6 @@ genuinely still open.
 
 ## Open bugs
 
-### glm 1.11 · `FlightRepository.delete()` is not transactional — LOW
-Five DAO calls across two DBs; a crash mid-way orphans rows. Needs an ops-side
-`@Transaction` method.
-
-### glm 1.16 / B20 · remainder: route-corridor sanity check — LOW
-#58 landed identity matching (fixes only accepted when the record's
-hex/registration/callsign equals the query) and freshness/validity gates. Still
-open: for CALLSIGN-derived fixes the identity can genuinely collide day-to-day —
-a great-circle-corridor plausibility check (PLAN.md §5 step 5) would close it.
-
 ### glm 1.19 · `goAsync()` receivers have no timeout — LOW
 `ReminderAlarmReceiver`/`BootCompletedReceiver` run Room/IO work on a
 free-standing scope under the ~10 s budget; boot reconcile should enqueue a
@@ -50,11 +40,6 @@ forensically.
 
 ### DS4-new: unique findings from the DeepSeek review (`docs/reviews/ds4.md`)
 
-- **DS4-G9 — `phaseTime` calls `Instant.now()` at composition time** (list
-  card); the ViewModel already ticks a shared clock — pass `now` through the
-  row data.
-- **DS4-G10 — No per-row data-freshness indicator in the list** (detail shows
-  "Updated X ago"; the list doesn't).
 - **DS4-P10 — `planeBitmap` renders on the composition thread** on first use
   (cached after); consider pre-rendering or a vector drawable.
 - **DS4-V19 — Ribbon weather glyphs are evenly spaced** (`weight(1f)`) while
@@ -63,14 +48,6 @@ forensically.
 
 - **DS4-V21 — Detail countdown freezes between 15 s ticks** vs the list's 30 s
   cadence — unify tick sources, consider animation smoothing.
-
-### glm-A: further verified defects (from the GLM backlog)
-
-- **ReferenceImporter CSV parser** doesn't handle embedded newlines in quoted
-  fields / trailing doubled quotes. Harden or use a real CSV lib.
-- **No `Retry-After` honoring** — 429 just falls through the provider chain.
-- **Crash logger writes on the crashing thread** (`BlipbirdApp`) — cap the
-  write size / defer so it can't extend the ANR dialog.
 
 ---
 

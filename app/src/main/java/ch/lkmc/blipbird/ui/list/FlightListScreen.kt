@@ -75,6 +75,7 @@ import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.ui.components.BirdRefreshIndicator
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
+import ch.lkmc.blipbird.ui.components.agoText
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.departsInText
 import ch.lkmc.blipbird.ui.components.landsInText
@@ -471,6 +472,16 @@ private fun FlightRowCard(row: FlightRow, onClick: () -> Unit, onLongClick: () -
                 Text(factLine, style = MaterialTheme.typography.labelMedium, color = sky.contentDim)
             }
         }
+        // Per-row freshness (DS4-G10): the detail screen already says "Updated
+        // X ago"; without it here, hours-stale list data looks live.
+        row.updatedAt?.let {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                stringResource(R.string.updated_ago, agoText(it, row.now)),
+                style = MaterialTheme.typography.labelSmall,
+                color = sky.contentDim,
+            )
+        }
     }
 }
 
@@ -528,11 +539,14 @@ private fun AirportCell(
 @Composable
 private fun phaseTime(row: FlightRow): String {
     val at = row.view.nextEventAt ?: return stringResource(R.string.value_unknown)
+    // Countdowns derive from the ViewModel's shared ticker (row.now), never from
+    // Instant.now() at composition time (DS4-G9): the latter makes the call
+    // unstable and recomposes rows without any real data change.
     return when (row.view.nextEventLabel) {
         ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.DEPARTS_IN ->
-            departsInText(Duration.between(Instant.now(), at))
+            departsInText(Duration.between(row.now, at))
         ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.LANDS_IN ->
-            landsInText(Duration.between(Instant.now(), at))
+            landsInText(Duration.between(row.now, at))
         ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.LANDED_AT ->
             "Landed ${localTime(at, row.arrTz?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault())}"
         else -> stringResource(R.string.value_unknown)

@@ -39,10 +39,9 @@ class ReferenceImporter @Inject constructor(
             dao.clearAirports()
             dao.clearAirlines()
 
-            context.assets.open("reference/airports.csv").bufferedReader().useLines { lines ->
+            context.assets.open("reference/airports.csv").bufferedReader().use { reader ->
                 val batch = ArrayList<AirportEntity>(1024)
-                lines.drop(1).forEach { line ->
-                    val f = parseCsvLine(line)
+                CsvReader.records(reader).drop(1).forEach { f ->
                     if (f.size >= 8) {
                         batch += AirportEntity(
                             icao = f[0].ifEmpty { null },
@@ -60,10 +59,9 @@ class ReferenceImporter @Inject constructor(
                 if (batch.isNotEmpty()) dao.insertAirports(batch)
             }
 
-            context.assets.open("reference/airlines.csv").bufferedReader().useLines { lines ->
+            context.assets.open("reference/airlines.csv").bufferedReader().use { reader ->
                 val batch = ArrayList<AirlineEntity>(512)
-                lines.drop(1).forEach { line ->
-                    val f = parseCsvLine(line)
+                CsvReader.records(reader).drop(1).forEach { f ->
                     if (f.size >= 3 && f[2].isNotEmpty()) {
                         batch += AirlineEntity(
                             icao = f[0].ifEmpty { null },
@@ -90,24 +88,4 @@ class ReferenceImporter @Inject constructor(
         java.security.MessageDigest.getInstance("MD5").digest(bytes)
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }.getOrDefault("missing-lockfile")
-
-    /** Minimal RFC-4180 line parser (fields may be quoted and contain commas). */
-    private fun parseCsvLine(line: String): List<String> {
-        val out = ArrayList<String>(8)
-        val sb = StringBuilder()
-        var inQuotes = false
-        var i = 0
-        while (i < line.length) {
-            val c = line[i]
-            when {
-                inQuotes && c == '"' && i + 1 < line.length && line[i + 1] == '"' -> { sb.append('"'); i++ }
-                c == '"' -> inQuotes = !inQuotes
-                c == ',' && !inQuotes -> { out += sb.toString(); sb.setLength(0) }
-                else -> sb.append(c)
-            }
-            i++
-        }
-        out += sb.toString()
-        return out
-    }
 }
