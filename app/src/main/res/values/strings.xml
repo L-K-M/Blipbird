@@ -64,6 +64,7 @@
     <string name="airline">Airline</string>
     <string name="live_map">Live map</string>
     <string name="map_no_position">No live position — showing planned route</string>
+    <string name="map_opensky_hint">Optional: add an OpenSky API client in Settings to draw the exact flown path.</string>
     <string name="last_seen_ago">Last seen %1$s ago</string>
     <string name="ribbon_side_left">left side</string>
     <string name="ribbon_side_right">right side</string>
@@ -85,7 +86,12 @@
     <string name="settings_key_hint">Paste API key</string>
     <string name="settings_key_saved">Key saved</string>
     <string name="settings_key_none">Not configured — flight status disabled</string>
+    <string name="settings_key_none_optional">Not configured — optional</string>
     <string name="settings_key_clear">Remove key</string>
+    <string name="settings_opensky_title">Exact flown path (optional)</string>
+    <string name="settings_opensky_desc">Backfills the route the aircraft actually flew from the OpenSky Network onto the map. Entirely optional — without it, Blipbird still shows the planned route and live positions. Create a free API client at opensky-network.org (research and non-commercial terms apply).</string>
+    <string name="settings_opensky_client_id">OpenSky API client ID</string>
+    <string name="settings_opensky_client_secret">OpenSky API client secret</string>
     <string name="settings_granted">Granted</string>
     <string name="settings_allow_precise">Allow precise alerts</string>
     <string name="settings_notifications">Notifications</string>

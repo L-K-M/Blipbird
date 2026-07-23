@@ -14,6 +14,7 @@ import ch.lkmc.blipbird.core.network.AeroApi
 import ch.lkmc.blipbird.core.network.AeroDataBoxApi
 import ch.lkmc.blipbird.core.network.AviationWeatherApi
 import ch.lkmc.blipbird.core.network.OpenMeteoApi
+import ch.lkmc.blipbird.core.network.OpenSkyApi
 import ch.lkmc.blipbird.platform.NotificationEmitter
 import ch.lkmc.blipbird.platform.WorkManagerRefreshController
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -80,6 +81,10 @@ object AppModule {
         retrofit(client, "https://api.adsb.lol/").create(AdsbApi::class.java)
 
     @Provides @Singleton
+    fun openSkyApi(client: OkHttpClient): OpenSkyApi =
+        retrofit(client, "https://opensky-network.org/").create(OpenSkyApi::class.java)
+
+    @Provides @Singleton
     fun aviationWeatherApi(client: OkHttpClient): AviationWeatherApi =
         retrofit(client, AviationWeatherApi.BASE_URL).create(AviationWeatherApi::class.java)
 
@@ -107,6 +112,8 @@ class KeyProviderImpl @Inject constructor(
 ) : ProviderKeyProvider {
     override suspend fun aeroDataBoxKey(): String? = store.keys.first().aeroDataBoxKey
     override suspend fun aeroApiKey(): String? = store.keys.first().aeroApiKey
+    override suspend fun openSkyClientId(): String? = store.keys.first().openSkyClientId
+    override suspend fun openSkyClientSecret(): String? = store.keys.first().openSkyClientSecret
 }
 
 @Module

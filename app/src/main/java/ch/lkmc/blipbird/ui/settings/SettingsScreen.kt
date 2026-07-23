@@ -118,6 +118,34 @@ fun SettingsScreen(
                 onClear = { viewModel.clearAeroApiKey() },
             )
 
+            Spacer(Modifier.height(16.dp))
+            Text(
+                stringResource(R.string.settings_opensky_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.settings_opensky_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(10.dp))
+            KeyField(
+                label = stringResource(R.string.settings_opensky_client_id),
+                configured = state.hasOpenSkyId,
+                onSave = { viewModel.saveOpenSkyId(it) },
+                onClear = { viewModel.clearOpenSkyId() },
+                optional = true,
+            )
+            Spacer(Modifier.height(10.dp))
+            KeyField(
+                label = stringResource(R.string.settings_opensky_client_secret),
+                configured = state.hasOpenSkySecret,
+                onSave = { viewModel.saveOpenSkySecret(it) },
+                onClear = { viewModel.clearOpenSkySecret() },
+                optional = true,
+            )
+
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
 
             // ---- Notifications ------------------------------------------
@@ -250,6 +278,7 @@ private fun KeyField(
     configured: Boolean,
     onSave: (String) -> Unit,
     onClear: () -> Unit,
+    optional: Boolean = false,
 ) {
     var value by remember { mutableStateOf("") }
     Column {
@@ -260,8 +289,11 @@ private fun KeyField(
             placeholder = { Text(stringResource(R.string.settings_key_hint)) },
             supportingText = {
                 Text(
-                    if (configured) stringResource(R.string.settings_key_saved)
-                    else stringResource(R.string.settings_key_none),
+                    when {
+                        configured -> stringResource(R.string.settings_key_saved)
+                        optional -> stringResource(R.string.settings_key_none_optional)
+                        else -> stringResource(R.string.settings_key_none)
+                    },
                 )
             },
             modifier = Modifier.fillMaxWidth(),
@@ -288,12 +320,13 @@ private fun KeyField(
 private const val ATTRIBUTION_TEXT = """Data sources & licenses:
 • Flight status: AeroDataBox (your RapidAPI key) · FlightAware AeroAPI (your key, personal use)
 • Live positions: adsb.lol (ODbL) · airplanes.live · adsb.fi (non-commercial, attribution)
+• Flown path (optional): OpenSky Network trajectory API (your API client; research/non-commercial terms)
 • Airports: OurAirports (Public Domain) · timezones from mwgg/Airports (MIT)
 • Airlines: OpenTravelData (CC BY 4.0, filtered to active carriers)
 • Weather: NOAA aviationweather.gov · Weather data by Open-Meteo.com (CC BY 4.0)
 • Solar math: commons-suncalc (Apache-2.0); great-circle formulas after Chris Veness (MIT); terminator math after Leaflet.Terminator (MIT)
 
-Privacy: No Blipbird account, backend, or analytics. User-authored flights and settings may be included in Android OS backup or device transfer; operational provider data and API keys are excluded. Configured status providers receive flight identifiers, dates, and credentials as needed. ADS-B, weather, and map hosts receive their respective queries and ordinary request metadata.
+Privacy: No Blipbird account, backend, or analytics. User-authored flights and settings may be included in Android OS backup or device transfer; operational provider data and API keys are excluded. Configured status providers receive flight identifiers, dates, and credentials as needed; a configured OpenSky client sends OpenSky the aircraft address and your credentials. ADS-B, weather, and map hosts receive their respective queries and ordinary request metadata.
 
 Airline names/codes are trademarks of their respective owners, used for identification only.
 All flight data is informational and not for navigation or operational use."""

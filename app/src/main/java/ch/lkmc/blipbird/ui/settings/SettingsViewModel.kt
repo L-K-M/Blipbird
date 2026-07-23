@@ -22,6 +22,8 @@ data class SettingsUiState(
     val theme: AppTheme = AppTheme.DAYLIGHT_DYNAMIC,
     val hasAdbKey: Boolean = false,
     val hasAeroApiKey: Boolean = false,
+    val hasOpenSkyId: Boolean = false,
+    val hasOpenSkySecret: Boolean = false,
     val notifCritical: Boolean = true,
     val notifStatus: Boolean = true,
     val notifReminders: Boolean = true,
@@ -49,6 +51,8 @@ class SettingsViewModel @Inject constructor(
             theme = theme,
             hasAdbKey = keys.aeroDataBoxKey != null,
             hasAeroApiKey = keys.aeroApiKey != null,
+            hasOpenSkyId = keys.openSkyClientId != null,
+            hasOpenSkySecret = keys.openSkyClientSecret != null,
             notifCritical = notifs.first,
             notifStatus = notifs.second,
             notifReminders = notifs.third,
@@ -61,6 +65,10 @@ class SettingsViewModel @Inject constructor(
     fun saveAeroApiKey(key: String) = viewModelScope.launch { keyStore.setAeroApiKey(key) }
     fun clearAdbKey() = viewModelScope.launch { keyStore.setAeroDataBoxKey(null) }
     fun clearAeroApiKey() = viewModelScope.launch { keyStore.setAeroApiKey(null) }
+    fun saveOpenSkyId(value: String) = viewModelScope.launch { keyStore.setOpenSkyClientId(value) }
+    fun saveOpenSkySecret(value: String) = viewModelScope.launch { keyStore.setOpenSkyClientSecret(value) }
+    fun clearOpenSkyId() = viewModelScope.launch { keyStore.setOpenSkyClientId(null) }
+    fun clearOpenSkySecret() = viewModelScope.launch { keyStore.setOpenSkyClientSecret(null) }
     fun setNotifCritical(v: Boolean) = viewModelScope.launch { settings.setNotifCritical(v) }
     fun setNotifStatus(v: Boolean) = viewModelScope.launch { settings.setNotifStatus(v) }
 

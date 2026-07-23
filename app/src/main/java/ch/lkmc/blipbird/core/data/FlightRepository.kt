@@ -47,6 +47,7 @@ class FlightRepository @Inject constructor(
     private val opsDb: OpsDatabase,
     private val statusProviders: StatusProviderChain,
     private val positionProvider: PositionProvider,
+    private val openSkyTracks: OpenSkyTrackProvider,
     private val quota: QuotaLedger,
     private val identity: IdentityResolver,
     private val referenceDao: ReferenceDao,
@@ -64,6 +65,8 @@ class FlightRepository @Inject constructor(
         val RETENTION: Duration = Duration.ofDays(3)
         /** Force-refresh debounce per flight. */
         val REFRESH_DEBOUNCE: Duration = Duration.ofSeconds(30)
+        /** Minimum spacing between OpenSky trajectory backfills per flight. */
+        val TRACK_BACKFILL_INTERVAL: Duration = Duration.ofMinutes(10)
     }
 
     // ------------------------------------------------------------------ tracking
@@ -118,6 +121,7 @@ class FlightRepository @Inject constructor(
         fixDao.deleteForFlight(id)
         emittedDao.deleteForFlight(id)
         lookupAttemptDao.deleteForFlight(id)
+        trackBackfillAt.remove(id)
     }
 
     // ------------------------------------------------------------------ status
@@ -254,6 +258,41 @@ class FlightRepository @Inject constructor(
             return fix
         }
         return null
+    }
+
+    // In-memory per-flight throttle for the OpenSky trajectory backfill; callers
+    // may invoke it from tight poll loops and rely on this to keep it polite.
+    private val trackBackfillAt = java.util.concurrent.ConcurrentHashMap<Long, Instant>()
+
+    /**
+     * Replaces this flight's OpenSky-sourced trail with the trajectory OpenSky
+     * currently has (optional feature — no-op without a configured API client).
+     * Returns the number of stored waypoints; 0 covers unconfigured, throttled,
+     * not-yet-flown, and failed cases alike.
+     */
+    suspend fun backfillTrack(flightId: Long, force: Boolean = false): Int {
+        if (!openSkyTracks.isConfigured()) return 0
+        val snapshot = snapshotDao.latest(flightId)?.toModel()
+        val hex = (snapshot?.icao24 ?: fixDao.latest(flightId)?.icao24)
+            ?.trim()?.lowercase(java.util.Locale.ROOT)
+            ?.takeIf { it.matches(Regex("[0-9a-f]{6}")) } ?: return 0
+
+        val now = Instant.now()
+        val queryTime = openSkyQueryTime(snapshot, now) ?: return 0
+        val last = trackBackfillAt[flightId]
+        if (!force && last != null && Duration.between(last, now) < TRACK_BACKFILL_INTERVAL) return 0
+        trackBackfillAt[flightId] = now
+
+        val fixes = openSkyTracks.fetchTrack(hex, queryTime, now) ?: return 0
+        val window = openSkyAcceptWindow(snapshot, now)
+        val accepted = fixes.filter { it.at in window }
+        if (accepted.isEmpty()) return 0
+        fixDao.replaceBySource(
+            flightId,
+            OpenSkyTrackProvider.SOURCE,
+            accepted.map { it.toEntity(flightId, expiryFor(snapshot)) },
+        )
+        return accepted.size
     }
 
     // ------------------------------------------------------------------ retention

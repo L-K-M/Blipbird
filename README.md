@@ -52,6 +52,7 @@ Blipbird composes free/BYO-key services — see `PLAN.md` §4 for the full strat
 | Schedule/status/gates | [AeroDataBox](https://aerodatabox.com/) via RapidAPI (free tier ≈ 300 lookups/mo) | your RapidAPI key |
 | Status fallback | [FlightAware AeroAPI](https://www.flightaware.com/commercial/aeroapi/) Personal ($5/mo usage waived; personal use) | your key |
 | Live positions | [adsb.lol](https://adsb.lol) (ODbL) → airplanes.live → adsb.fi | none |
+| Exact flown path (optional) | [OpenSky Network](https://opensky-network.org/) trajectory API | your API client — optional |
 | Airport weather | [aviationweather.gov](https://aviationweather.gov/data/api/) METAR | none |
 | Route weather | [Open-Meteo](https://open-meteo.com/) (CC BY 4.0, non-commercial) | none |
 | Airports/airlines | bundled: OurAirports (PD) + mwgg/Airports tz (MIT) + OpenTravelData (CC BY 4.0) | — |
@@ -62,6 +63,26 @@ Blipbird composes free/BYO-key services — see `PLAN.md` §4 for the full strat
 2. Go to your Account
 3. Go to "Subscription"
 4. Your key will be there
+
+### Exact flown path via OpenSky (optional)
+
+The free ADS-B aggregators only report where an aircraft is *right now*, so by
+default the map shows the great-circle guide plus whatever live breadcrumbs the
+app collected itself while you watched. If you want the line to follow the route
+actually flown (holds, doglegs, the loop onto final), add an OpenSky Network API
+client and Blipbird will backfill the full trajectory — live during the flight
+and for completed flights up to OpenSky's 30-day archive limit.
+
+This is **entirely optional**: every other feature works identically without it.
+
+1. Create a free account at [opensky-network.org](https://opensky-network.org/)
+2. In your account settings, create an **API client** (OAuth2 client
+   credentials — OpenSky retired username/password API auth in 2025)
+3. Paste the client ID and secret in **Settings → Data sources → Exact flown
+   path (optional)**
+
+OpenSky's API is for research and non-commercial use; your credentials stay
+on-device (encrypted, excluded from backups) and are sent only to OpenSky.
 
 **Without a status-provider key**, you can save flight numbers, use themes, and see
 bundled airline information. Schedules, status, gates, and route endpoints require
@@ -79,9 +100,11 @@ device-bound Android Keystore key.
 
 Network features connect directly to third parties. A configured flight-status
 provider receives the flight identifier, optional date, and required credential.
-ADS-B, aviation weather, Open-Meteo, and OpenFreeMap hosts receive their respective
-queries and ordinary request metadata such as the device IP address. See
-**Settings → About & data attribution** for the providers in use.
+A configured OpenSky API client (optional) sends OpenSky the aircraft's ICAO
+address and your client credentials. ADS-B, aviation weather, Open-Meteo, and
+OpenFreeMap hosts receive their respective queries and ordinary request metadata
+such as the device IP address. See **Settings → About & data attribution** for
+the providers in use.
 
 ## Building
 
@@ -149,7 +172,8 @@ Full design rationale, verified API research, and the roadmap live in
 Code: see `LICENSE`. Data/attribution: displayed in-app under **Settings →
 About**, including "Weather data by Open-Meteo.com" (CC BY 4.0), OurAirports
 (public domain), mwgg/Airports (MIT), OpenTravelData (CC BY 4.0), adsb.lol
-(ODbL), commons-suncalc (Apache-2.0), great-circle math after Chris Veness (MIT),
+(ODbL), OpenSky Network (optional; research/non-commercial API terms),
+commons-suncalc (Apache-2.0), great-circle math after Chris Veness (MIT),
 terminator math after Leaflet.Terminator (MIT). Airline names and codes are
 trademarks of their respective owners, used for identification only. All flight
 data is informational — **not for navigation or operational use**.

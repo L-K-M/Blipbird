@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
@@ -63,6 +64,19 @@ interface StatusSnapshotDao {
 interface PositionFixDao {
     @Insert
     suspend fun insert(fix: PositionFixEntity)
+
+    @Insert
+    suspend fun insertAll(fixes: List<PositionFixEntity>)
+
+    @Query("DELETE FROM position_fix WHERE trackedFlightId = :flightId AND source = :source")
+    suspend fun deleteBySource(flightId: Long, source: String)
+
+    /** Atomic swap of one source's trail — a backfill always replaces wholesale. */
+    @Transaction
+    suspend fun replaceBySource(flightId: Long, source: String, fixes: List<PositionFixEntity>) {
+        deleteBySource(flightId, source)
+        insertAll(fixes)
+    }
 
     @Query("SELECT * FROM position_fix WHERE trackedFlightId = :flightId ORDER BY at DESC LIMIT 1")
     suspend fun latest(flightId: Long): PositionFixEntity?

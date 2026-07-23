@@ -36,6 +36,10 @@ import javax.inject.Singleton
 data class ProviderKeys(
     val aeroDataBoxKey: String? = null,
     val aeroApiKey: String? = null,
+    // Optional OpenSky API client (OAuth2 client credentials) — only unlocks the
+    // exact-flown-path backfill; every other feature works without it.
+    val openSkyClientId: String? = null,
+    val openSkyClientSecret: String? = null,
 )
 
 @Singleton
@@ -50,9 +54,12 @@ class ProviderKeyStore @Inject constructor(
 
     val keys: Flow<ProviderKeys> = store.data.catch { emit(ProviderKeys()) }
     val hasAnyStatusKey: Flow<Boolean> = keys.map { it.aeroDataBoxKey != null || it.aeroApiKey != null }
+    val hasOpenSkyClient: Flow<Boolean> = keys.map { it.openSkyClientId != null && it.openSkyClientSecret != null }
 
     suspend fun setAeroDataBoxKey(key: String?) = store.updateData { it.copy(aeroDataBoxKey = key?.trim()?.ifEmpty { null }) }
     suspend fun setAeroApiKey(key: String?) = store.updateData { it.copy(aeroApiKey = key?.trim()?.ifEmpty { null }) }
+    suspend fun setOpenSkyClientId(value: String?) = store.updateData { it.copy(openSkyClientId = value?.trim()?.ifEmpty { null }) }
+    suspend fun setOpenSkyClientSecret(value: String?) = store.updateData { it.copy(openSkyClientSecret = value?.trim()?.ifEmpty { null }) }
 
     private object EncryptedKeysSerializer : Serializer<ProviderKeys> {
         private const val KEY_ALIAS = "blipbird_provider_keys"

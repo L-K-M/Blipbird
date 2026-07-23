@@ -401,6 +401,16 @@ private fun MapCard(state: DetailUiState) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // Purely optional upgrade — surfaced only until configured, then it
+        // disappears (the user asked for the optionality to be explicit in-UI).
+        if (!state.hasOpenSky) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.map_opensky_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Text(
             "© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors",
             style = MaterialTheme.typography.labelSmall,

@@ -8,6 +8,7 @@ import ch.lkmc.blipbird.core.data.IdentityResolver
 import ch.lkmc.blipbird.core.data.WeatherRepository
 import ch.lkmc.blipbird.core.database.AirportEntity
 import ch.lkmc.blipbird.core.database.ReferenceDao
+import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
 import ch.lkmc.blipbird.core.model.AirportRef
 import ch.lkmc.blipbird.core.model.AirportWeather
 import ch.lkmc.blipbird.core.model.Designator
@@ -59,6 +60,8 @@ data class DetailUiState(
     val airportWeather: List<AirportWeather> = emptyList(),
     val refreshing: Boolean = false,
     val updatedAt: Instant? = null,
+    /** OpenSky API client configured — gates the optional flown-path hint. */
+    val hasOpenSky: Boolean = true,
 )
 
 @HiltViewModel
@@ -68,7 +71,10 @@ class FlightDetailViewModel @Inject constructor(
     private val referenceDao: ReferenceDao,
     private val weatherRepository: WeatherRepository,
     private val identity: IdentityResolver,
+    keyStore: ProviderKeyStore,
 ) : ViewModel() {
+
+    private val hasOpenSky = keyStore.hasOpenSkyClient
 
     // Set via setFlightId from the screen (hand-rolled nav has no route args container).
     private val flightId = MutableStateFlow(savedStateHandle.get<Long>("flightId") ?: -1L)
@@ -148,7 +154,7 @@ class FlightDetailViewModel @Inject constructor(
     }
 
     val uiState: StateFlow<DetailUiState> = combine(
-        listOf(flightId, flightEntity, snapshot, lastFix, track, daylight, routeWeather, airportWeather, enriched, airlineName, refreshing, clock)
+        listOf(flightId, flightEntity, snapshot, lastFix, track, daylight, routeWeather, airportWeather, enriched, airlineName, refreshing, clock, hasOpenSky)
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val id = values[0] as Long
@@ -163,6 +169,7 @@ class FlightDetailViewModel @Inject constructor(
         val airline = values[9] as String?
         val busy = values[10] as Boolean
         val now = values[11] as Instant
+        val openSky = values[12] as Boolean
 
         val d = flight?.let { Designator(it.designatorIata, it.designatorIcao, it.flightNumber, it.suffix) }
         val designator = d?.display ?: ""
@@ -185,6 +192,7 @@ class FlightDetailViewModel @Inject constructor(
             airportWeather = aw,
             refreshing = busy,
             updatedAt = snap?.fetchedAt,
+            hasOpenSky = openSky,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DetailUiState())
 
@@ -194,6 +202,7 @@ class FlightDetailViewModel @Inject constructor(
             try {
                 repository.refreshStatus(flightId.value, force = true)
                 repository.pollPosition(flightId.value)
+                repository.backfillTrack(flightId.value, force = true)
             } finally {
                 refreshing.value = false
             }
@@ -301,8 +310,12 @@ class FlightDetailViewModel @Inject constructor(
                     }
                     if (interval > 0) {
                         repository.pollPosition(id)
+                        repository.backfillTrack(id)   // self-throttled; no-op without OpenSky creds
                         delay(interval)
                     } else {
+                        // Also covers freshly-opened landed flights: one throttled
+                        // backfill draws the completed exact path.
+                        repository.backfillTrack(id)
                         delay(120_000L)
                     }
                 }

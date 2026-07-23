@@ -206,4 +206,6 @@ class AeroApiProvider @Inject constructor(
 interface ProviderKeyProvider {
     suspend fun aeroDataBoxKey(): String?
     suspend fun aeroApiKey(): String?
+    suspend fun openSkyClientId(): String?
+    suspend fun openSkyClientSecret(): String?
 }
