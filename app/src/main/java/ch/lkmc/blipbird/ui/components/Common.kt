@@ -19,7 +19,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
-import kotlin.math.pow
 
 /** Localized status word, shared by the chip and plain-text uses (share sheet). */
 @Composable
@@ -57,9 +56,7 @@ fun StatusWord(status: FlightStatus) {
     }
     Text(
         text.uppercase(),
-        // Luminance-based rather than a per-status table: any future palette
-        // change keeps its WCAG-safe foreground automatically.
-        color = onColorFor(color),
+        color = statusContentColor(color),
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,
         modifier = Modifier
@@ -68,18 +65,22 @@ fun StatusWord(status: FlightStatus) {
     )
 }
 
-/**
- * Pick black or white foreground for a colored chip background by relative
- * luminance. White-on-everything failed WCAG AA for the small bold label on the
- * amber (#B26A00 ~ 3.0:1) and neutral (#5F6368 ~ 4.6:1) status colors.
- */
-private fun onColorFor(bg: Color): Color {
-    fun linear(c: Float): Double {
-        val v = c.toDouble()
-        return if (v <= 0.03928) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
+/** Select the WCAG black/white foreground with the higher contrast ratio. */
+internal fun statusContentColor(background: Color): Color =
+    if (contrastRatio(Color.Black, background) >= contrastRatio(Color.White, background)) Color.Black else Color.White
+
+internal fun contrastRatio(foreground: Color, background: Color): Double {
+    fun luminance(color: Color): Double {
+        fun linear(component: Float): Double {
+            val value = component.toDouble()
+            return if (value <= 0.04045) value / 12.92 else Math.pow((value + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(color.red) + 0.7152 * linear(color.green) + 0.0722 * linear(color.blue)
     }
-    val l = 0.2126 * linear(bg.red) + 0.7152 * linear(bg.green) + 0.0722 * linear(bg.blue)
-    return if (l > 0.45) Color.Black else Color.White
+
+    val lighter = maxOf(luminance(foreground), luminance(background))
+    val darker = minOf(luminance(foreground), luminance(background))
+    return (lighter + 0.05) / (darker + 0.05)
 }
 
 /**

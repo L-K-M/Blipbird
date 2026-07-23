@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.progressSemantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -30,11 +31,12 @@ fun FlightProgressBar(
     modifier: Modifier = Modifier,
     planeVisible: Boolean = true,
 ) {
-    val p by animateFloatAsState(progress.coerceIn(0f, 1f), animationSpec = tween(250), label = "flightProgress")
+    val targetProgress = progress.coerceIn(0f, 1f)
+    val p by animateFloatAsState(targetProgress, animationSpec = tween(250), label = "flightProgress")
     // Reuse one Path across draws instead of allocating inside the Canvas lambda.
     val planePath = remember { Path() }
 
-    Canvas(modifier.fillMaxWidth().height(18.dp)) {
+    Canvas(modifier.progressSemantics(targetProgress).fillMaxWidth().height(18.dp)) {
         val w = size.width
         val cy = size.height / 2
         val inset = 9.dp.toPx()

@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.LightBand
@@ -29,6 +31,7 @@ import ch.lkmc.blipbird.domain.DaylightEngine
 import ch.lkmc.blipbird.domain.GreatCircle
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
+import kotlin.math.roundToInt
 
 /**
  * The flight ribbon (PLAN.md §9.4): a horizontal strip of the whole flight,
@@ -46,8 +49,30 @@ fun FlightRibbon(
     progress: Float = 0f,
 ) {
     val ext = LocalExtendedColors.current
+    val eventDescriptions = mutableListOf<String>()
+    for (event in daylight.events) {
+        eventDescriptions += stringResource(
+            if (event.type == SunEventType.SUNRISE) R.string.sunrise_at else R.string.sunset_at,
+            localTime(event.at),
+        )
+    }
+    val eventsSummary = eventDescriptions.joinToString(", ")
+    val progressPercent = (progress.coerceIn(0f, 1f) * 100).roundToInt()
+    val daylightPercent = (daylight.daylightFraction.coerceIn(0.0, 1.0) * 100).roundToInt()
+    val summary = if (eventsSummary.isEmpty()) {
+        stringResource(R.string.ribbon_summary, depCode, arrCode, progressPercent, daylightPercent)
+    } else {
+        stringResource(
+            R.string.ribbon_summary_with_events,
+            depCode,
+            arrCode,
+            progressPercent,
+            daylightPercent,
+            eventsSummary,
+        )
+    }
 
-    Column(modifier) {
+    Column(modifier.clearAndSetSemantics { contentDescription = summary }) {
         // Weather glyph row above the gradient
         if (weather.isNotEmpty()) {
             Row(Modifier.fillMaxWidth()) {

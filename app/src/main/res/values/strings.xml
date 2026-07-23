@@ -67,6 +67,10 @@
     <string name="last_seen_ago">Last seen %1$s ago</string>
     <string name="ribbon_side_left">left side</string>
     <string name="ribbon_side_right">right side</string>
+    <string name="sunrise_at">Sunrise %1$s</string>
+    <string name="sunset_at">Sunset %1$s</string>
+    <string name="ribbon_summary">Route from %1$s to %2$s, %3$d%% complete, %4$d%% in daylight</string>
+    <string name="ribbon_summary_with_events">Route from %1$s to %2$s, %3$d%% complete, %4$d%% in daylight. %5$s</string>
 
     <!-- Settings -->
     <string name="settings">Settings</string>
