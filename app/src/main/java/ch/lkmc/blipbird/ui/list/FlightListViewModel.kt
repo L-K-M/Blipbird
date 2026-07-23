@@ -103,6 +103,15 @@ class FlightListViewModel @Inject constructor(
     private val addError = MutableStateFlow<String?>(null)
 
     /**
+     * True while [addFlights] is resolving and tracking a pasted batch, so the
+     * sheet can show progress and disable its button instead of looking inert
+     * during the token lookups + track writes (V6). Kept out of [uiState] to
+     * avoid a sixth combine arg (no typed overload); the sheet collects it directly.
+     */
+    private val _adding = MutableStateFlow(false)
+    val adding: StateFlow<Boolean> = _adding.asStateFlow()
+
+    /**
      * One shared minute-tick (PLAN.md §6 Heartbeat) so every row's countdown
      * re-derives from a single time source instead of each row holding its own
      * timer. Without this, `Instant.now()` baked into [rowFlow] never updates and
@@ -218,29 +227,37 @@ class FlightListViewModel @Inject constructor(
         onResult: (allAccepted: Boolean) -> Unit = {},
     ) {
         viewModelScope.launch {
-            val tokens = DesignatorParser.splitBatch(input)
-            if (tokens.isEmpty()) {
-                addError.value = "No flight number recognized"
-                onResult(false)
-                return@launch
-            }
-            var added = 0
-            var failed = 0
-            for (token in tokens) {
-                val designator = identity.resolveToken(token)
-                if (designator == null) {
-                    addError.value = "Couldn't parse “$token”"
-                    failed++
-                    continue
+            _adding.value = true
+            try {
+                val tokens = DesignatorParser.splitBatch(input)
+                if (tokens.isEmpty()) {
+                    addError.value = "No flight number recognized"
+                    onResult(false)
+                    return@launch
                 }
-                val id = repository.track(
-                    TrackRequest(designator, date, alias.takeIf { tokens.size == 1 })
-                )
-                added++
-                launch { repository.refreshStatus(id, force = true) }
+                var added = 0
+                var failed = 0
+                for (token in tokens) {
+                    val designator = identity.resolveToken(token)
+                    if (designator == null) {
+                        addError.value = "Couldn't parse “$token”"
+                        failed++
+                        continue
+                    }
+                    val id = repository.track(
+                        TrackRequest(designator, date, alias.takeIf { tokens.size == 1 })
+                    )
+                    added++
+                    launch { repository.refreshStatus(id, force = true) }
+                }
+                if (added > 0) onFirstTrack()
+                onResult(failed == 0 && added > 0)
+            } finally {
+                // Clears once the tokens are resolved and tracked; the per-flight
+                // refreshes above run in the background (child launches) and
+                // don't hold the sheet's spinner.
+                _adding.value = false
             }
-            if (added > 0) onFirstTrack()
-            onResult(failed == 0 && added > 0)
         }
     }
 

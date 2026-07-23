@@ -101,6 +101,7 @@ fun FlightListScreen(
     viewModel: FlightListViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val adding by viewModel.adding.collectAsStateWithLifecycle()
     var showAddSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -221,6 +222,7 @@ fun FlightListScreen(
     if (showAddSheet) {
         AddFlightSheet(
             error = state.addError,
+            submitting = adding,
             onDismiss = { showAddSheet = false; viewModel.clearAddError() },
             onAdd = { input, date, alias ->
                 // Close only when every token parsed; otherwise the sheet stays

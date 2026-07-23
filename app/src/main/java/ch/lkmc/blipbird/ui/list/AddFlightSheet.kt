@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +50,7 @@ import java.time.format.FormatStyle
 @Composable
 fun AddFlightSheet(
     error: String?,
+    submitting: Boolean,
     onDismiss: () -> Unit,
     onAdd: (input: String, date: LocalDate?, alias: String?) -> Unit,
 ) {
@@ -88,9 +92,22 @@ fun AddFlightSheet(
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = {
-                    if (input.isNotBlank()) onAdd(input, selectedDate, alias.trim().ifEmpty { null })
-                }) {
+                Button(
+                    // Block re-taps while a batch resolves so a double-tap can't
+                    // enqueue the same flights twice (V6).
+                    enabled = !submitting && input.isNotBlank(),
+                    onClick = {
+                        if (input.isNotBlank()) onAdd(input, selectedDate, alias.trim().ifEmpty { null })
+                    },
+                ) {
+                    if (submitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
                     Text(stringResource(R.string.add_flight_action))
                 }
             }
