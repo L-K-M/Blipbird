@@ -1,5 +1,10 @@
 package ch.lkmc.blipbird.ui.list
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -53,6 +58,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,7 +67,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -84,6 +92,7 @@ import ch.lkmc.blipbird.ui.components.landsInText
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.monogramColor
 import ch.lkmc.blipbird.ui.components.monogramContentColor
+import ch.lkmc.blipbird.ui.components.rememberReducedMotion
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 import ch.lkmc.blipbird.ui.theme.SkyPalette
 import kotlinx.coroutines.launch
@@ -163,55 +172,64 @@ fun FlightListScreen(
                 )
             },
         ) {
-            if (state.rows.isEmpty()) {
-                Column(Modifier.fillMaxSize()) {
-                    if (!state.hasStatusKey) {
-                        DataSourceCta(
-                            onOpenSettings = onOpenSettings,
-                            modifier = Modifier.padding(horizontal = 16.dp).padding(top = 16.dp),
+            when {
+                // Skeleton only for the pre-first-emission window; once flights
+                // load (even to empty) we fall through to the real states, so an
+                // empty account still lands on the empty card, not a stuck shimmer.
+                state.loading -> {
+                    FlightListSkeleton(Modifier.fillMaxSize())
+                }
+                state.rows.isEmpty() -> {
+                    Column(Modifier.fillMaxSize()) {
+                        if (!state.hasStatusKey) {
+                            DataSourceCta(
+                                onOpenSettings = onOpenSettings,
+                                modifier = Modifier.padding(horizontal = 16.dp).padding(top = 16.dp),
+                            )
+                        }
+                        EmptyState(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            onAdd = { showAddSheet = true },
                         )
-                    }
-                    EmptyState(
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        onAdd = { showAddSheet = true },
-                    )
-                    if (state.archivedCount > 0) {
-                        ArchivedFlightsLink(
-                            onClick = onOpenArchived,
-                            modifier = Modifier.padding(bottom = 24.dp),
-                        )
+                        if (state.archivedCount > 0) {
+                            ArchivedFlightsLink(
+                                onClick = onOpenArchived,
+                                modifier = Modifier.padding(bottom = 24.dp),
+                            )
+                        }
                     }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    // Extra bottom room so the FAB never covers the last card.
-                    contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
-                ) {
-                    if (!state.hasStatusKey) {
-                        item(key = "data-source-cta") { DataSourceCta(onOpenSettings) }
-                    }
-                    // A distinct contentType keeps the flight rows in their own
-                    // slot-reuse pool, so LazyColumn never tries to recycle the
-                    // CTA item's composition as a row (or vice versa) — that plus
-                    // the @Immutable FlightRow is the P4 recomposition fix.
-                    items(state.rows, key = { it.id }, contentType = { "flight-row" }) { row ->
-                        DismissibleFlightCard(
-                            row = row,
-                            onClick = { onOpenFlight(row.id) },
-                            onArchive = { archiveWithUndo(row.id) },
-                            onDelete = { deleteWithUndo(row.id) },
-                            onRename = { alias -> viewModel.rename(row.id, alias) },
-                            modifier = Modifier.animateItem(),
-                        )
-                    }
-                    // A quiet, deemphasized way into the archived flights — a
-                    // footer link, not a top-bar action button with a badge (which
-                    // read as "archive selection" + a notification).
-                    if (state.archivedCount > 0) {
-                        item(key = "archived-link") {
-                            ArchivedFlightsLink(onClick = onOpenArchived)
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        // Extra bottom room so the FAB never covers the last card.
+                        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
+                    ) {
+                        if (!state.hasStatusKey) {
+                            item(key = "data-source-cta") { DataSourceCta(onOpenSettings) }
+                        }
+                        // A distinct contentType keeps the flight rows in their own
+                        // slot-reuse pool, so LazyColumn never tries to recycle the
+                        // CTA item's composition as a row (or vice versa) — that plus
+                        // the @Immutable FlightRow is the P4 recomposition fix.
+                        items(state.rows, key = { it.id }, contentType = { "flight-row" }) { row ->
+                            DismissibleFlightCard(
+                                row = row,
+                                onClick = { onOpenFlight(row.id) },
+                                onArchive = { archiveWithUndo(row.id) },
+                                onDelete = { deleteWithUndo(row.id) },
+                                onRename = { alias -> viewModel.rename(row.id, alias) },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                        // A quiet, deemphasized way into the archived flights — a
+                        // footer link, not a top-bar action button with a badge (which
+                        // read as "archive selection" + a notification).
+                        if (state.archivedCount > 0) {
+                            item(key = "archived-link") {
+                                ArchivedFlightsLink(onClick = onOpenArchived)
+                            }
                         }
                     }
                 }
@@ -632,5 +650,64 @@ private fun EmptyState(modifier: Modifier = Modifier, onAdd: () -> Unit) {
         )
         Spacer(Modifier.height(20.dp))
         Button(onClick = onAdd) { Text(stringResource(R.string.add_flight)) }
+    }
+}
+
+/**
+ * Loading skeleton for the brief pre-Room window on a cold start, so the saved
+ * flights don't pop in over a flash of the empty state (glm 3.10). A few
+ * card-shaped blocks sweep a soft highlight left-to-right; reduced-motion swaps
+ * the sweep for a still fill so nothing autonomously animates.
+ */
+@Composable
+private fun FlightListSkeleton(modifier: Modifier = Modifier) {
+    val base = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    val highlight = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+    // The sweep is a normalized 0→1 progress consumed in the draw phase against
+    // each card's *measured* width, so the highlight clears the card smoothly on
+    // any screen size (a hardcoded pixel range teleported on wide/tablet cards).
+    // Reduced motion skips the transition entirely — no animation, no wasted
+    // frames — and the draw paints a still fill.
+    val progress: State<Float>? = if (rememberReducedMotion()) {
+        null
+    } else {
+        val transition = rememberInfiniteTransition(label = "skeleton")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)),
+            label = "skeleton-sweep",
+        )
+    }
+    Column(
+        // Match the real list's FAB clearance so the last card never sits behind
+        // the floating button during the loading window.
+        modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        repeat(4) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(150.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .drawBehind {
+                        val p = progress?.value
+                        if (p == null) {
+                            drawRect(base)
+                        } else {
+                            val band = size.width * 0.5f
+                            val startX = -band + (size.width + band) * p
+                            drawRect(
+                                Brush.linearGradient(
+                                    colors = listOf(base, highlight, base),
+                                    start = Offset(startX, 0f),
+                                    end = Offset(startX + band, 0f),
+                                )
+                            )
+                        }
+                    },
+            )
+        }
     }
 }

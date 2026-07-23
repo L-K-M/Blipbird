@@ -108,7 +108,6 @@ resurfacing in every review. Each notes what would flip the call.
   grid and landscape-specific layouts still open.
 - **glm 3.8 — Plane glyphs always point right** in the list/hero route rows —
   a LHR→NRT flight visually flies backwards.
-- **glm 3.10 — No loading skeletons** (PLAN §9.2 now specifies them, #13).
 
 ---
 
