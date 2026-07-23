@@ -8,3 +8,8 @@ local.properties
 *.iml
 captures/
 .DS_Store
+
+# Release signing keys must never be committed (see README "Releasing")
+*.jks
+*.keystore
+*.p12
