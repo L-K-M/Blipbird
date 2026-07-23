@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,6 +36,8 @@ import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.compose.style.BaseStyle
 import org.maplibre.spatialk.geojson.BoundingBox
 import org.maplibre.spatialk.geojson.Position
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import kotlin.math.ln
 import kotlin.math.max
@@ -76,9 +80,16 @@ fun MapLibreRouteMap(
     )
 
     // ---- geojson sources ----------------------------------------------
+    // The multi-hundred-point route/track/night strings are assembled with
+    // Locale-aware String.format per coordinate (P7): heavy enough to drop
+    // frames if built inline on the composition thread, so each is produced on
+    // Dispatchers.Default and swapped in when ready. The tiny 1–2 point plane
+    // and endpoint strings stay synchronous so the aircraft never lags a frame.
     val routeSegments = remember(dep, arr) { GreatCircle.routeSegments(dep, arr, steps = 96) }
-    val routeJson = remember(routeSegments) {
-        multiLineJson(routeSegments.map { seg -> seg.map { it.lon to it.lat } })
+    val routeJson by produceState(EMPTY_FC, routeSegments) {
+        value = withContext(Dispatchers.Default) {
+            multiLineJson(routeSegments.map { seg -> seg.map { it.lon to it.lat } })
+        }
     }
 
     // Projected position along the schedule when ADS-B has no fix (pre-departure,
@@ -96,9 +107,11 @@ fun MapLibreRouteMap(
     val planeBearing = lastFix?.trackDeg ?: projected?.third ?: 0.0
     // Size alone misses a pruned+appended track of equal length; the boundary
     // timestamps change whenever the window moves at either end.
-    val trackJson = remember(track.size, track.firstOrNull()?.at, track.lastOrNull()?.at) {
-        if (track.size < 2) EMPTY_FC
-        else multiLineJson(splitAtAntimeridian(track.map { it.lon to it.lat }))
+    val trackJson by produceState(EMPTY_FC, track.size, track.firstOrNull()?.at, track.lastOrNull()?.at) {
+        value = withContext(Dispatchers.Default) {
+            if (track.size < 2) EMPTY_FC
+            else multiLineJson(splitAtAntimeridian(track.map { it.lon to it.lat }))
+        }
     }
     val endpointsJson = remember(dep, arr) {
         pointsJson(listOf(dep.lon to dep.lat, arr.lon to arr.lat))
@@ -110,8 +123,8 @@ fun MapLibreRouteMap(
     // fix (planned-route view, no ADS-B match) the lastFix-based key is null
     // forever and the terminator was computed once at composition and never
     // advanced. Wall-clock advances regardless of fixes.
-    val nightJson = remember(System.currentTimeMillis() / 600_000) {
-        nightPolygonJson(Instant.now())
+    val nightJson by produceState(EMPTY_FC, System.currentTimeMillis() / 600_000) {
+        value = withContext(Dispatchers.Default) { nightPolygonJson(Instant.now()) }
     }
 
     val planeIcon = remember(ext.routeLine) { planeBitmap(ext.routeLine, sizePx = 72) }

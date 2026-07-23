@@ -20,7 +20,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -112,6 +114,10 @@ fun FlightRibbon(
         // like the gradient above.
         val nightDecor = remember(daylight) { nightDecor(daylight) }
 
+        // Reused across draws so the aircraft marker doesn't allocate a Path on
+        // every position tick.
+        val planePath = remember { Path() }
+
         Canvas(
             Modifier
                 .fillMaxWidth()
@@ -170,12 +176,24 @@ fun FlightRibbon(
                 )
             }
 
-            // Aircraft position marker (theme-aware)
+            // Aircraft position marker: a little plane pointing along the strip
+            // (dep→arr is left→right, so progress advances rightward), haloed in
+            // white so it stays legible over any band from bright day to night.
             if (progress in 0.01f..0.995f) {
                 val x = progress * w
-                drawCircle(Color.White, radius = h * 0.34f, center = Offset(x, h / 2))
-                drawCircle(ext.ribbonAircraft, radius = h * 0.34f, center = Offset(x, h / 2),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = h * 0.09f))
+                val cy = h / 2
+                val s = h * 0.40f
+                planePath.rewind()
+                planePath.moveTo(x, cy - s)                 // nose (pre-rotation: up)
+                planePath.lineTo(x + s * 0.72f, cy + s * 0.55f)
+                planePath.lineTo(x, cy + s * 0.22f)
+                planePath.lineTo(x - s * 0.72f, cy + s * 0.55f)
+                planePath.close()
+                // Rotate 90° so the nose points right, the direction of travel.
+                rotate(degrees = 90f, pivot = Offset(x, cy)) {
+                    drawPath(planePath, Color.White, style = Stroke(width = h * 0.14f))
+                    drawPath(planePath, ext.ribbonAircraft)
+                }
             }
         }
 
