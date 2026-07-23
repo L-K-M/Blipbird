@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,6 +37,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
@@ -47,6 +53,7 @@ import java.time.format.FormatStyle
 @Composable
 fun AddFlightSheet(
     error: String?,
+    submitting: Boolean,
     onDismiss: () -> Unit,
     onAdd: (input: String, date: LocalDate?, alias: String?) -> Unit,
 ) {
@@ -87,10 +94,40 @@ fun AddFlightSheet(
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(16.dp))
+            // Announced by the spinner's semantics so TalkBack signals the
+            // in-flight submit — the button label stays "Track" throughout.
+            val submittingLabel = stringResource(R.string.add_flight_submitting)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = {
-                    if (input.isNotBlank()) onAdd(input, selectedDate, alias.trim().ifEmpty { null })
-                }) {
+                Button(
+                    // Announce the in-flight submit as a semantic *state* on the
+                    // button itself, so TalkBack says "Adding flight…" rather than
+                    // just "Track, button" and a non-sighted user knows their tap
+                    // registered (the spinner alone reads as an extra label).
+                    modifier = Modifier.semantics {
+                        if (submitting) stateDescription = submittingLabel
+                    },
+                    // Stay enabled (filled/primary) while submitting so the
+                    // spinner keeps its on-primary contrast — a disabled button
+                    // mutes the container and a white-ish indicator would wash
+                    // out. The onClick guard, not `enabled`, is what stops a
+                    // double-tap from enqueuing the same batch twice (V6).
+                    enabled = input.isNotBlank(),
+                    onClick = {
+                        if (!submitting && input.isNotBlank()) {
+                            onAdd(input, selectedDate, alias.trim().ifEmpty { null })
+                        }
+                    },
+                ) {
+                    if (submitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .semantics { contentDescription = submittingLabel },
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
                     Text(stringResource(R.string.add_flight_action))
                 }
             }

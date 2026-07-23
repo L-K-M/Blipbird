@@ -99,10 +99,6 @@ resurfacing in every review. Each notes what would flip the call.
   haptic landed (#69); a swipe-to-dismiss threshold haptic was tried and reverted
   — firing mid-drag read as the archive/delete committing before finger-release.
   Revisit only if it can fire on the release-commit without that premature feel.
-- **V6 — remainder: no loading state while resolving.** The add sheet's date
-  field is now a `DatePickerDialog` (read-only, clearable) and silent date parse
-  errors are gone with it (glm 5.8); still open: no in-sheet progress indicator
-  while a pasted batch resolves.
 - **V7 remainder — Ribbon niggles:** weather glyphs drift left of their sample
   positions (DS4-V19); sunrise/sunset times render in device TZ unlabeled;
   events can crowd on narrow phones.

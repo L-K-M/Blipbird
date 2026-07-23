@@ -20,6 +20,7 @@ import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.domain.LookupOutcome
 import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -101,6 +102,15 @@ class FlightListViewModel @Inject constructor(
 
     private val refreshing = MutableStateFlow(false)
     private val addError = MutableStateFlow<String?>(null)
+
+    /**
+     * True while [addFlights] is resolving and tracking a pasted batch, so the
+     * sheet can show progress and disable its button instead of looking inert
+     * during the token lookups + track writes (V6). Kept out of [uiState] to
+     * avoid a sixth combine arg (no typed overload); the sheet collects it directly.
+     */
+    private val _adding = MutableStateFlow(false)
+    val adding: StateFlow<Boolean> = _adding.asStateFlow()
 
     /**
      * One shared minute-tick (PLAN.md §6 Heartbeat) so every row's countdown
@@ -217,30 +227,54 @@ class FlightListViewModel @Inject constructor(
         onFirstTrack: () -> Unit,
         onResult: (allAccepted: Boolean) -> Unit = {},
     ) {
+        // Ignore a re-entrant call while a batch is still resolving — defense in
+        // depth behind the sheet's own submit guard. compareAndSet flips the flag
+        // atomically, closing the check-then-set gap if two callers ever race.
+        if (!_adding.compareAndSet(expect = false, update = true)) {
+            // Still honor the callback contract every other path keeps: report
+            // "not accepted" so a caller awaiting onResult can't hang on the drop.
+            onResult(false)
+            return
+        }
         viewModelScope.launch {
-            val tokens = DesignatorParser.splitBatch(input)
-            if (tokens.isEmpty()) {
-                addError.value = "No flight number recognized"
-                onResult(false)
-                return@launch
-            }
-            var added = 0
-            var failed = 0
-            for (token in tokens) {
-                val designator = identity.resolveToken(token)
-                if (designator == null) {
-                    addError.value = "Couldn't parse “$token”"
-                    failed++
-                    continue
+            try {
+                val tokens = DesignatorParser.splitBatch(input)
+                if (tokens.isEmpty()) {
+                    addError.value = "No flight number recognized"
+                    onResult(false)
+                    return@launch
                 }
-                val id = repository.track(
-                    TrackRequest(designator, date, alias.takeIf { tokens.size == 1 })
-                )
-                added++
-                launch { repository.refreshStatus(id, force = true) }
+                var added = 0
+                var failed = 0
+                for (token in tokens) {
+                    val designator = identity.resolveToken(token)
+                    if (designator == null) {
+                        addError.value = "Couldn't parse “$token”"
+                        failed++
+                        continue
+                    }
+                    val id = repository.track(
+                        TrackRequest(designator, date, alias.takeIf { tokens.size == 1 })
+                    )
+                    added++
+                    launch { repository.refreshStatus(id, force = true) }
+                }
+                if (added > 0) onFirstTrack()
+                onResult(failed == 0 && added > 0)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A DAO/IO failure or parser bug would otherwise escape the
+                // coroutine (crash) and leave the sheet with a silently vanished
+                // spinner. Surface it and report the result instead.
+                addError.value = "Couldn't add flight — please try again"
+                onResult(false)
+            } finally {
+                // Clears once the tokens are resolved and tracked; the per-flight
+                // refreshes above run in the background (child launches) and
+                // don't hold the sheet's spinner.
+                _adding.value = false
             }
-            if (added > 0) onFirstTrack()
-            onResult(failed == 0 && added > 0)
         }
     }
 
