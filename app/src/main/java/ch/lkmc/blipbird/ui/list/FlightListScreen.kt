@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -71,11 +72,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.FlightStatus
+import ch.lkmc.blipbird.ui.components.BirdRefreshIndicator
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.monogramColor
+import ch.lkmc.blipbird.ui.components.monogramContentColor
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 import ch.lkmc.blipbird.ui.theme.SkyPalette
 import kotlinx.coroutines.launch
@@ -139,10 +142,19 @@ fun FlightListScreen(
             }
         },
     ) { padding ->
+        val pullState = rememberPullToRefreshState()
         PullToRefreshBox(
             isRefreshing = state.refreshing,
             onRefresh = { viewModel.refreshAll() },
             modifier = Modifier.padding(padding).fillMaxSize(),
+            state = pullState,
+            indicator = {
+                BirdRefreshIndicator(
+                    state = pullState,
+                    isRefreshing = state.refreshing,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            },
         ) {
             if (state.rows.isEmpty()) {
                 Column(Modifier.fillMaxSize()) {
@@ -533,7 +545,9 @@ private fun Monogram(code: String) {
             .background(monogramColor(code), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(code.take(2).uppercase(), color = Color.White, fontWeight = FontWeight.Bold,
+        // Contrast-picked foreground: brand backgrounds (I6) include pale
+        // yellows/limes where fixed white would wash out.
+        Text(code.take(2).uppercase(), color = monogramContentColor(code), fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.labelLarge)
     }
 }

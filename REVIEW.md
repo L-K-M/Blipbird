@@ -76,6 +76,8 @@ root-level `ANALYSIS.md`) closed — this file remains the single backlog.
 | ADS-B identity | #58 | glm 1.16 / B20 / DS4-B7 (identity part) | Position fixes validated against the normalized query identity (hex/registration/callsign), freshest valid record wins, malformed/stale (>5 min) records rejected, cached hex skipped when the status payload carries a fresh registration (aircraft-swap guard) |
 | A11y foundations | #59 | glm 4.2-part, V4 refinement | Contrast-ratio-based status-chip foreground (correct 0.04045 sRGB constant, tested against 20 theme backgrounds), progress-bar semantics, Settings headings + merged toggle rows, TalkBack summary for the flight ribbon |
 | Status-lookup backoff | #60 | G5-part, glm 1.20-part | Per-flight lookup attempts persisted (ops DB v2 with a real migration — destructive fallback removed, so `quota_ledger` survives upgrades), date-aware NotFound negative caching, capped exponential transient backoff, 7-day pause on nonretryable failures; worker honors `nextEligibleAt` for never-fetched flights, manual refresh bypasses |
+| Map gestures | #61 | — | Embedded map pointer activity suspends detail-list scrolling for the gesture (maplibre-compose#726 interop workaround) |
+| Delighter pack | #62 | I2, I4, I6, I10 | Bird-flight pull-to-refresh (silhouette flaps along the pull arc, swoops on release, cruises while refreshing); Solari split-flap cascade on status-chip changes; brand-colored airline monograms (bundled IATA table for ~100 carriers, hash-palette fallback, WCAG-picked foreground); moon-phase glyph + deterministic star field on the ribbon's night segments via suncalc `MoonIllumination`/`MoonPosition` — all still under the reduced-motion switch where animated |
 
 
 ---
@@ -301,23 +303,19 @@ forensically.
 
 ## Ideas (novel / delightful / quirky)
 
-- **I2 — Bird-flight pull-to-refresh** — the bird silhouette flapping along the
-  pull arc; release = a little swoop.
+I2 (bird pull-to-refresh), I4 (split-flap status chip), I6 (brand-colored
+monograms) and I10 (moon & stars on night ribbon segments) landed in #62.
+
 - **I3 — Wheels-down haptic heartbeat** — soft double-pulse on LANDED while the
   screen is on.
-- **I4 — Split-flap status transitions** — one Solari-flip chip reads as pure
-  luxury; full Solari theme is PLAN v2.
 - **I5 — Jet-lag ribbon extension** — "body clock" strip from the daylight
   engine (shift = +7 h; light-exposure suggestion).
-- **I6 — Airline-colored monograms** — bundled IATA→brand-color table for the
-  top ~100 carriers, hash palette fallback.
 - **I7 — Cockpit auto-engage** during the airborne window at night ("dim cabin
   lights"), reverting after landing.
 - **I8 — Ribbon scrubbing** — drag to read time/position/weather at that
   fraction (samples are in memory; PLAN §9.4 scrubber landed in #14 at plan
   level).
 - **I9 — Landed confetti** (respecting reduced-motion).
-- **I10 — Moon and stars on night segments** (suncalc has `MoonIllumination`).
 - **I11 — "Point at the sky" AR** — parked as v-later.
 
 ---

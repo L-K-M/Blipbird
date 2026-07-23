@@ -44,6 +44,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,7 +58,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -75,6 +75,7 @@ import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.MovementTimes
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.domain.GreatCircle
+import ch.lkmc.blipbird.ui.components.BirdRefreshIndicator
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.agoText
@@ -82,6 +83,7 @@ import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.statusText
 import ch.lkmc.blipbird.ui.components.monogramColor
+import ch.lkmc.blipbird.ui.components.monogramContentColor
 import ch.lkmc.blipbird.ui.map.MapLibreRouteMap
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 import java.time.Duration
@@ -131,10 +133,19 @@ fun FlightDetailScreen(
             )
         },
     ) { padding ->
+        val pullState = rememberPullToRefreshState()
         PullToRefreshBox(
             isRefreshing = state.refreshing,
             onRefresh = { viewModel.refresh() },
             modifier = Modifier.padding(padding).fillMaxSize(),
+            state = pullState,
+            indicator = {
+                BirdRefreshIndicator(
+                    state = pullState,
+                    isRefreshing = state.refreshing,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            },
         ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // Tablet / landscape: pair the equal-height card couples side by side.
@@ -782,7 +793,9 @@ private fun AirlineCard(state: DetailUiState) {
             ) {
                 Text(
                     mono.take(2).uppercase(),
-                    color = Color.White,
+                    // Contrast-picked for the I6 brand backgrounds (pale brands
+                    // like Vueling yellow need dark letters).
+                    color = monogramContentColor(mono),
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleSmall,
                 )
