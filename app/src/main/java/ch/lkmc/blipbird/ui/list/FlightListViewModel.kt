@@ -226,8 +226,11 @@ class FlightListViewModel @Inject constructor(
         onFirstTrack: () -> Unit,
         onResult: (allAccepted: Boolean) -> Unit = {},
     ) {
+        // Ignore a re-entrant call while a batch is still resolving — defense in
+        // depth behind the sheet's own submit guard. compareAndSet flips the flag
+        // atomically, closing the check-then-set gap if two callers ever race.
+        if (!_adding.compareAndSet(expect = false, update = true)) return
         viewModelScope.launch {
-            _adding.value = true
             try {
                 val tokens = DesignatorParser.splitBatch(input)
                 if (tokens.isEmpty()) {
