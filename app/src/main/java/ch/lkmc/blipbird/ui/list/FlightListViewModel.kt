@@ -85,6 +85,8 @@ data class ListUiState(
     val refreshing: Boolean = false,
     val hasStatusKey: Boolean = true,
     val addError: String? = null,
+    /** Number of archived flights — gates the "Past flights" entry point. */
+    val archivedCount: Int = 0,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -132,8 +134,20 @@ class FlightListViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val uiState: StateFlow<ListUiState> =
-        combine(rows, refreshing, keyStore.hasAnyStatusKey, addError) { r, busy, hasKey, err ->
-            ListUiState(rows = r, refreshing = busy, hasStatusKey = hasKey, addError = err)
+        combine(
+            rows,
+            refreshing,
+            keyStore.hasAnyStatusKey,
+            addError,
+            repository.observeArchivedFlights().map { it.size },
+        ) { r, busy, hasKey, err, archivedCount ->
+            ListUiState(
+                rows = r,
+                refreshing = busy,
+                hasStatusKey = hasKey,
+                addError = err,
+                archivedCount = archivedCount,
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ListUiState())
 
     private fun rowFlow(flight: TrackedFlightEntity) =

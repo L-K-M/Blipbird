@@ -39,6 +39,7 @@ import ch.lkmc.blipbird.core.datastore.ThemeSpec
 import ch.lkmc.blipbird.platform.AppIconSwitcher
 import ch.lkmc.blipbird.ui.components.rememberReducedMotion
 import ch.lkmc.blipbird.ui.detail.FlightDetailScreen
+import ch.lkmc.blipbird.ui.list.ArchivedFlightsScreen
 import ch.lkmc.blipbird.ui.list.FlightListScreen
 import ch.lkmc.blipbird.ui.settings.SettingsScreen
 import ch.lkmc.blipbird.ui.theme.BlipbirdMotion
@@ -59,6 +60,7 @@ sealed interface Screen {
     data object List : Screen
     data class Detail(val flightId: Long) : Screen
     data object Settings : Screen
+    data object Archived : Screen
 }
 
 @AndroidEntryPoint
@@ -167,6 +169,7 @@ private val BackStackSaver = listSaver<SnapshotStateList<Screen>, Long>(
             when (screen) {
                 is Screen.List -> SAVED_LIST
                 is Screen.Settings -> SAVED_SETTINGS
+                is Screen.Archived -> SAVED_ARCHIVED
                 is Screen.Detail -> screen.flightId
             }
         }
@@ -178,6 +181,7 @@ private val BackStackSaver = listSaver<SnapshotStateList<Screen>, Long>(
                     when (id) {
                         SAVED_LIST -> Screen.List
                         SAVED_SETTINGS -> Screen.Settings
+                        SAVED_ARCHIVED -> Screen.Archived
                         else -> Screen.Detail(id)
                     }
                 )
@@ -188,6 +192,7 @@ private val BackStackSaver = listSaver<SnapshotStateList<Screen>, Long>(
 )
 private const val SAVED_LIST = -1L
 private const val SAVED_SETTINGS = -2L
+private const val SAVED_ARCHIVED = -3L
 
 @Composable
 fun BlipbirdNav(
@@ -284,6 +289,7 @@ fun BlipbirdNav(
                 is Screen.List -> FlightListScreen(
                     onOpenFlight = { backStack.add(Screen.Detail(it)) },
                     onOpenSettings = { backStack.add(Screen.Settings) },
+                    onOpenArchived = { backStack.add(Screen.Archived) },
                     onFirstTrack = onFirstTrack,
                 )
                 is Screen.Detail -> FlightDetailScreen(
@@ -291,6 +297,9 @@ fun BlipbirdNav(
                     onBack = { backStack.removeAt(backStack.lastIndex) },
                 )
                 is Screen.Settings -> SettingsScreen(
+                    onBack = { backStack.removeAt(backStack.lastIndex) },
+                )
+                is Screen.Archived -> ArchivedFlightsScreen(
                     onBack = { backStack.removeAt(backStack.lastIndex) },
                 )
             }
@@ -306,5 +315,6 @@ fun BlipbirdNav(
 private fun screenRank(screen: Screen): Int = when (screen) {
     is Screen.List -> 0
     is Screen.Settings -> 1
+    is Screen.Archived -> 1
     is Screen.Detail -> 2
 }

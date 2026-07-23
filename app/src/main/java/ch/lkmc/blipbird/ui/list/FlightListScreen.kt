@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -95,6 +97,7 @@ import java.time.ZoneId
 fun FlightListScreen(
     onOpenFlight: (Long) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenArchived: () -> Unit,
     onFirstTrack: () -> Unit,
     viewModel: FlightListViewModel = hiltViewModel(),
 ) {
@@ -133,6 +136,18 @@ fun FlightListScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.my_flights), fontWeight = FontWeight.Bold) },
                 actions = {
+                    // Shown only once something's been archived, so the board
+                    // stays uncluttered until there's a past flight to reach.
+                    if (state.archivedCount > 0) {
+                        IconButton(onClick = onOpenArchived) {
+                            BadgedBox(badge = { Badge { Text("${state.archivedCount}") } }) {
+                                Icon(
+                                    Icons.Outlined.Archive,
+                                    contentDescription = stringResource(R.string.archived_title),
+                                )
+                            }
+                        }
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings))
                     }
