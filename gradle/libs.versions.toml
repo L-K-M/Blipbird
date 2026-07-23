@@ -64,7 +64,7 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 
 suncalc = { group = "org.shredzone.commons", name = "commons-suncalc", version.ref = "suncalc" }
 maplibre-compose = { group = "org.maplibre.compose", name = "maplibre-compose", version.ref = "maplibreCompose" }
-maplibre-android-opengl = { group = "org.maplibre.gl", name = "android-sdk-opengl", version = "13.0.2" }
+maplibre-android-opengl = { group = "org.maplibre.gl", name = "android-sdk-opengl", version = "13.4.1" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
