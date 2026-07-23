@@ -14,12 +14,15 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import ch.lkmc.blipbird.core.datastore.AppTheme
+import ch.lkmc.blipbird.core.datastore.Accent
+import ch.lkmc.blipbird.core.datastore.ThemeSpec
 
 /**
- * Theme engine (PLAN.md §10): each [AppTheme] maps to ColorScheme pairs plus
- * [ExtendedColors] for app-specific roles. Icon-derived seeds: radar cyan
- * 0xFF19D3F3 on deep blue 0xFF0B3FA8.
+ * Theme engine (PLAN.md §10): a [ThemeSpec] (mode + accent + high-contrast)
+ * resolves to a ColorScheme plus [ExtendedColors] for app-specific roles.
+ * Seed accents run through [accentColorScheme]; Cockpit and high-contrast are
+ * curated schemes. Icon-derived seeds: radar cyan 0xFF19D3F3 on deep blue
+ * 0xFF0B3FA8.
  */
 @Immutable
 data class ExtendedColors(
@@ -115,23 +118,24 @@ private val HighContrastDark = darkColorScheme(
 
 @Composable
 fun BlipbirdTheme(
-    theme: AppTheme,
+    spec: ThemeSpec,
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
-    val colorScheme: ColorScheme = when (theme) {
-        AppTheme.DAYLIGHT -> if (darkTheme) DaylightDark else DaylightLight
-        AppTheme.DAYLIGHT_DYNAMIC ->
+    val colorScheme: ColorScheme = when {
+        spec.highContrast -> if (darkTheme) HighContrastDark else HighContrastLight
+        spec.accent is Accent.Cockpit -> CockpitScheme
+        spec.accent is Accent.Dynamic ->
             if (Build.VERSION.SDK_INT >= 31) {
                 if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
             } else if (darkTheme) DaylightDark else DaylightLight
-        AppTheme.COCKPIT -> CockpitScheme
-        AppTheme.HIGH_CONTRAST -> if (darkTheme) HighContrastDark else HighContrastLight
+        else -> accentColorScheme((spec.accent as Accent.Seed).argb, darkTheme)
     }
 
-    val extended = when (theme) {
-        AppTheme.COCKPIT -> ExtendedColors(
+    val extended = when {
+        spec.highContrast -> highContrastExtended(darkTheme)
+        spec.accent is Accent.Cockpit -> ExtendedColors(
             statusOnTime = Color(0xFF53F2A0),
             statusDelayed = Color(0xFFFFB454),
             statusCancelled = Color(0xFFFF6B6B),
@@ -146,23 +150,6 @@ fun BlipbirdTheme(
             routeLine = Color(0xFF53F2A0),
             mapStyleUrl = "https://tiles.openfreemap.org/styles/dark",
         )
-        AppTheme.HIGH_CONTRAST -> ExtendedColors(
-            statusOnTime = if (darkTheme) Color(0xFF7CFF9B) else Color(0xFF005E20),
-            statusDelayed = if (darkTheme) Color(0xFFFFD37C) else Color(0xFF7A4A00),
-            statusCancelled = if (darkTheme) Color(0xFFFF8C8C) else Color(0xFF9E0000),
-            statusEnRoute = if (darkTheme) Color(0xFF9CC7FF) else Color(0xFF003FA3),
-            statusNeutral = if (darkTheme) Color(0xFFCCCCCC) else Color(0xFF333333),
-            ribbonDay = if (darkTheme) Color(0xFFB7DCFF) else Color(0xFF9CC7EA),
-            ribbonDusk = Color(0xFFE08840),
-            ribbonNight = Color(0xFF000000),
-            ribbonSunrise = if (darkTheme) Color.White else Color(0xFF333333),
-            ribbonSunset = if (darkTheme) Color.White else Color(0xFF333333),
-            ribbonAircraft = if (darkTheme) Color.White else Color.Black,
-            routeLine = if (darkTheme) Color.White else Color.Black,
-            mapStyleUrl = if (darkTheme)
-                "https://tiles.openfreemap.org/styles/dark"
-            else "https://tiles.openfreemap.org/styles/positron",
-        )
         else -> ExtendedColors(
             statusOnTime = Color(0xFF2E7D32),
             statusDelayed = Color(0xFFB26A00),
@@ -174,8 +161,10 @@ fun BlipbirdTheme(
             ribbonNight = Color(0xFF0A1633),
             ribbonSunrise = Color(0xFFFFD54F),
             ribbonSunset = Color(0xFFFF8A65),
-            ribbonAircraft = Color(0xFF1667D9),
-            routeLine = Color(0xFF19D3F3),
+            // The map's flight markers pick up the chosen accent; status and sky
+            // colors stay semantic (green = on time regardless of accent).
+            ribbonAircraft = colorScheme.primary,
+            routeLine = colorScheme.primary,
             mapStyleUrl = if (darkTheme)
                 "https://tiles.openfreemap.org/styles/dark"
             else "https://tiles.openfreemap.org/styles/liberty",
@@ -186,3 +175,21 @@ fun BlipbirdTheme(
         MaterialTheme(colorScheme = colorScheme, content = content)
     }
 }
+
+private fun highContrastExtended(darkTheme: Boolean) = ExtendedColors(
+    statusOnTime = if (darkTheme) Color(0xFF7CFF9B) else Color(0xFF005E20),
+    statusDelayed = if (darkTheme) Color(0xFFFFD37C) else Color(0xFF7A4A00),
+    statusCancelled = if (darkTheme) Color(0xFFFF8C8C) else Color(0xFF9E0000),
+    statusEnRoute = if (darkTheme) Color(0xFF9CC7FF) else Color(0xFF003FA3),
+    statusNeutral = if (darkTheme) Color(0xFFCCCCCC) else Color(0xFF333333),
+    ribbonDay = if (darkTheme) Color(0xFFB7DCFF) else Color(0xFF9CC7EA),
+    ribbonDusk = Color(0xFFE08840),
+    ribbonNight = Color(0xFF000000),
+    ribbonSunrise = if (darkTheme) Color.White else Color(0xFF333333),
+    ribbonSunset = if (darkTheme) Color.White else Color(0xFF333333),
+    ribbonAircraft = if (darkTheme) Color.White else Color.Black,
+    routeLine = if (darkTheme) Color.White else Color.Black,
+    mapStyleUrl = if (darkTheme)
+        "https://tiles.openfreemap.org/styles/dark"
+    else "https://tiles.openfreemap.org/styles/positron",
+)

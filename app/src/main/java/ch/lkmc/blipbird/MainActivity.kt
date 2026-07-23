@@ -19,8 +19,10 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import ch.lkmc.blipbird.core.datastore.AppTheme
+import ch.lkmc.blipbird.core.datastore.Accent
 import ch.lkmc.blipbird.core.datastore.SettingsRepository
+import ch.lkmc.blipbird.core.datastore.ThemeMode
+import ch.lkmc.blipbird.core.datastore.ThemeSpec
 import ch.lkmc.blipbird.ui.detail.FlightDetailScreen
 import ch.lkmc.blipbird.ui.list.FlightListScreen
 import ch.lkmc.blipbird.ui.settings.SettingsScreen
@@ -72,19 +74,23 @@ class MainActivity : ComponentActivity() {
         handleDeepLink(intent)
 
         setContent {
-            val theme by settings.theme.collectAsStateWithLifecycle(initialValue = AppTheme.DAYLIGHT_DYNAMIC)
-            // Cockpit forces dark regardless of the OS setting, so system-bar
-            // icon styling must follow the resolved app theme, not the system
-            // (a plain enableEdgeToEdge() left dark icons on the near-black
-            // Cockpit background whenever the OS was in light mode).
-            val darkTheme = theme == AppTheme.COCKPIT || isSystemInDarkTheme()
+            val spec by settings.themeSpec.collectAsStateWithLifecycle(initialValue = ThemeSpec())
+            // Cockpit forces dark regardless of the mode setting (its scheme is
+            // dark-only), so system-bar icon styling must follow the resolved
+            // app theme, not the system (a plain enableEdgeToEdge() left dark
+            // icons on the near-black Cockpit background in OS light mode).
+            val darkTheme = spec.accent == Accent.Cockpit || when (spec.mode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
             LaunchedEffect(darkTheme) {
                 val transparent = android.graphics.Color.TRANSPARENT
                 val style = if (darkTheme) SystemBarStyle.dark(transparent)
                 else SystemBarStyle.light(transparent, transparent)
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
-            BlipbirdTheme(theme = theme) {
+            BlipbirdTheme(spec = spec, darkTheme = darkTheme) {
                 BlipbirdNav(
                     deepLinkFlights = deepLinkFlights,
                     onDeepLinkConsumed = { deepLinkFlights.value = null },

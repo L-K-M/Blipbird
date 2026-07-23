@@ -75,11 +75,28 @@
 
     <!-- Settings -->
     <string name="settings">Settings</string>
-    <string name="settings_theme">Theme</string>
-    <string name="theme_daylight">Daylight</string>
-    <string name="theme_daylight_dynamic">Daylight (Material You)</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="theme_mode_system">System</string>
+    <string name="theme_mode_light">Light</string>
+    <string name="theme_mode_dark">Dark</string>
+    <string name="settings_accent">Accent color</string>
+    <string name="settings_accent_desc">Tints the whole app. Pick a preset or choose any color of your own.</string>
+    <string name="accent_dynamic">Wallpaper</string>
+    <string name="accent_sky">Sky</string>
+    <string name="accent_teal">Teal</string>
+    <string name="accent_aurora">Aurora</string>
+    <string name="accent_amber">Amber</string>
+    <string name="accent_sunset">Sunset</string>
+    <string name="accent_rose">Rose</string>
+    <string name="accent_orchid">Orchid</string>
+    <string name="accent_slate">Slate</string>
+    <string name="accent_custom">Custom</string>
     <string name="theme_cockpit">Cockpit</string>
-    <string name="theme_high_contrast">High contrast</string>
+    <string name="settings_high_contrast">High contrast</string>
+    <string name="settings_high_contrast_desc">Maximum-contrast black &amp; white palette for readability</string>
+    <string name="color_picker_title">Pick a color</string>
+    <string name="color_picker_hex">Hex</string>
+    <string name="color_picker_apply">Apply</string>
     <string name="settings_data_sources">Data sources</string>
     <string name="settings_aerodatabox_key">AeroDataBox (RapidAPI) key</string>
     <string name="settings_aeroapi_key">FlightAware AeroAPI key</string>

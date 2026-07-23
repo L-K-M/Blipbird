@@ -3,32 +3,49 @@ package ch.lkmc.blipbird.ui.settings
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +53,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -44,12 +64,14 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
-import ch.lkmc.blipbird.core.datastore.AppTheme
+import ch.lkmc.blipbird.core.datastore.Accent
+import ch.lkmc.blipbird.core.datastore.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,26 +95,9 @@ fun SettingsScreen(
         Column(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         ) {
-            // ---- Theme --------------------------------------------------
-            SectionTitle(stringResource(R.string.settings_theme))
-            Row {
-                ThemeChip(stringResource(R.string.theme_daylight_dynamic), state.theme == AppTheme.DAYLIGHT_DYNAMIC) {
-                    viewModel.setTheme(AppTheme.DAYLIGHT_DYNAMIC)
-                }
-                Spacer(Modifier.padding(4.dp))
-                ThemeChip(stringResource(R.string.theme_daylight), state.theme == AppTheme.DAYLIGHT) {
-                    viewModel.setTheme(AppTheme.DAYLIGHT)
-                }
-            }
-            Row {
-                ThemeChip(stringResource(R.string.theme_cockpit), state.theme == AppTheme.COCKPIT) {
-                    viewModel.setTheme(AppTheme.COCKPIT)
-                }
-                Spacer(Modifier.padding(4.dp))
-                ThemeChip(stringResource(R.string.theme_high_contrast), state.theme == AppTheme.HIGH_CONTRAST) {
-                    viewModel.setTheme(AppTheme.HIGH_CONTRAST)
-                }
-            }
+            // ---- Appearance ---------------------------------------------
+            SectionTitle(stringResource(R.string.settings_appearance))
+            AppearanceSection(state, viewModel)
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
 
@@ -248,9 +253,201 @@ private fun SectionTitle(text: String) {
     Spacer(Modifier.height(8.dp))
 }
 
+/** Curated accent seeds; the swatch shows the raw seed, schemes are derived. */
+private val ACCENT_PRESETS = listOf(
+    R.string.accent_sky to Accent.BRAND_SEED,
+    R.string.accent_teal to 0xFF00897B,
+    R.string.accent_aurora to 0xFF2E9E62,
+    R.string.accent_amber to 0xFFED9B00,
+    R.string.accent_sunset to 0xFFE8590C,
+    R.string.accent_rose to 0xFFD6336C,
+    R.string.accent_orchid to 0xFF8E5AD4,
+    R.string.accent_slate to 0xFF5C6B7A,
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ThemeChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+private fun AppearanceSection(state: SettingsUiState, viewModel: SettingsViewModel) {
+    val spec = state.spec
+
+    // Light / dark / follow-system
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        val modes = listOf(
+            ThemeMode.SYSTEM to R.string.theme_mode_system,
+            ThemeMode.LIGHT to R.string.theme_mode_light,
+            ThemeMode.DARK to R.string.theme_mode_dark,
+        )
+        modes.forEachIndexed { i, (mode, label) ->
+            SegmentedButton(
+                selected = spec.mode == mode,
+                onClick = { viewModel.setThemeMode(mode) },
+                shape = SegmentedButtonDefaults.itemShape(index = i, count = modes.size),
+            ) { Text(stringResource(label)) }
+        }
+    }
+
+    Spacer(Modifier.height(16.dp))
+    Text(stringResource(R.string.settings_accent), style = MaterialTheme.typography.bodyLarge)
+    Text(
+        stringResource(R.string.settings_accent_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(10.dp))
+
+    var showPicker by remember { mutableStateOf(false) }
+    val presetSeeds = ACCENT_PRESETS.map { it.second }
+    val customSeed = (spec.accent as? Accent.Seed)?.argb?.takeIf { it !in presetSeeds }
+
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Wallpaper-derived palette (Material You), API 31+ only
+        if (Build.VERSION.SDK_INT >= 31) {
+            val context = LocalContext.current
+            val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            val dynamicPrimary = remember(systemDark) {
+                runCatching {
+                    if (systemDark) dynamicDarkColorScheme(context).primary
+                    else dynamicLightColorScheme(context).primary
+                }.getOrDefault(Color(Accent.BRAND_SEED))
+            }
+            AccentSwatch(
+                label = stringResource(R.string.accent_dynamic),
+                color = dynamicPrimary,
+                selected = spec.accent == Accent.Dynamic,
+                onClick = { viewModel.setAccent(Accent.Dynamic) },
+            )
+        }
+        ACCENT_PRESETS.forEach { (label, seed) ->
+            AccentSwatch(
+                label = stringResource(label),
+                color = Color(seed),
+                selected = spec.accent == Accent.Seed(seed),
+                onClick = { viewModel.setAccent(Accent.Seed(seed)) },
+            )
+        }
+        // Cockpit: full curated avionics scheme, not just an accent
+        AccentSwatch(
+            label = stringResource(R.string.theme_cockpit),
+            color = Color(0xFF050807),
+            selected = spec.accent == Accent.Cockpit,
+            onClick = { viewModel.setAccent(Accent.Cockpit) },
+            ring = Color(0xFF53F2A0),
+        )
+        AccentSwatch(
+            label = stringResource(R.string.accent_custom),
+            color = customSeed?.let { Color(it) } ?: Color.Unspecified,
+            selected = customSeed != null,
+            onClick = { showPicker = true },
+            rainbow = customSeed == null,
+        )
+    }
+
+    Spacer(Modifier.height(12.dp))
+    ToggleRow(stringResource(R.string.settings_high_contrast), spec.highContrast) {
+        viewModel.setHighContrast(it)
+    }
+    Text(
+        stringResource(R.string.settings_high_contrast_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    if (showPicker) {
+        ColorPickerDialog(
+            initial = Color(customSeed ?: (spec.accent as? Accent.Seed)?.argb ?: Accent.BRAND_SEED),
+            onDismiss = { showPicker = false },
+            onPick = { color ->
+                showPicker = false
+                viewModel.setAccent(Accent.Seed(color.toSeedArgb()))
+            },
+        )
+    }
+}
+
+@Composable
+private fun AccentSwatch(
+    label: String,
+    color: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+    ring: Color? = null,
+    rainbow: Boolean = false,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(60.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .semantics { contentDescription = label }
+            .padding(vertical = 4.dp),
+    ) {
+        val outline = MaterialTheme.colorScheme.outlineVariant
+        val selectedRing = MaterialTheme.colorScheme.onSurface
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .then(
+                    if (rainbow) Modifier.background(
+                        Brush.sweepGradient(
+                            listOf(
+                                Color(0xFFE8590C), Color(0xFFED9B00), Color(0xFF2E9E62),
+                                Color(0xFF00897B), Color(0xFF1667D9), Color(0xFF8E5AD4),
+                                Color(0xFFD6336C), Color(0xFFE8590C),
+                            )
+                        )
+                    ) else Modifier.background(color)
+                )
+                .border(
+                    width = if (selected) 3.dp else 1.dp,
+                    color = when {
+                        selected -> selectedRing
+                        ring != null -> ring
+                        else -> outline
+                    },
+                    shape = CircleShape,
+                ),
+        ) {
+            if (selected) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface),
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            } else if (ring != null) {
+                // Cockpit's identity mark: avionics-green dot on near-black
+                Box(Modifier.size(10.dp).clip(CircleShape).background(ring))
+            }
+        }
+        Spacer(Modifier.height(3.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+private fun Color.toSeedArgb(): Long {
+    val r = (red * 255f + 0.5f).toInt().coerceIn(0, 255).toLong()
+    val g = (green * 255f + 0.5f).toInt().coerceIn(0, 255).toLong()
+    val b = (blue * 255f + 0.5f).toInt().coerceIn(0, 255).toLong()
+    return 0xFF000000L or (r shl 16) or (g shl 8) or b
 }
 
 @Composable

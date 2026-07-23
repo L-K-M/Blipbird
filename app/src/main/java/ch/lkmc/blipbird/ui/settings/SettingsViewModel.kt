@@ -3,9 +3,11 @@ package ch.lkmc.blipbird.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ch.lkmc.blipbird.core.data.QuotaLedger
-import ch.lkmc.blipbird.core.datastore.AppTheme
+import ch.lkmc.blipbird.core.datastore.Accent
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
 import ch.lkmc.blipbird.core.datastore.SettingsRepository
+import ch.lkmc.blipbird.core.datastore.ThemeMode
+import ch.lkmc.blipbird.core.datastore.ThemeSpec
 import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,7 +21,7 @@ import javax.inject.Inject
 data class QuotaRow(val provider: String, val used: Long, val allowance: Long?)
 
 data class SettingsUiState(
-    val theme: AppTheme = AppTheme.DAYLIGHT_DYNAMIC,
+    val spec: ThemeSpec = ThemeSpec(),
     val hasAdbKey: Boolean = false,
     val hasAeroApiKey: Boolean = false,
     val hasOpenSkyId: Boolean = false,
@@ -39,16 +41,16 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = combine(
-        settings.theme,
+        settings.themeSpec,
         keyStore.keys,
         combine(settings.notifCritical, settings.notifStatus, settings.notifReminders) { c, s, r -> Triple(c, s, r) },
         quotaLedger.observeAll().map { rows ->
             rows.filter { it.periodKey == quotaLedger.periodKey() }
                 .map { QuotaRow(it.provider, it.unitsUsed, quotaLedger.allowance(it.provider)) }
         },
-    ) { theme, keys, notifs, quota ->
+    ) { spec, keys, notifs, quota ->
         SettingsUiState(
-            theme = theme,
+            spec = spec,
             hasAdbKey = keys.aeroDataBoxKey != null,
             hasAeroApiKey = keys.aeroApiKey != null,
             hasOpenSkyId = keys.openSkyClientId != null,
@@ -60,7 +62,9 @@ class SettingsViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
-    fun setTheme(theme: AppTheme) = viewModelScope.launch { settings.setTheme(theme) }
+    fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { settings.setThemeMode(mode) }
+    fun setAccent(accent: Accent) = viewModelScope.launch { settings.setAccent(accent) }
+    fun setHighContrast(v: Boolean) = viewModelScope.launch { settings.setHighContrast(v) }
     fun saveAdbKey(key: String) = viewModelScope.launch { keyStore.setAeroDataBoxKey(key) }
     fun saveAeroApiKey(key: String) = viewModelScope.launch { keyStore.setAeroApiKey(key) }
     fun clearAdbKey() = viewModelScope.launch { keyStore.setAeroDataBoxKey(null) }
