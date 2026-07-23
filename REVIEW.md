@@ -74,6 +74,8 @@ root-level `ANALYSIS.md`) closed — this file remains the single backlog.
 |------|-------|-------|-------------|
 | Daylight altitude API | #57 | — | `DaylightEngine.compute` defaults to the surface threshold and validates explicit altitudes; the detail ribbon now passes the ~11 km cruise assumption explicitly, so app behavior is unchanged |
 | ADS-B identity | #58 | glm 1.16 / B20 / DS4-B7 (identity part) | Position fixes validated against the normalized query identity (hex/registration/callsign), freshest valid record wins, malformed/stale (>5 min) records rejected, cached hex skipped when the status payload carries a fresh registration (aircraft-swap guard) |
+| A11y foundations | #59 | glm 4.2-part, V4 refinement | Contrast-ratio-based status-chip foreground (correct 0.04045 sRGB constant, tested against 20 theme backgrounds), progress-bar semantics, Settings headings + merged toggle rows, TalkBack summary for the flight ribbon |
+| Status-lookup backoff | #60 | G5-part, glm 1.20-part | Per-flight lookup attempts persisted (ops DB v2 with a real migration — destructive fallback removed, so `quota_ledger` survives upgrades), date-aware NotFound negative caching, capped exponential transient backoff, 7-day pause on nonretryable failures; worker honors `nextEligibleAt` for never-fetched flights, manual refresh bypasses |
 
 
 ---
@@ -100,9 +102,11 @@ a great-circle-corridor plausibility check (PLAN.md §5 step 5) would close it.
 free-standing scope under the ~10 s budget; boot reconcile should enqueue a
 `OneTimeWorkRequest` instead.
 
-### glm 1.20 · `OpsDatabase` destructive migration holds `quota_ledger` — MEDIUM (risk)
-A future schema bump silently zeroes the user's API-credit accounting. Move the
-ledger to the user DB or add real migrations for that table.
+### glm 1.20 · remainder: quota-ledger placement — LOW
+#60 removed the destructive fallback and added a real v1→2 migration, so schema
+bumps no longer zero the ledger. Optional follow-up: move `quota_ledger` (and
+the backoff table) out of the "rebuildable by design" ops DB conceptually, or
+document that the ops DB is no longer fully rebuildable.
 
 ### glm 1.22 · Delay-notification copy under-reports — LOW
 A 29-min slip renders "Delayed 15m" (bucket floor). Show the real minutes (the
