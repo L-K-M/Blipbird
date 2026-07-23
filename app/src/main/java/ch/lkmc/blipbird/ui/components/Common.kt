@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.FlightStatus
+import ch.lkmc.blipbird.domain.LookupOutcome
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 import java.time.Duration
 import java.time.Instant
@@ -109,6 +110,21 @@ internal fun contrastRatio(foreground: Color, background: Color): Double {
     val lighter = maxOf(luminance(foreground), luminance(background))
     val darker = minOf(luminance(foreground), luminance(background))
     return (lighter + 0.05) / (darker + 0.05)
+}
+
+/**
+ * Short label for a failed lookup outcome, shared by list and detail (G5):
+ * "no key", "quota", "rate limited" and "unreachable" must be distinguishable
+ * in the UI instead of all rendering as silently missing data.
+ */
+fun lookupProblemRes(outcome: LookupOutcome): Int = when (outcome) {
+    LookupOutcome.NO_KEY -> R.string.lookup_problem_no_key
+    LookupOutcome.QUOTA_EXHAUSTED -> R.string.lookup_problem_quota
+    LookupOutcome.RATE_LIMITED -> R.string.lookup_problem_rate_limited
+    LookupOutcome.TRANSIENT_ERROR -> R.string.lookup_problem_offline
+    LookupOutcome.NOT_FOUND -> R.string.lookup_problem_not_found
+    LookupOutcome.NONRETRYABLE_ERROR -> R.string.lookup_problem_failed
+    LookupOutcome.SUCCESS -> R.string.value_unknown   // never rendered
 }
 
 /**

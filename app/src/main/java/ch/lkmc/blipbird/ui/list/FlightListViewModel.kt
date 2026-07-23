@@ -16,6 +16,7 @@ import ch.lkmc.blipbird.domain.DaylightEngine
 import ch.lkmc.blipbird.domain.DesignatorParser
 import ch.lkmc.blipbird.domain.FlightDates
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
+import ch.lkmc.blipbird.domain.LookupOutcome
 import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -66,6 +67,8 @@ data class FlightRow(
     /** The shared ticker value this row was derived from — composables must use
      *  this instead of calling `Instant.now()` themselves (DS4-G9). */
     val now: Instant,
+    /** Latest lookup failure, null when the last lookup succeeded (G5). */
+    val lookupProblem: LookupOutcome? = null,
 )
 
 data class ListUiState(
@@ -125,7 +128,11 @@ class FlightListViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ListUiState())
 
     private fun rowFlow(flight: TrackedFlightEntity) =
-        combine(repository.observeSnapshot(flight.id), clock) { snapshot: StatusSnapshot?, now: Instant ->
+        combine(
+            repository.observeSnapshot(flight.id),
+            repository.observeLookupAttempt(flight.id),
+            clock,
+        ) { snapshot: StatusSnapshot?, attempt: FlightRepository.LookupAttempt?, now: Instant ->
             val view = FlightPhaseMachine.derive(snapshot, null, now)
             val designator = Designator(flight.designatorIata, flight.designatorIcao, flight.flightNumber, flight.suffix)
             val dep = resolve(snapshot?.departure)
@@ -154,6 +161,7 @@ class FlightListViewModel @Inject constructor(
                 updatedAt = snapshot?.fetchedAt,
                 airlineIata = designator.airlineIata,
                 now = now,
+                lookupProblem = attempt?.outcome?.takeIf { it != LookupOutcome.SUCCESS },
             )
         }
 

@@ -28,6 +28,8 @@ sealed interface StatusResult {
         val retryable: Boolean,
         /** Provider-requested pause (429/503 `Retry-After`), when it sent one. */
         val retryAfter: Duration? = null,
+        /** True for HTTP 429 — surfaced as its own lookup outcome (G5). */
+        val rateLimited: Boolean = false,
     ) : StatusResult
 }
 
@@ -63,7 +65,7 @@ class AeroDataBoxProvider @Inject constructor(
             when (e.code()) {
                 404 -> StatusResult.NotFound
                 401, 403 -> StatusResult.Error("AeroDataBox key rejected", retryable = false)
-                429 -> StatusResult.Error("AeroDataBox rate limited", retryable = true, retryAfter = e.retryAfterOrNull())
+                429 -> StatusResult.Error("AeroDataBox rate limited", retryable = true, retryAfter = e.retryAfterOrNull(), rateLimited = true)
                 else -> StatusResult.Error("AeroDataBox HTTP ${e.code()}", retryable = e.code() >= 500, retryAfter = e.retryAfterOrNull())
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -159,7 +161,7 @@ class AeroApiProvider @Inject constructor(
             when (e.code()) {
                 404 -> StatusResult.NotFound
                 401, 403 -> StatusResult.Error("AeroAPI key rejected", retryable = false)
-                429 -> StatusResult.Error("AeroAPI rate limited", retryable = true, retryAfter = e.retryAfterOrNull())
+                429 -> StatusResult.Error("AeroAPI rate limited", retryable = true, retryAfter = e.retryAfterOrNull(), rateLimited = true)
                 else -> StatusResult.Error("AeroAPI HTTP ${e.code()}", retryable = e.code() >= 500, retryAfter = e.retryAfterOrNull())
             }
         } catch (e: kotlinx.coroutines.CancellationException) {

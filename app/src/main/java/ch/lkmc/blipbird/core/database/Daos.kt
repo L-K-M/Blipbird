@@ -129,6 +129,9 @@ interface StatusLookupAttemptDao {
     @Query("SELECT * FROM status_lookup_attempt WHERE trackedFlightId = :flightId")
     suspend fun byFlightId(flightId: Long): StatusLookupAttemptEntity?
 
+    @Query("SELECT * FROM status_lookup_attempt WHERE trackedFlightId = :flightId")
+    fun observeByFlightId(flightId: Long): Flow<StatusLookupAttemptEntity?>
+
     @Upsert
     suspend fun upsert(attempt: StatusLookupAttemptEntity)
 

@@ -49,6 +49,75 @@ class LookupBackoffPolicyTest {
         )
     }
 
+    @Test fun `no key pauses like a nonretryable error`() {
+        assertEquals(
+            Duration.ofDays(7),
+            LookupBackoffPolicy.delay(LookupOutcome.NO_KEY, 1, null, now),
+        )
+    }
+
+    @Test fun `rate limited backs off like a transient error`() {
+        assertEquals(
+            Duration.ofMinutes(30),
+            LookupBackoffPolicy.delay(LookupOutcome.RATE_LIMITED, 1, null, now),
+        )
+        assertEquals(
+            Duration.ofHours(1),
+            LookupBackoffPolicy.delay(LookupOutcome.RATE_LIMITED, 2, null, now),
+        )
+    }
+
+    @Test fun `quota exhaustion mid-month retries daily`() {
+        assertEquals(
+            Duration.ofHours(24),
+            LookupBackoffPolicy.delay(LookupOutcome.QUOTA_EXHAUSTED, 1, null, now),
+        )
+    }
+
+    @Test fun `quota exhaustion near month rollover retries at the rollover`() {
+        val nearRollover = Instant.parse("2026-07-31T20:00:00Z")
+        assertEquals(
+            Duration.ofHours(4),
+            LookupBackoffPolicy.delay(LookupOutcome.QUOTA_EXHAUSTED, 1, null, nearRollover),
+        )
+        // ...with an hour floor right before the boundary.
+        val justBefore = Instant.parse("2026-07-31T23:59:00Z")
+        assertEquals(
+            Duration.ofHours(1),
+            LookupBackoffPolicy.delay(LookupOutcome.QUOTA_EXHAUSTED, 1, null, justBefore),
+        )
+    }
+
+    @Test fun `worst failure follows precedence`() {
+        assertEquals(
+            LookupOutcome.NOT_FOUND,
+            LookupOutcome.worstFailure(
+                setOf(LookupOutcome.NOT_FOUND, LookupOutcome.RATE_LIMITED, LookupOutcome.NO_KEY),
+            ),
+        )
+        assertEquals(
+            LookupOutcome.RATE_LIMITED,
+            LookupOutcome.worstFailure(
+                setOf(LookupOutcome.RATE_LIMITED, LookupOutcome.QUOTA_EXHAUSTED),
+            ),
+        )
+        // A *rejected* key is sharper than a missing one.
+        assertEquals(
+            LookupOutcome.NONRETRYABLE_ERROR,
+            LookupOutcome.worstFailure(
+                setOf(LookupOutcome.NO_KEY, LookupOutcome.NONRETRYABLE_ERROR),
+            ),
+        )
+        assertEquals(
+            LookupOutcome.QUOTA_EXHAUSTED,
+            LookupOutcome.worstFailure(
+                setOf(LookupOutcome.NO_KEY, LookupOutcome.QUOTA_EXHAUSTED),
+            ),
+        )
+        assertEquals(LookupOutcome.NO_KEY, LookupOutcome.worstFailure(setOf(LookupOutcome.NO_KEY)))
+        assertEquals(LookupOutcome.NONRETRYABLE_ERROR, LookupOutcome.worstFailure(emptySet()))
+    }
+
     @Test fun `success is immediately eligible and resets delay`() {
         assertEquals(now, LookupBackoffPolicy.nextEligibleAt(LookupOutcome.SUCCESS, 0, null, now))
         assertEquals(

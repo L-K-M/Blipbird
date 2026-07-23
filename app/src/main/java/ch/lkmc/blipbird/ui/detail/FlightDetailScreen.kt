@@ -85,6 +85,7 @@ import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.departsInText
 import ch.lkmc.blipbird.ui.components.landsInText
 import ch.lkmc.blipbird.ui.components.localTime
+import ch.lkmc.blipbird.ui.components.lookupProblemRes
 import ch.lkmc.blipbird.ui.components.statusText
 import ch.lkmc.blipbird.ui.components.monogramColor
 import ch.lkmc.blipbird.ui.components.monogramContentColor
@@ -209,13 +210,24 @@ fun FlightDetailScreen(
                         if (hasAirline) item { AirlineCard(state) }
                     }
                     item {
-                        Text(
-                            state.updatedAt?.let { stringResource(R.string.updated_ago, agoText(it)) }
-                                ?: stringResource(R.string.updated_never),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(
+                                state.updatedAt?.let { stringResource(R.string.updated_ago, agoText(it)) }
+                                    ?: stringResource(R.string.updated_never),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            // Why the last lookup produced nothing (G5): "no key",
+                            // "quota", "rate limited" and "unreachable" are
+                            // different user actions, not one silent gap.
+                            state.lookupProblem?.let {
+                                Text(
+                                    stringResource(lookupProblemRes(it)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -145,6 +145,24 @@ class FlightRepository @Inject constructor(
     suspend fun isStatusLookupEligible(flightId: Long, now: Instant): Boolean =
         lookupAttemptDao.byFlightId(flightId)?.nextEligibleAt?.let { now.toEpochMilli() >= it } ?: true
 
+    /** Latest persisted lookup attempt, surfaced for error observability (G5). */
+    data class LookupAttempt(
+        val attemptedAt: Instant,
+        val outcome: LookupOutcome?,
+        val nextEligibleAt: Instant,
+    )
+
+    fun observeLookupAttempt(flightId: Long): Flow<LookupAttempt?> =
+        lookupAttemptDao.observeByFlightId(flightId).map { entity ->
+            entity?.let {
+                LookupAttempt(
+                    attemptedAt = Instant.ofEpochMilli(it.attemptedAt),
+                    outcome = runCatching { LookupOutcome.valueOf(it.outcome) }.getOrNull(),
+                    nextEligibleAt = Instant.ofEpochMilli(it.nextEligibleAt),
+                )
+            }
+        }
+
     /**
      * Fetch fresh status via the provider chain, persist, diff, notify.
      * Returns the new snapshot or null (no key / not found / quota / error).
@@ -515,11 +533,13 @@ class StatusProviderChain @Inject constructor(
     )
 
     suspend fun fetchCandidates(designator: Designator, date: java.time.LocalDate?): Lookup {
-        var sawNotFound = false
-        var sawTransientError = false
+        val failures = mutableSetOf<LookupOutcome>()
         var retryAfter: Duration? = null
         for (provider in listOf<FlightStatusProvider>(aeroDataBox, aeroApi)) {
-            if (!quota.canSpend(provider.name, provider.unitsPerLookup)) continue
+            if (!quota.canSpend(provider.name, provider.unitsPerLookup)) {
+                failures += LookupOutcome.QUOTA_EXHAUSTED
+                continue
+            }
             when (val result = provider.fetch(designator, date)) {
                 is StatusResult.Found -> {
                     quota.record(provider.name, provider.unitsPerLookup)
@@ -527,28 +547,28 @@ class StatusProviderChain @Inject constructor(
                 }
                 is StatusResult.NotFound -> {
                     quota.record(provider.name, provider.unitsPerLookup)
-                    sawNotFound = true
+                    failures += LookupOutcome.NOT_FOUND
                 }
-                is StatusResult.NoKey -> continue
+                is StatusResult.NoKey -> failures += LookupOutcome.NO_KEY
                 is StatusResult.Error -> {
-                    if (result.retryable) sawTransientError = true
+                    failures += when {
+                        result.rateLimited -> LookupOutcome.RATE_LIMITED
+                        result.retryable -> LookupOutcome.TRANSIENT_ERROR
+                        else -> LookupOutcome.NONRETRYABLE_ERROR
+                    }
                     result.retryAfter?.let { ra -> retryAfter = maxOf(retryAfter ?: Duration.ZERO, ra) }
                 }
             }
         }
-        val outcome = when {
-            sawNotFound -> LookupOutcome.NOT_FOUND
-            sawTransientError -> LookupOutcome.TRANSIENT_ERROR
-            else -> LookupOutcome.NONRETRYABLE_ERROR
-        }
-        return Lookup(emptyList(), outcome, retryAfter)
+        return Lookup(emptyList(), LookupOutcome.worstFailure(failures), retryAfter)
     }
 }
 
 private fun List<StatusProviderChain.Lookup>.failureOutcome(): LookupOutcome = when {
+    // A lookup that returned candidates none of which survived instance
+    // selection is a NOT_FOUND for the user, same as a definitive miss.
     any { it.outcome == LookupOutcome.NOT_FOUND || it.outcome == LookupOutcome.SUCCESS } -> LookupOutcome.NOT_FOUND
-    any { it.outcome == LookupOutcome.TRANSIENT_ERROR } -> LookupOutcome.TRANSIENT_ERROR
-    else -> LookupOutcome.NONRETRYABLE_ERROR
+    else -> LookupOutcome.worstFailure(map { it.outcome })
 }
 
 private fun List<StatusProviderChain.Lookup>.maxRetryAfter(): Duration? =
