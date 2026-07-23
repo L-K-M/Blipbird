@@ -79,6 +79,7 @@ class SettingsRepository @Inject constructor(
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val ACCENT = stringPreferencesKey("accent")
         val HIGH_CONTRAST = booleanPreferencesKey("high_contrast")
+        val REDUCE_MOTION = booleanPreferencesKey("reduce_motion")
         val APP_ICON = stringPreferencesKey("app_icon")
         val NOTIF_CRITICAL = booleanPreferencesKey("notif_critical")
         val NOTIF_STATUS = booleanPreferencesKey("notif_status")
@@ -100,6 +101,9 @@ class SettingsRepository @Inject constructor(
         p[Keys.APP_ICON]?.let { runCatching { AppIcon.valueOf(it) }.getOrNull() } ?: AppIcon.REGULAR
     }
 
+    /** In-app "reduce motion" override, OR-ed with the system animator scale. */
+    val reduceMotion: Flow<Boolean> = context.settingsStore.data.map { it[Keys.REDUCE_MOTION] ?: false }
+
     val notifCritical: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_CRITICAL] ?: true }
     val notifStatus: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_STATUS] ?: true }
     val notifReminders: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_REMINDERS] ?: true }
@@ -108,6 +112,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setThemeMode(mode: ThemeMode) = context.settingsStore.edit { it[Keys.THEME_MODE] = mode.name }
     suspend fun setAccent(accent: Accent) = context.settingsStore.edit { it[Keys.ACCENT] = accent.serialize() }
     suspend fun setHighContrast(v: Boolean) = context.settingsStore.edit { it[Keys.HIGH_CONTRAST] = v }
+    suspend fun setReduceMotion(v: Boolean) = context.settingsStore.edit { it[Keys.REDUCE_MOTION] = v }
     suspend fun setAppIcon(icon: AppIcon) = context.settingsStore.edit { it[Keys.APP_ICON] = icon.name }
     suspend fun setNotifCritical(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_CRITICAL] = v }
     suspend fun setNotifStatus(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_STATUS] = v }

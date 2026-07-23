@@ -115,6 +115,8 @@
     <string name="theme_cockpit">Cockpit</string>
     <string name="settings_high_contrast">High contrast</string>
     <string name="settings_high_contrast_desc">Maximum-contrast black &amp; white palette for readability</string>
+    <string name="settings_reduce_motion">Reduce motion</string>
+    <string name="settings_reduce_motion_desc">Calms the split-flap flips, screen transitions and other flourishes, on top of the system animation setting</string>
     <string name="settings_app_icon">App icon</string>
     <string name="settings_app_icon_desc">Pick the launcher icon. Some launchers close the app or move the icon when switching.</string>
     <string name="app_icon_regular">Regular</string>

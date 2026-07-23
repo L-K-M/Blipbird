@@ -373,6 +373,16 @@ private fun AppearanceSection(state: SettingsUiState, viewModel: SettingsViewMod
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
+    Spacer(Modifier.height(12.dp))
+    ToggleRow(stringResource(R.string.settings_reduce_motion), state.reduceMotion) {
+        viewModel.setReduceMotion(it)
+    }
+    Text(
+        stringResource(R.string.settings_reduce_motion_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
     Spacer(Modifier.height(16.dp))
     Text(stringResource(R.string.settings_app_icon), style = MaterialTheme.typography.bodyLarge)
     Text(

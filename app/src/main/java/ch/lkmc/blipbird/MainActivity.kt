@@ -37,6 +37,7 @@ import ch.lkmc.blipbird.core.datastore.SettingsRepository
 import ch.lkmc.blipbird.core.datastore.ThemeMode
 import ch.lkmc.blipbird.core.datastore.ThemeSpec
 import ch.lkmc.blipbird.platform.AppIconSwitcher
+import ch.lkmc.blipbird.ui.components.LocalReduceMotionPref
 import ch.lkmc.blipbird.ui.components.rememberReducedMotion
 import ch.lkmc.blipbird.ui.detail.FlightDetailScreen
 import ch.lkmc.blipbird.ui.list.ArchivedFlightsScreen
@@ -104,6 +105,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val spec by settings.themeSpec.collectAsStateWithLifecycle(initialValue = ThemeSpec())
+            val reduceMotion by settings.reduceMotion.collectAsStateWithLifecycle(initialValue = false)
             // Cockpit forces dark regardless of the mode setting (its scheme is
             // dark-only), so system-bar icon styling must follow the resolved
             // app theme, not the system (a plain enableEdgeToEdge() left dark
@@ -120,11 +122,13 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
             BlipbirdTheme(spec = spec, darkTheme = darkTheme) {
-                BlipbirdNav(
-                    deepLinkFlights = deepLinkFlights,
-                    onDeepLinkConsumed = { deepLinkFlights.value = null },
-                    onFirstTrack = { requestNotificationPermission() },
-                )
+                CompositionLocalProvider(LocalReduceMotionPref provides reduceMotion) {
+                    BlipbirdNav(
+                        deepLinkFlights = deepLinkFlights,
+                        onDeepLinkConsumed = { deepLinkFlights.value = null },
+                        onFirstTrack = { requestNotificationPermission() },
+                    )
+                }
             }
         }
     }
