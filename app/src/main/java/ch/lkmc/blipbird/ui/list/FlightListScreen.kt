@@ -54,17 +54,21 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -260,6 +264,19 @@ private fun DismissibleFlightCard(
     )
     var menuOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
+
+    // A haptic tick the moment a swipe crosses the archive/delete threshold, so
+    // the commit point is felt without watching the row (V3, mirroring the
+    // pull-to-refresh threshold haptic). targetValue flips to a dismiss direction
+    // exactly at the threshold, so this fires once per crossing.
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(dismissState) {
+        snapshotFlow { dismissState.targetValue }.collect { target ->
+            if (target != SwipeToDismissBoxValue.Settled) {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+    }
 
     SwipeToDismissBox(
         state = dismissState,

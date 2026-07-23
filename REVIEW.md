@@ -95,8 +95,6 @@ resurfacing in every review. Each notes what would flip the call.
   and the named push/pop screen transitions landed (July 2026); still open:
   migrating component-embedded specs (status-chip color flip, sheet present)
   onto the tokens, and the in-app reduce-motion toggle (§18).
-- **V3 — remainder: haptics** (PLAN M4): the pull-to-refresh threshold haptic
-  landed (shared `BirdRefreshIndicator`); still open: swipe-to-dismiss thresholds.
 - **V6 — remainder: no loading state while resolving.** The add sheet's date
   field is now a `DatePickerDialog` (read-only, clearable) and silent date parse
   errors are gone with it (glm 5.8); still open: no in-sheet progress indicator
