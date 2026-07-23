@@ -125,7 +125,6 @@ class ReminderScheduler @Inject constructor(
 interface PlatformEntryPoint {
     fun repository(): FlightRepository
     fun emitter(): NotificationEmitter
-    fun reminderScheduler(): ReminderScheduler
 }
 
 /**
@@ -170,14 +169,10 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
 /** Rebuilds reminders after reboot or exact-alarm permission changes. */
 class BootCompletedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val pending = goAsync()
-        val entryPoint = EntryPointAccessors.fromApplication(context, PlatformEntryPoint::class.java)
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            try {
-                entryPoint.reminderScheduler().reconcileAll()
-            } finally {
-                pending.finish()
-            }
-        }
+        // Hand the reconcile to WorkManager rather than run it on the ~10 s
+        // goAsync budget (glm 1.19): reconcileAll loops over every active flight
+        // and can outlast that window, and the work must survive the process
+        // being torn down right after boot.
+        ReminderReconcileWorker.enqueue(context)
     }
 }

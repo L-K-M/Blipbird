@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.Constraints
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -116,4 +118,36 @@ class WorkManagerRefreshController @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : BackgroundRefreshController {
     override fun ensureScheduled() = RefreshWorker.schedule(context)
+}
+
+/**
+ * Rebuilds exact-alarm reminders after a reboot or an exact-alarm permission
+ * change (glm 1.19). [BootCompletedReceiver] enqueues this instead of doing the
+ * work on its own ~10 s `goAsync()` budget: [ReminderScheduler.reconcileAll]
+ * loops over every active flight (Room reads + AlarmManager calls) and can
+ * exceed that window, and WorkManager survives process death and Doze deferral.
+ */
+@HiltWorker
+class ReminderReconcileWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val reminders: ReminderScheduler,
+) : CoroutineWorker(appContext, params) {
+
+    override suspend fun doWork(): Result {
+        reminders.reconcileAll()
+        return Result.success()
+    }
+
+    companion object {
+        private const val UNIQUE_NAME = "blipbird-boot-reconcile"
+
+        fun enqueue(context: Context) {
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                UNIQUE_NAME,
+                ExistingWorkPolicy.REPLACE,
+                OneTimeWorkRequestBuilder<ReminderReconcileWorker>().build(),
+            )
+        }
+    }
 }
