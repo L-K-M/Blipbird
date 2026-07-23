@@ -169,10 +169,16 @@ class FlightListViewModel @Inject constructor(
             keyStore.hasAnyStatusKey,
             addError,
             repository.observeArchivedFlights().map { it.size },
-        ) { rows, busy, hasKey, err, archivedCount ->
+        ) { rs, busy, hasKey, err, archivedCount ->
+            // Exhaustive over RowsState so a future variant is a compile error,
+            // not a silent fall-through to an empty, not-loading list.
+            val (loadedRows, isLoading) = when (rs) {
+                is RowsState.Loading -> emptyList<FlightRow>() to true
+                is RowsState.Loaded -> rs.rows to false
+            }
             ListUiState(
-                rows = (rows as? RowsState.Loaded)?.rows ?: emptyList(),
-                loading = rows is RowsState.Loading,
+                rows = loadedRows,
+                loading = isLoading,
                 refreshing = busy,
                 hasStatusKey = hasKey,
                 addError = err,

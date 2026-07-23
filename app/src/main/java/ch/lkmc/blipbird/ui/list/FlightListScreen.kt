@@ -58,6 +58,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,11 +67,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -662,26 +663,26 @@ private fun EmptyState(modifier: Modifier = Modifier, onAdd: () -> Unit) {
 private fun FlightListSkeleton(modifier: Modifier = Modifier) {
     val base = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
     val highlight = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
-    // Run the transition unconditionally (no conditional composable calls); the
-    // swept value is simply unused when motion is reduced.
-    val transition = rememberInfiniteTransition(label = "skeleton")
-    val shift by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1400f,
-        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)),
-        label = "skeleton-shift",
-    )
-    val brush = if (rememberReducedMotion()) {
-        SolidColor(base)
+    // The sweep is a normalized 0→1 progress consumed in the draw phase against
+    // each card's *measured* width, so the highlight clears the card smoothly on
+    // any screen size (a hardcoded pixel range teleported on wide/tablet cards).
+    // Reduced motion skips the transition entirely — no animation, no wasted
+    // frames — and the draw paints a still fill.
+    val progress: State<Float>? = if (rememberReducedMotion()) {
+        null
     } else {
-        Brush.linearGradient(
-            colors = listOf(base, highlight, base),
-            start = Offset(shift - 500f, 0f),
-            end = Offset(shift, 0f),
+        val transition = rememberInfiniteTransition(label = "skeleton")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)),
+            label = "skeleton-sweep",
         )
     }
     Column(
-        modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp),
+        // Match the real list's FAB clearance so the last card never sits behind
+        // the floating button during the loading window.
+        modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         repeat(4) {
@@ -690,7 +691,22 @@ private fun FlightListSkeleton(modifier: Modifier = Modifier) {
                     .fillMaxWidth()
                     .height(150.dp)
                     .clip(RoundedCornerShape(26.dp))
-                    .background(brush),
+                    .drawBehind {
+                        val p = progress?.value
+                        if (p == null) {
+                            drawRect(base)
+                        } else {
+                            val band = size.width * 0.5f
+                            val startX = -band + (size.width + band) * p
+                            drawRect(
+                                Brush.linearGradient(
+                                    colors = listOf(base, highlight, base),
+                                    start = Offset(startX, 0f),
+                                    end = Offset(startX + band, 0f),
+                                )
+                            )
+                        }
+                    },
             )
         }
     }
