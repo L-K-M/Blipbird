@@ -19,6 +19,7 @@ import ch.lkmc.blipbird.core.model.WeatherSample
 import ch.lkmc.blipbird.domain.DaylightEngine
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.domain.GreatCircle
+import ch.lkmc.blipbird.domain.LookupOutcome
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -62,6 +63,8 @@ data class DetailUiState(
     val updatedAt: Instant? = null,
     /** OpenSky API client configured — gates the optional flown-path hint. */
     val hasOpenSky: Boolean = true,
+    /** Latest lookup failure, null when the last lookup succeeded (G5). */
+    val lookupProblem: LookupOutcome? = null,
 )
 
 @HiltViewModel
@@ -96,6 +99,7 @@ class FlightDetailViewModel @Inject constructor(
     private val snapshot = MutableStateFlow<StatusSnapshot?>(null)
     private val lastFix = MutableStateFlow<PositionFix?>(null)
     private val track = MutableStateFlow<List<PositionFix>>(emptyList())
+    private val lookupAttempt = MutableStateFlow<FlightRepository.LookupAttempt?>(null)
 
     /**
      * One shared minute-tick (PLAN.md §6 Heartbeat) so the hero countdown / ETA
@@ -149,12 +153,13 @@ class FlightDetailViewModel @Inject constructor(
         }
         viewModelScope.launch { repository.observeLatestFix(id).collect { lastFix.value = it } }
         viewModelScope.launch { repository.observeTrack(id).collect { track.value = it } }
+        viewModelScope.launch { repository.observeLookupAttempt(id).collect { lookupAttempt.value = it } }
         viewModelScope.launch { repository.refreshStatus(id) }
         startPolling(id)
     }
 
     val uiState: StateFlow<DetailUiState> = combine(
-        listOf(flightId, flightEntity, snapshot, lastFix, track, daylight, routeWeather, airportWeather, enriched, airlineName, refreshing, clock, hasOpenSky)
+        listOf(flightId, flightEntity, snapshot, lastFix, track, daylight, routeWeather, airportWeather, enriched, airlineName, refreshing, clock, hasOpenSky, lookupAttempt)
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val id = values[0] as Long
@@ -170,6 +175,7 @@ class FlightDetailViewModel @Inject constructor(
         val busy = values[10] as Boolean
         val now = values[11] as Instant
         val openSky = values[12] as Boolean
+        val attempt = values[13] as FlightRepository.LookupAttempt?
 
         val d = flight?.let { Designator(it.designatorIata, it.designatorIcao, it.flightNumber, it.suffix) }
         val designator = d?.display ?: ""
@@ -193,6 +199,7 @@ class FlightDetailViewModel @Inject constructor(
             refreshing = busy,
             updatedAt = snap?.fetchedAt,
             hasOpenSky = openSky,
+            lookupProblem = attempt?.outcome?.takeIf { it != LookupOutcome.SUCCESS },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DetailUiState())
 

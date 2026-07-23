@@ -16,6 +16,12 @@
     <string name="empty_list_body">Add a flight number like CA861 or CCA861 to start tracking. You can paste several at once.</string>
     <string name="updated_ago">Updated %1$s ago</string>
     <string name="updated_never">Not updated yet</string>
+    <string name="lookup_problem_no_key">No data-source key</string>
+    <string name="lookup_problem_quota">Lookup budget used up</string>
+    <string name="lookup_problem_rate_limited">Rate limited — will retry</string>
+    <string name="lookup_problem_offline">Provider unreachable — will retry</string>
+    <string name="lookup_problem_not_found">No flight found for this date</string>
+    <string name="lookup_problem_failed">Lookup failed — check keys in Settings</string>
     <string name="archive">Archive</string>
     <string name="delete">Delete</string>
     <string name="rename">Rename</string>

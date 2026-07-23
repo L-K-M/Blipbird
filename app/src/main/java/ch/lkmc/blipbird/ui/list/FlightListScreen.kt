@@ -76,6 +76,7 @@ import ch.lkmc.blipbird.ui.components.BirdRefreshIndicator
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.agoText
+import ch.lkmc.blipbird.ui.components.lookupProblemRes
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.departsInText
 import ch.lkmc.blipbird.ui.components.landsInText
@@ -472,14 +473,19 @@ private fun FlightRowCard(row: FlightRow, onClick: () -> Unit, onLongClick: () -
                 Text(factLine, style = MaterialTheme.typography.labelMedium, color = sky.contentDim)
             }
         }
-        // Per-row freshness (DS4-G10): the detail screen already says "Updated
-        // X ago"; without it here, hours-stale list data looks live.
-        row.updatedAt?.let {
+        // Per-row freshness (DS4-G10) plus the latest lookup problem (G5): the
+        // card must say *why* data is missing or stale — "no key", "quota",
+        // "rate limited" and "unreachable" are different user actions.
+        val infoLine = listOfNotNull(
+            row.updatedAt?.let { stringResource(R.string.updated_ago, agoText(it, row.now)) },
+            row.lookupProblem?.let { stringResource(lookupProblemRes(it)) },
+        ).joinToString("  ·  ")
+        if (infoLine.isNotEmpty()) {
             Spacer(Modifier.height(2.dp))
             Text(
-                stringResource(R.string.updated_ago, agoText(it, row.now)),
+                infoLine,
                 style = MaterialTheme.typography.labelSmall,
-                color = sky.contentDim,
+                color = if (row.lookupProblem != null) sky.content else sky.contentDim,
             )
         }
     }

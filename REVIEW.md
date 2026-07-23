@@ -58,10 +58,6 @@ forensically.
   "Takeoff"/"Landing"/"Gate arrival", `ATTRIBUTION_TEXT`, "Weather data by
   Open-Meteo.com", map attribution line. (glm 5.5 is the same finding.)
 
-- **G5 — remainder: error observability in the UI.** #60 landed persisted
-  lookup outcomes and backoff; the UI still can't distinguish "no key" /
-  "quota" / "rate limited" / "offline". Thread the last error into list/detail
-  state.
 - **G9 — remaining test gaps:** `InstanceSelector` date-pinning path,
   `CadencePolicy` at the exact 48 h boundary (the NotificationPlanner suite
   landed in #40).
