@@ -1,5 +1,7 @@
 package ch.lkmc.blipbird.ui.list
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,13 +10,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,8 +37,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
+import java.time.Instant
 import java.time.LocalDate
-import java.time.format.DateTimeParseException
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,9 +51,9 @@ fun AddFlightSheet(
     onAdd: (input: String, date: LocalDate?, alias: String?) -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
-    var dateText by remember { mutableStateOf("") }
+    var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
     var alias by remember { mutableStateOf("") }
-    var dateError by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
@@ -55,13 +70,10 @@ fun AddFlightSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = dateText,
-                onValueChange = { dateText = it; dateError = false },
-                label = { Text(stringResource(R.string.add_flight_date_optional)) },
-                placeholder = { Text("YYYY-MM-DD") },
-                isError = dateError,
-                modifier = Modifier.fillMaxWidth(),
+            DateField(
+                date = selectedDate,
+                onOpenPicker = { showDatePicker = true },
+                onClear = { selectedDate = null },
             )
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
@@ -77,14 +89,82 @@ fun AddFlightSheet(
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = {
-                    val date: LocalDate? = dateText.trim().ifEmpty { null }?.let {
-                        try { LocalDate.parse(it) } catch (e: DateTimeParseException) { dateError = true; return@Button }
-                    }
-                    if (input.isNotBlank()) onAdd(input, date, alias.trim().ifEmpty { null })
+                    if (input.isNotBlank()) onAdd(input, selectedDate, alias.trim().ifEmpty { null })
                 }) {
                     Text(stringResource(R.string.add_flight_action))
                 }
             }
         }
     }
+
+    if (showDatePicker) {
+        // The picker works in UTC-midnight millis; the sheet keeps a plain
+        // LocalDate (no time-of-day, no zone) so the user's chosen calendar day
+        // is what gets tracked regardless of the device zone.
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedDate?.toUtcMillis(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    selectedDate = pickerState.selectedDateMillis?.let(::localDateFromUtcMillis)
+                    showDatePicker = false
+                }) { Text(stringResource(R.string.date_picker_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
 }
+
+/**
+ * A read-only field that opens the [DatePickerDialog] when tapped — no free-text
+ * date parsing (the old plain field swallowed typos as silent parse errors, V6).
+ * Optional: a trailing clear button removes the picked date; empty means "any date".
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateField(
+    date: LocalDate?,
+    onOpenPicker: () -> Unit,
+    onClear: () -> Unit,
+) {
+    val formatter = remember { DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM) }
+    // A read-only text field ignores taps for editing, so drive the picker off
+    // its press interactions instead of an overlay that would swallow the
+    // trailing icon's own clicks.
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    LaunchedEffect(pressed) { if (pressed) onOpenPicker() }
+
+    OutlinedTextField(
+        value = date?.let { formatter.format(it) } ?: "",
+        onValueChange = {},
+        readOnly = true,
+        label = { Text(stringResource(R.string.add_flight_date_optional)) },
+        placeholder = { Text(stringResource(R.string.add_flight_date_placeholder)) },
+        trailingIcon = {
+            if (date != null) {
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.add_flight_date_clear))
+                }
+            } else {
+                Icon(Icons.Filled.DateRange, contentDescription = null)
+            }
+        },
+        interactionSource = interactionSource,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+private fun LocalDate.toUtcMillis(): Long =
+    atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+
+private fun localDateFromUtcMillis(millis: Long): LocalDate =
+    Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
