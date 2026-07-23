@@ -46,7 +46,9 @@ class QuotaLedger @Inject constructor(
         val safeUnits = units.coerceAtLeast(0)
         return db.withTransaction {
             val used = dao.used(provider, period) ?: 0
-            if (used + safeUnits > budget.softStop) {
+            // Compare via subtraction so a pathologically large safeUnits can't
+            // overflow `used + safeUnits` into a negative that slips past the cap.
+            if (used > budget.softStop - safeUnits) {
                 false
             } else {
                 dao.add(provider, period, safeUnits)
