@@ -96,8 +96,7 @@ resurfacing in every review. Each notes what would flip the call.
   migrating component-embedded specs (status-chip color flip, sheet present)
   onto the tokens, and the in-app reduce-motion toggle (§18).
 - **V3 — remainder: haptics** (PLAN M4): the pull-to-refresh threshold haptic
-  landed (shared `BirdRefreshIndicator`); still open: swipe-to-dismiss thresholds
-  and a wheels-down pulse.
+  landed (shared `BirdRefreshIndicator`); still open: swipe-to-dismiss thresholds.
 - **V5 — Empty map card** renders header + attribution and nothing else when
   coordinates are unknown. Placeholder or hide.
 - **V6 — remainder: no loading state while resolving.** The add sheet's date
