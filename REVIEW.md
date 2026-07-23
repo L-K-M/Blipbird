@@ -61,10 +61,6 @@ forensically.
 - **G9 — remaining test gaps:** `InstanceSelector` date-pinning path,
   `CadencePolicy` at the exact 48 h boundary (the NotificationPlanner suite
   landed in #40).
-- **G10 — Detail ViewModels are Activity-scoped and never cleared** (root cause
-  of B4; the #20 gate treats the symptom). Memory grows with every flight
-  opened. Consider nav-entry-scoped ViewModels or Navigation 3 so `onCleared`
-  fires on pop.
 
 ---
 
