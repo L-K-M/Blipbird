@@ -27,9 +27,8 @@ import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -54,21 +53,17 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -140,18 +135,6 @@ fun FlightListScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.my_flights), fontWeight = FontWeight.Bold) },
                 actions = {
-                    // Shown only once something's been archived, so the board
-                    // stays uncluttered until there's a past flight to reach.
-                    if (state.archivedCount > 0) {
-                        IconButton(onClick = onOpenArchived) {
-                            BadgedBox(badge = { Badge { Text("${state.archivedCount}") } }) {
-                                Icon(
-                                    Icons.Outlined.Archive,
-                                    contentDescription = stringResource(R.string.archived_title),
-                                )
-                            }
-                        }
-                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings))
                     }
@@ -191,6 +174,12 @@ fun FlightListScreen(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                         onAdd = { showAddSheet = true },
                     )
+                    if (state.archivedCount > 0) {
+                        ArchivedFlightsLink(
+                            onClick = onOpenArchived,
+                            modifier = Modifier.padding(bottom = 24.dp),
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
@@ -215,6 +204,14 @@ fun FlightListScreen(
                             onRename = { alias -> viewModel.rename(row.id, alias) },
                             modifier = Modifier.animateItem(),
                         )
+                    }
+                    // A quiet, deemphasized way into the archived flights — a
+                    // footer link, not a top-bar action button with a badge (which
+                    // read as "archive selection" + a notification).
+                    if (state.archivedCount > 0) {
+                        item(key = "archived-link") {
+                            ArchivedFlightsLink(onClick = onOpenArchived)
+                        }
                     }
                 }
             }
@@ -254,29 +251,22 @@ private fun DismissibleFlightCard(
     modifier: Modifier = Modifier,
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
+        // Return false so the box springs back to rest after the swipe instead of
+        // parking at the dismissed anchor. The archive/delete already fired and
+        // the row is removed by the flights flow, so parking there only risks a
+        // re-added row (undo) reappearing on top of a stale, empty green/red
+        // background — the archive→undo→delete→undo glitch. Springing back also
+        // makes release, not the mid-swipe threshold, read as the commit point.
         confirmValueChange = { value ->
             when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> { onArchive(); true }
-                SwipeToDismissBoxValue.EndToStart -> { onDelete(); true }
+                SwipeToDismissBoxValue.StartToEnd -> { onArchive(); false }
+                SwipeToDismissBoxValue.EndToStart -> { onDelete(); false }
                 SwipeToDismissBoxValue.Settled -> false
             }
         },
     )
     var menuOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
-
-    // A haptic tick the moment a swipe crosses the archive/delete threshold, so
-    // the commit point is felt without watching the row (V3, mirroring the
-    // pull-to-refresh threshold haptic). targetValue flips to a dismiss direction
-    // exactly at the threshold, so this fires once per crossing.
-    val haptics = LocalHapticFeedback.current
-    LaunchedEffect(dismissState) {
-        snapshotFlow { dismissState.targetValue }.collect { target ->
-            if (target != SwipeToDismissBoxValue.Settled) {
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            }
-        }
-    }
 
     SwipeToDismissBox(
         state = dismissState,
@@ -607,6 +597,20 @@ private fun Monogram(code: String) {
         // yellows/limes where fixed white would wash out.
         Text(code.take(2).uppercase(), color = monogramContentColor(code), fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/** Deemphasized footer link into the archived-flights screen. */
+@Composable
+private fun ArchivedFlightsLink(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    TextButton(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+    ) {
+        Icon(Icons.Outlined.Archive, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(R.string.archived_title), style = MaterialTheme.typography.labelLarge)
     }
 }
 
