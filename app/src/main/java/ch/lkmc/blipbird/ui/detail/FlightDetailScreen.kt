@@ -26,8 +26,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.DoorFront
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Luggage
 import androidx.compose.material.icons.outlined.Domain
 import androidx.compose.material.icons.outlined.Schedule
@@ -66,8 +68,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -418,6 +423,24 @@ private fun MapCard(state: DetailUiState, onInteractionChanged: (Boolean) -> Uni
         val dep = state.depAirport?.let { a -> a.lat?.let { la -> a.lon?.let { lo -> GreatCircle.Point(la, lo) } } }
         val arr = state.arrAirport?.let { a -> a.lat?.let { la -> a.lon?.let { lo -> GreatCircle.Point(la, lo) } } }
         if (dep != null && arr != null) {
+            // TalkBack can't read the raw map surface (glm 4.2): describe the
+            // route, and how far along it the aircraft is once it's moving. Only
+            // announce a percentage when progress is real and > 0 — a not-yet-
+            // departed flight (0), or the NaN a garbage sub-second duration could
+            // yield, reads as "not yet departed" rather than a misleading "0%".
+            val progress = state.view.progress
+            val depCode = state.depAirport?.code ?: "?"
+            val arrCode = state.arrAirport?.code ?: "?"
+            val mapDesc = if (progress.isFinite() && progress > 0f) {
+                stringResource(
+                    R.string.map_semantics,
+                    depCode,
+                    arrCode,
+                    (progress.coerceIn(0f, 1f) * 100).roundToInt(),
+                )
+            } else {
+                stringResource(R.string.map_semantics_predeparture, depCode, arrCode)
+            }
             MapLibreRouteMap(
                 dep = dep,
                 arr = arr,
@@ -427,6 +450,7 @@ private fun MapCard(state: DetailUiState, onInteractionChanged: (Boolean) -> Uni
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(280.dp)
+                    .semantics { contentDescription = mapDesc }
                     // Work around maplibre-compose#726: its AndroidView and the list otherwise
                     // both handle the same pointer stream.
                     .pointerInput(Unit) {
@@ -447,38 +471,74 @@ private fun MapCard(state: DetailUiState, onInteractionChanged: (Boolean) -> Uni
                         }
                     },
             )
-        }
-        Spacer(Modifier.height(8.dp))
-        val fix = state.lastFix
-        Text(
-            when {
-                fix == null -> stringResource(R.string.map_no_position)
-                fix.seenPosAgeSec > 120 -> stringResource(R.string.last_seen_ago, agoText(fix.at))
-                else -> listOfNotNull(
-                    fix.baroAltitudeFt?.let { "${"%,d".format(it.toInt())} ft" },
-                    fix.groundSpeedKt?.let { "${it.toInt()} kt" },
-                    fix.trackDeg?.let { "${it.toInt()}°" },
-                    "via ${fix.source}",
-                ).joinToString("  ·  ")
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        // Purely optional upgrade — surfaced only until configured, then it
-        // disappears (the user asked for the optionality to be explicit in-UI).
-        if (!state.hasOpenSky) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(8.dp))
+            val fix = state.lastFix
             Text(
-                stringResource(R.string.map_opensky_hint),
+                when {
+                    fix == null -> stringResource(R.string.map_no_position)
+                    fix.seenPosAgeSec > 120 -> stringResource(R.string.last_seen_ago, agoText(fix.at))
+                    else -> listOfNotNull(
+                        fix.baroAltitudeFt?.let { "${"%,d".format(it.toInt())} ft" },
+                        fix.groundSpeedKt?.let { "${it.toInt()} kt" },
+                        fix.trackDeg?.let { "${it.toInt()}°" },
+                        "via ${fix.source}",
+                    ).joinToString("  ·  ")
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // Purely optional upgrade — surfaced only until configured, then it
+            // disappears (the user asked for the optionality to be explicit in-UI).
+            if (!state.hasOpenSky) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.map_opensky_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                "© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+        } else {
+            // No coordinates yet (airports unresolved): a placeholder instead of a
+            // section header floating over blank space, plus the now-irrelevant
+            // position line and attribution (V5).
+            MapPlaceholder()
         }
-        Text(
-            "© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        )
+    }
+}
+
+/** Shown in the map card when the airports haven't resolved to coordinates yet (V5). */
+@Composable
+private fun MapPlaceholder() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            // Match the live map's height so the card doesn't jump when the
+            // airports resolve and the map swaps in.
+            .height(280.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Outlined.Map,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.map_unavailable),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 
@@ -500,7 +560,7 @@ private fun KeyFacts(state: DetailUiState) {
                 Fact(Icons.Outlined.Schedule, stringResource(R.string.departs), timeDate(s.depTimes.best, state.depAirport?.tz))
                 Fact(Icons.Outlined.Domain, stringResource(R.string.terminal), s.depTerminal)
                 Fact(Icons.Outlined.DoorFront, stringResource(R.string.gate), s.depGate)
-                Fact(Icons.Outlined.Tag, stringResource(R.string.check_in), s.depCheckInDesk)
+                Fact(Icons.Outlined.ConfirmationNumber, stringResource(R.string.check_in), s.depCheckInDesk)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -606,7 +666,7 @@ private fun Timeline(state: DetailUiState) {
         add(entry("Pushback", s.depTimes, useRunway = false, zone = depTz))
         add(entry("Takeoff", s.depTimes, useRunway = true, zone = depTz))
         add(entry("Landing", s.arrTimes, useRunway = true, zone = arrTz))
-        add(entry("Gate arrival", s.arrTimes, useRunway = false, zone = arrTz))
+        add(entry("At gate", s.arrTimes, useRunway = false, zone = arrTz))
     }
     val now = Instant.now()
     val nextIdx = entries.indexOfFirst { it.state != NodeState.DONE && (it.shown?.isAfter(now) != false) }
