@@ -118,7 +118,13 @@ jobs:
           CHECKSUM="${OUT}.sha256"
           trap 'rm -f keystore.jks "$ALIGNED"' EXIT
 
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > keystore.jks
+          # Tolerate wrapped/whitespace-contaminated pastes (76-column base64,
+          # CRs, copy artifacts) — only genuinely invalid base64 still fails.
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d ' \t\r\n' | base64 --decode > keystore.jks 2>/dev/null \
+             || [ ! -s keystore.jks ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64 even after stripping whitespace. Re-create the secret, e.g.: gh secret set ANDROID_KEYSTORE_BASE64 --repo ${GITHUB_REPOSITORY} --body \"\$(base64 -w0 < your-keystore.jks)\""
+            exit 1
+          fi
           "$ZIPALIGN" -p -f 4 "$UNSIGNED" "$ALIGNED"
           "$APKSIGNER" sign \
             --ks keystore.jks \
