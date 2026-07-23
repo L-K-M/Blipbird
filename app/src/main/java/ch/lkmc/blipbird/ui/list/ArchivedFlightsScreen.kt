@@ -97,7 +97,7 @@ fun ArchivedFlightsScreen(
             // Matches the main list: one column on phones, more once the window is
             // wide enough for another ~380 dp card (V12 large-screen pass).
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 380.dp),
+                columns = GridCells.Adaptive(minSize = ListGridMinCardWidth),
                 modifier = Modifier.padding(padding).fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),

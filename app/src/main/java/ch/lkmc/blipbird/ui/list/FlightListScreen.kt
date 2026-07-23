@@ -104,6 +104,14 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 
+/**
+ * Min card width for the adaptive flight/archived grids: one column on phones, a
+ * second once the window fits another ~380 dp card (tablets/foldables/landscape).
+ * Shared across the two parallel lists so they break into columns at the same
+ * width (V12).
+ */
+val ListGridMinCardWidth = 380.dp
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FlightListScreen(
@@ -223,7 +231,7 @@ fun FlightListScreen(
                     // landscape (V12). Phones are unchanged since Adaptive resolves
                     // to a single column below ~800 dp.
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 380.dp),
+                        columns = GridCells.Adaptive(minSize = ListGridMinCardWidth),
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
