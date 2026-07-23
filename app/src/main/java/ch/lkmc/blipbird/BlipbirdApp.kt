@@ -36,17 +36,30 @@ class BlipbirdApp : Application(), Configuration.Provider {
     /**
      * Persist the last uncaught exception to files/last_crash.txt (surfaced in
      * Settings → Diagnostics) so device-only crashes are debuggable without adb.
+     * The work on the crashing thread is bounded (glm-A): the payload is capped
+     * (deep cause chains can be huge) and the disk write runs on a short-lived
+     * thread joined with a timeout, so a slow flash can't stretch the crash
+     * dialog or turn the crash into an ANR.
      */
     private fun installCrashLogger() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             runCatching {
-                java.io.File(filesDir, "last_crash.txt").writeText(
+                val text = (
                     "${java.time.Instant.now()}\nthread: ${thread.name}\n" +
                         android.util.Log.getStackTraceString(throwable)
-                )
+                    ).take(MAX_CRASH_LOG_CHARS)
+                val file = java.io.File(filesDir, "last_crash.txt")
+                val writer = Thread { runCatching { file.writeText(text) } }
+                writer.start()
+                writer.join(CRASH_WRITE_TIMEOUT_MS)
             }
             previous?.uncaughtException(thread, throwable)
         }
+    }
+
+    private companion object {
+        const val MAX_CRASH_LOG_CHARS = 64_000
+        const val CRASH_WRITE_TIMEOUT_MS = 2_000L
     }
 }

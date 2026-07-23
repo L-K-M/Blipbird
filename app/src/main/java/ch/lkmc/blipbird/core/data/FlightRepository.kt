@@ -14,12 +14,15 @@ import ch.lkmc.blipbird.core.model.MovementTimes
 import ch.lkmc.blipbird.core.model.PositionFix
 import ch.lkmc.blipbird.core.model.StatusSnapshot
 import ch.lkmc.blipbird.core.model.TrackRequest
+import androidx.room.withTransaction
 import ch.lkmc.blipbird.core.database.ReferenceDao
 import ch.lkmc.blipbird.domain.FlightDates
+import ch.lkmc.blipbird.domain.GreatCircle
 import ch.lkmc.blipbird.domain.InstanceSelector
 import ch.lkmc.blipbird.domain.LookupBackoffPolicy
 import ch.lkmc.blipbird.domain.LookupOutcome
 import ch.lkmc.blipbird.domain.NotificationPlanner
+import ch.lkmc.blipbird.domain.RouteCorridor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.Duration
@@ -118,11 +121,17 @@ class FlightRepository @Inject constructor(
     }
 
     suspend fun delete(id: Long) {
+        // Ops rows go first and atomically (glm 1.11): a crash between the two
+        // databases then leaves the flight tracked with no derived data (a
+        // benign re-fetch) instead of permanently orphaning ops rows — the
+        // lookup-attempt table has no expiry-based prune to catch strays.
+        opsDb.withTransaction {
+            snapshotDao.deleteForFlight(id)
+            fixDao.deleteForFlight(id)
+            emittedDao.deleteForFlight(id)
+            lookupAttemptDao.deleteForFlight(id)
+        }
         trackedDao.delete(id)
-        snapshotDao.deleteForFlight(id)
-        fixDao.deleteForFlight(id)
-        emittedDao.deleteForFlight(id)
-        lookupAttemptDao.deleteForFlight(id)
         trackBackfillAt.remove(id)
     }
 
@@ -190,6 +199,7 @@ class FlightRepository @Inject constructor(
                 outcome = lookups.failureOutcome(),
                 requestedDate = date,
                 attemptedAt = attemptedAt,
+                retryAfter = lookups.maxRetryAfter(),
             )
             return null
         }
@@ -259,12 +269,45 @@ class FlightRepository @Inject constructor(
             callsignGuess = flight.designator().callsignGuess,
         )
 
+        // Hex/registration come from the selected status instance and are
+        // trusted; a CALLSIGN can genuinely identify a different day's flight
+        // (glm 1.16 / PLAN.md §5 step 5), so callsign-derived fixes must also
+        // sit inside the route corridor before they're accepted.
         for (q in queries) {
             val fix = positionProvider.fetch(q) ?: continue
+            if (q is PositionProvider.Query.Callsign) {
+                val endpoints = corridorEndpoints(snapshot)
+                if (endpoints != null &&
+                    !RouteCorridor.isPlausible(endpoints.first, endpoints.second, GreatCircle.Point(fix.lat, fix.lon))
+                ) continue
+            }
             fixDao.insert(fix.toEntity(flightId, expiryFor(snapshot?.toModel())))
             return fix
         }
         return null
+    }
+
+    /**
+     * Route endpoints for the corridor check, from the bundled reference DB
+     * (status payloads don't persist coordinates). Null — no check possible —
+     * when either airport or its coordinates are unknown.
+     */
+    private suspend fun corridorEndpoints(
+        snapshot: StatusSnapshotEntity?,
+    ): Pair<GreatCircle.Point, GreatCircle.Point>? {
+        if (snapshot == null) return null
+        val dep = airportPoint(snapshot.depIcao, snapshot.depIata) ?: return null
+        val arr = airportPoint(snapshot.arrIcao, snapshot.arrIata) ?: return null
+        return dep to arr
+    }
+
+    private suspend fun airportPoint(icao: String?, iata: String?): GreatCircle.Point? {
+        val row = icao?.let { referenceDao.airportByIcao(it) }
+            ?: iata?.let { referenceDao.airportByIata(it) }
+            ?: return null
+        val lat = row.lat ?: return null
+        val lon = row.lon ?: return null
+        return GreatCircle.Point(lat, lon)
     }
 
     // In-memory per-flight throttle for the OpenSky trajectory backfill; callers
@@ -321,6 +364,7 @@ class FlightRepository @Inject constructor(
         outcome: LookupOutcome,
         requestedDate: java.time.LocalDate?,
         attemptedAt: Instant,
+        retryAfter: Duration? = null,
     ) {
         val previous = lookupAttemptDao.byFlightId(flightId)
         val previousOutcome = previous?.outcome?.let { value ->
@@ -329,15 +373,21 @@ class FlightRepository @Inject constructor(
         val failures = LookupBackoffPolicy.consecutiveFailures(
             outcome, previousOutcome, previous?.consecutiveFailures ?: 0,
         )
+        val policyEligibleAt = LookupBackoffPolicy.nextEligibleAt(
+            outcome, failures, requestedDate, attemptedAt,
+        )
+        // A provider's explicit Retry-After extends — never shortens — the
+        // policy backoff (glm-A: 429 used to just fall through the chain).
+        val eligibleAt = retryAfter
+            ?.let { maxOf(policyEligibleAt, attemptedAt.plus(it)) }
+            ?: policyEligibleAt
         lookupAttemptDao.upsert(
             StatusLookupAttemptEntity(
                 trackedFlightId = flightId,
                 attemptedAt = attemptedAt.toEpochMilli(),
                 outcome = outcome.name,
                 consecutiveFailures = failures,
-                nextEligibleAt = LookupBackoffPolicy.nextEligibleAt(
-                    outcome, failures, requestedDate, attemptedAt,
-                ).toEpochMilli(),
+                nextEligibleAt = eligibleAt.toEpochMilli(),
             )
         )
     }
@@ -457,11 +507,17 @@ class StatusProviderChain @Inject constructor(
     private val aeroApi: AeroApiProvider,
     private val quota: QuotaLedger,
 ) {
-    data class Lookup(val candidates: List<StatusSnapshot>, val outcome: LookupOutcome)
+    data class Lookup(
+        val candidates: List<StatusSnapshot>,
+        val outcome: LookupOutcome,
+        /** Longest provider-requested Retry-After seen during this lookup. */
+        val retryAfter: Duration? = null,
+    )
 
     suspend fun fetchCandidates(designator: Designator, date: java.time.LocalDate?): Lookup {
         var sawNotFound = false
         var sawTransientError = false
+        var retryAfter: Duration? = null
         for (provider in listOf<FlightStatusProvider>(aeroDataBox, aeroApi)) {
             if (!quota.canSpend(provider.name, provider.unitsPerLookup)) continue
             when (val result = provider.fetch(designator, date)) {
@@ -474,7 +530,10 @@ class StatusProviderChain @Inject constructor(
                     sawNotFound = true
                 }
                 is StatusResult.NoKey -> continue
-                is StatusResult.Error -> if (result.retryable) sawTransientError = true
+                is StatusResult.Error -> {
+                    if (result.retryable) sawTransientError = true
+                    result.retryAfter?.let { ra -> retryAfter = maxOf(retryAfter ?: Duration.ZERO, ra) }
+                }
             }
         }
         val outcome = when {
@@ -482,7 +541,7 @@ class StatusProviderChain @Inject constructor(
             sawTransientError -> LookupOutcome.TRANSIENT_ERROR
             else -> LookupOutcome.NONRETRYABLE_ERROR
         }
-        return Lookup(emptyList(), outcome)
+        return Lookup(emptyList(), outcome, retryAfter)
     }
 }
 
@@ -491,3 +550,6 @@ private fun List<StatusProviderChain.Lookup>.failureOutcome(): LookupOutcome = w
     any { it.outcome == LookupOutcome.TRANSIENT_ERROR } -> LookupOutcome.TRANSIENT_ERROR
     else -> LookupOutcome.NONRETRYABLE_ERROR
 }
+
+private fun List<StatusProviderChain.Lookup>.maxRetryAfter(): Duration? =
+    mapNotNull { it.retryAfter }.maxOrNull()

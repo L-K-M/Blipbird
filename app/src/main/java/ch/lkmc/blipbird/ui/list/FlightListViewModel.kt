@@ -63,6 +63,9 @@ data class FlightRow(
     val baggageBelt: String?,      // shown instead of gate once landed
     val updatedAt: Instant?,
     val airlineIata: String?,
+    /** The shared ticker value this row was derived from — composables must use
+     *  this instead of calling `Instant.now()` themselves (DS4-G9). */
+    val now: Instant,
 )
 
 data class ListUiState(
@@ -150,6 +153,7 @@ class FlightListViewModel @Inject constructor(
                 baggageBelt = snapshot?.baggageBelt,
                 updatedAt = snapshot?.fetchedAt,
                 airlineIata = designator.airlineIata,
+                now = now,
             )
         }
 

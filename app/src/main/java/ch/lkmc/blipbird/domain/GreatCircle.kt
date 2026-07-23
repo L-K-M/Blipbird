@@ -1,5 +1,6 @@
 package ch.lkmc.blipbird.domain
 
+import kotlin.math.acos
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -49,6 +50,29 @@ object GreatCircle {
         val lat = atan2(z, sqrt(x * x + y * y))
         val lon = atan2(y, x)
         return Point(Math.toDegrees(lat), Math.toDegrees(lon))
+    }
+
+    /**
+     * Signed cross-track distance (km) of p from the great circle through a→b;
+     * negative is left of the track (Veness cross-track formula).
+     */
+    fun crossTrackKm(a: Point, b: Point, p: Point): Double {
+        val d13 = angularDistance(a, p)
+        val bearingDelta = Math.toRadians(initialBearing(a, p) - initialBearing(a, b))
+        return asin((sin(d13) * sin(bearingDelta)).coerceIn(-1.0, 1.0)) * EARTH_RADIUS_KM
+    }
+
+    /**
+     * Along-track distance (km) from a to the point on the great circle a→b
+     * closest to p; negative when that point lies behind a.
+     */
+    fun alongTrackKm(a: Point, b: Point, p: Point): Double {
+        val d13 = angularDistance(a, p)
+        val bearingDelta = Math.toRadians(initialBearing(a, p) - initialBearing(a, b))
+        val dxt = asin((sin(d13) * sin(bearingDelta)).coerceIn(-1.0, 1.0))
+        val dat = acos((cos(d13) / cos(dxt)).coerceIn(-1.0, 1.0))
+        val sign = if (cos(bearingDelta) >= 0) 1.0 else -1.0
+        return sign * dat * EARTH_RADIUS_KM
     }
 
     /** Initial bearing (degrees, 0..360) from a toward b. */
