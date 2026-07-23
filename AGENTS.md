@@ -3,6 +3,45 @@
 Single-module Kotlin + Jetpack Compose Android app. Design rationale and
 roadmap live in [PLAN.md](PLAN.md); user-facing docs in [README.md](README.md).
 
+## Releasing
+
+`scripts/release.sh X.Y.Z --push` (a stub over the shared
+[release-tool](https://github.com/L-K-M/release-tool) engine) bumps
+`versionName`/`versionCode` in `app/build.gradle.kts` plus the version line at
+the top of this README, commits, tags `vX.Y.Z`, and pushes. The tag triggers
+[`release.yml`](.github/workflows/release.yml), which re-runs tests + lint,
+builds the release APK, signs it when the `ANDROID_KEYSTORE_BASE64` /
+`ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`
+secrets are all configured, verifies the APK signature and signing certificate,
+generates a SHA-256 checksum, and publishes both as GitHub Release assets. If any
+signing secret is absent, the workflow fails before building or publishing; it
+never publishes an unsigned APK. Pull requests are additionally reviewed by GLM
+5.2 via [`zai-code-review.yml`](.github/workflows/zai-code-review.yml) when the
+`ZAI_API_KEY` secret is set.
+
+## Architecture
+
+Single-module Kotlin 2.4 + Jetpack Compose (Material 3) app, MVVM with
+unidirectional data flow. Room is the source of truth, split by backup boundary:
+`blipbird-user.db` (your tracked flights — backed up) vs `blipbird-ops.db`
+(provider-derived snapshots/fixes + bundled reference tables — excluded,
+rebuildable, TTL-pruned). Every external service sits behind a provider interface
+with ordered failover; pure decision cores (phase machine, notification planner,
+cadence policy, daylight engine) are plain JVM code with unit tests.
+
+Full design rationale, verified API research, and the roadmap live in
+[`PLAN.md`](PLAN.md).
+
+### Known deviations from PLAN.md in v0.1
+
+- **Navigation:** hand-rolled 3-screen back stack instead of Navigation 3.
+- **Modules:** single `:app` module ("Kotlin packages first", per plan §3).
+- **Aliases:** stored on the tracked flight; separate `SavedFlight` entity and
+  recurring rules remain roadmap.
+- Provider legal gates from PLAN.md §4.6 (written permissions for aggregators,
+  runtime enrichment services) remain open items for a store release; v0.1 is a
+  source release.
+
 ## Toolchain
 
 - JDK 17+ (CI uses Temurin 17), Gradle 9.6.1 via the committed wrapper.

@@ -2,6 +2,8 @@
 
 A flight companion for Android.
 
+![screenshots.png](media-sources/screenshots.png)
+
 [![CI](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml/badge.svg)](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml)
 
 **Source version:** v<!-- version -->1.1.1<!-- /version --> (no packaged GitHub Release is currently published)
@@ -18,35 +20,6 @@ notifications for the moments that matter — delays, gate changes, departure,
 landing, cancellation.
 
 Open-source and ad-free, with no Blipbird account, backend, or analytics.
-
-## Features (v0.1)
-
-- **Departure-board list** — one line per flight: status word with semantic color,
-  the one phase-relevant time (countdown → lands-in → landed + belt), thin progress
-  bar, gate/terminal chips, pull-to-refresh, batch add, swipe actions.
-- **Flight dossier** — hero with big countdown and airport-local times,
-  terminal/gate/check-in/baggage facts grid, scheduled → estimated → actual
-  timeline (superseded estimates struck through; Blipbird-derived rows honestly
-  marked `~`), airline card, METAR weather decoded to plain language with the raw
-  string one tap away.
-- **Flight ribbon** — the whole flight as a horizontal strip: continuous
-  day/twilight/night gradient computed offline from solar geometry (USNO angles,
-  cruise-altitude horizon-dip correction: cabin sunsets run ~12–20 min later than
-  on the ground), sunrise/sunset markers with times, and Open-Meteo weather glyphs
-  at sampled waypoints evaluated at their overflight hour.
-- **Live route map** — real MapLibre vector tiles (OpenFreeMap style per theme)
-  with day/night terminator shading, flown ADS-B track vs great-circle guide,
-  endpoint rings, a heading-rotated aircraft symbol with staleness fade, and an
-  altitude/speed/track readout.
-- **Notifications** — delay (per-15-min slip buckets), gate change, cancellation,
-  diversion, departed, landed via snapshot diffing with a persisted dedup ledger;
-  boarding and landing-soon reminders ride user-granted exact alarms
-  (rebuilt on boot), degrading gracefully to WorkManager cadence.
-- **Themes** — Daylight (+ Material You dynamic), Cockpit (AMOLED avionics
-  green/amber), High Contrast. Instant switching, no Activity recreate.
-- **Quota-aware refresh engine** — one policy-driven periodic worker with
-  adaptive cadence tiers (6 h → 15 min around the gate-critical window), local
-  per-provider usage ledger with soft stops, visible in Settings.
 
 ## Data sources (bring your own keys)
 
@@ -99,9 +72,7 @@ are not guaranteed in zero-key mode. Paste keys in **Settings → Data sources**
 
 Blipbird has no account system, Blipbird-operated backend, or analytics. Tracked
 flight numbers, optional dates/aliases, and settings are stored locally, but may be
-included in Android OS cloud backup or device transfer. Provider-derived operational
-data and API keys are excluded from those backups; keys are AES-GCM-encrypted with a
-device-bound Android Keystore key.
+included in Android OS cloud backup or device transfer.
 
 Network features connect directly to third parties. A configured flight-status
 provider receives the flight identifier, optional date, and required credential.
@@ -132,45 +103,6 @@ Regenerate bundled reference data / icons:
 python3 scripts/generate_reference_data.py   # writes app/src/main/assets/reference/ + lockfile
 python3 scripts/generate_icons.py            # regenerates launcher mipmaps from media-sources/ (regular + fun variants)
 ```
-
-## Releasing
-
-`scripts/release.sh X.Y.Z --push` (a stub over the shared
-[release-tool](https://github.com/L-K-M/release-tool) engine) bumps
-`versionName`/`versionCode` in `app/build.gradle.kts` plus the version line at
-the top of this README, commits, tags `vX.Y.Z`, and pushes. The tag triggers
-[`release.yml`](.github/workflows/release.yml), which re-runs tests + lint,
-builds the release APK, signs it when the `ANDROID_KEYSTORE_BASE64` /
-`ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`
-secrets are all configured, verifies the APK signature and signing certificate,
-generates a SHA-256 checksum, and publishes both as GitHub Release assets. If any
-signing secret is absent, the workflow fails before building or publishing; it
-never publishes an unsigned APK. Pull requests are additionally reviewed by GLM
-5.2 via [`zai-code-review.yml`](.github/workflows/zai-code-review.yml) when the
-`ZAI_API_KEY` secret is set.
-
-## Architecture
-
-Single-module Kotlin 2.4 + Jetpack Compose (Material 3) app, MVVM with
-unidirectional data flow. Room is the source of truth, split by backup boundary:
-`blipbird-user.db` (your tracked flights — backed up) vs `blipbird-ops.db`
-(provider-derived snapshots/fixes + bundled reference tables — excluded,
-rebuildable, TTL-pruned). Every external service sits behind a provider interface
-with ordered failover; pure decision cores (phase machine, notification planner,
-cadence policy, daylight engine) are plain JVM code with unit tests.
-
-Full design rationale, verified API research, and the roadmap live in
-[`PLAN.md`](PLAN.md).
-
-### Known deviations from PLAN.md in v0.1
-
-- **Navigation:** hand-rolled 3-screen back stack instead of Navigation 3.
-- **Modules:** single `:app` module ("Kotlin packages first", per plan §3).
-- **Aliases:** stored on the tracked flight; separate `SavedFlight` entity and
-  recurring rules remain roadmap.
-- Provider legal gates from PLAN.md §4.6 (written permissions for aggregators,
-  runtime enrichment services) remain open items for a store release; v0.1 is a
-  source release.
 
 ## License & attribution
 
