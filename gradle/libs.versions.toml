@@ -1,5 +1,5 @@
 [versions]
-# AGP 9.3.0 + Gradle 9.6.1 (PLAN.md-current pair; Gradle fetched via public mirror
+# AGP 9.3.1 + Gradle 9.6.1 (PLAN.md-current pair; Gradle fetched via public mirror
 # because GitHub-hosted distribution zips are blocked in the build sandbox).
 
 agp = "9.3.1"
