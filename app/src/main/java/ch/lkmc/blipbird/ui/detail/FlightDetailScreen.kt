@@ -425,11 +425,16 @@ private fun MapCard(state: DetailUiState, onInteractionChanged: (Boolean) -> Uni
         if (dep != null && arr != null) {
             // TalkBack can't read the raw map surface (glm 4.2): describe the route
             // and how far along it the aircraft is, so the map isn't a silent gap.
+            // Guard non-finite progress — roundToInt() throws on NaN, which
+            // computeProgress can only produce from garbage sub-second durations.
+            val progressPct = state.view.progress.let {
+                if (it.isFinite()) (it.coerceIn(0f, 1f) * 100).roundToInt() else 0
+            }
             val mapDesc = stringResource(
                 R.string.map_semantics,
                 state.depAirport?.code ?: "?",
                 state.arrAirport?.code ?: "?",
-                (state.view.progress.coerceIn(0f, 1f) * 100).roundToInt(),
+                progressPct,
             )
             MapLibreRouteMap(
                 dep = dep,
@@ -507,7 +512,9 @@ private fun MapPlaceholder() {
     Box(
         Modifier
             .fillMaxWidth()
-            .height(160.dp)
+            // Match the live map's height so the card doesn't jump when the
+            // airports resolve and the map swaps in.
+            .height(280.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
         contentAlignment = Alignment.Center,
