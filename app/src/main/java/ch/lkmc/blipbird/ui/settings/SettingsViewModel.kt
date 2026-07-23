@@ -2,6 +2,7 @@ package ch.lkmc.blipbird.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import ch.lkmc.blipbird.core.data.FlightRepository
 import ch.lkmc.blipbird.core.data.QuotaLedger
 import ch.lkmc.blipbird.core.datastore.Accent
 import ch.lkmc.blipbird.core.datastore.AppIcon
@@ -10,6 +11,7 @@ import ch.lkmc.blipbird.core.datastore.SettingsRepository
 import ch.lkmc.blipbird.core.datastore.ThemeMode
 import ch.lkmc.blipbird.core.datastore.ThemeSpec
 import ch.lkmc.blipbird.platform.AppIconSwitcher
+import ch.lkmc.blipbird.platform.NotificationEmitter
 import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -43,6 +45,8 @@ class SettingsViewModel @Inject constructor(
     private val quotaLedger: QuotaLedger,
     private val reminders: ReminderScheduler,
     private val appIconSwitcher: AppIconSwitcher,
+    private val repository: FlightRepository,
+    private val notifications: NotificationEmitter,
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = combine(
@@ -89,7 +93,12 @@ class SettingsViewModel @Inject constructor(
     fun clearOpenSkySecret() = viewModelScope.launch { keyStore.setOpenSkyClientSecret(null) }
     fun setNotifCritical(v: Boolean) = viewModelScope.launch { settings.setNotifCritical(v) }
     fun setNotifStatus(v: Boolean) = viewModelScope.launch { settings.setNotifStatus(v) }
-    fun setNotifInFlight(v: Boolean) = viewModelScope.launch { settings.setNotifInFlight(v) }
+    fun setNotifInFlight(v: Boolean) = viewModelScope.launch {
+        settings.setNotifInFlight(v)
+        // Apply immediately: a card the user just disabled must not linger
+        // until the next worker pass (re-enabling restores it on that pass).
+        if (!v) repository.activeFlights().forEach { notifications.cancelOngoing(it.id) }
+    }
 
     fun setNotifReminders(v: Boolean) = viewModelScope.launch {
         settings.setNotifReminders(v)

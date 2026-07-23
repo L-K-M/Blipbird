@@ -11,7 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import ch.lkmc.blipbird.core.data.BackgroundRefreshController
 import ch.lkmc.blipbird.core.data.FlightRepository
-import ch.lkmc.blipbird.core.model.Designator
+import ch.lkmc.blipbird.core.data.displayDesignator
 import ch.lkmc.blipbird.domain.CadencePolicy
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import dagger.assisted.Assisted
@@ -90,9 +90,7 @@ class RefreshWorker @AssistedInject constructor(
                 // Keep the ongoing in-flight card's time-derived progress moving
                 // between provider refreshes (F6) — a worker pass is exactly the
                 // "legitimate update" cadence PLAN.md §13 allows for reposting.
-                val name = flight.alias
-                    ?: Designator(flight.designatorIata, flight.designatorIcao, flight.flightNumber, flight.suffix).display
-                notifications.syncOngoing(flight.id, name, snapshot)
+                notifications.syncOngoing(flight.id, flight.displayDesignator(), snapshot)
             }
         }
         return Result.success()

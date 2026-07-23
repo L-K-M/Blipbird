@@ -111,7 +111,7 @@ class FlightRepository @Inject constructor(
     suspend fun archive(id: Long) {
         trackedDao.archive(id)
         // An archived flight must not keep a live progress card up (F6).
-        notificationSink.syncOngoing(id, "", null)
+        syncOngoingQuietly(id, "", null)
     }
 
     suspend fun setAlias(id: Long, alias: String?) = trackedDao.setAlias(id, alias?.trim()?.takeIf { it.isNotEmpty() })
@@ -122,7 +122,21 @@ class FlightRepository @Inject constructor(
         backgroundRefresh.ensureScheduled()
         // Restore the ongoing card right away if the flight is mid-air (F6).
         trackedDao.byId(id)?.let { flight ->
-            notificationSink.syncOngoing(id, flight.displayDesignator(), snapshotDao.latest(id)?.toModel())
+            syncOngoingQuietly(id, flight.displayDesignator(), snapshotDao.latest(id)?.toModel())
+        }
+    }
+
+    /**
+     * Ongoing-card reconciliation is best-effort: it must never fail the
+     * primary operation that triggered it (the DB write already committed),
+     * and the card self-corrects on the next worker pass anyway.
+     */
+    private suspend fun syncOngoingQuietly(flightId: Long, designator: String, snapshot: StatusSnapshot?) {
+        try {
+            notificationSink.syncOngoing(flightId, designator, snapshot)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
         }
     }
 
@@ -151,7 +165,7 @@ class FlightRepository @Inject constructor(
         trackedDao.delete(id)
         trackBackfillAt.remove(id)
         // A deleted flight must not keep a live progress card up (F6).
-        notificationSink.syncOngoing(id, "", null)
+        syncOngoingQuietly(id, "", null)
     }
 
     // ------------------------------------------------------------------ status
@@ -249,7 +263,7 @@ class FlightRepository @Inject constructor(
         // Every fresh snapshot re-reconciles the ongoing in-flight card (F6):
         // ProgressStyle progress is a posted value, so it only advances when we
         // repost on legitimate data updates (PLAN.md §13).
-        notificationSink.syncOngoing(flightId, flight.displayDesignator(), snapshot)
+        syncOngoingQuietly(flightId, flight.displayDesignator(), snapshot)
 
         // Diff against previous and emit through the persisted dedup ledger.
         val events = NotificationPlanner.diff(previous?.toModel(), snapshot)
@@ -418,12 +432,6 @@ class FlightRepository @Inject constructor(
 
     // ------------------------------------------------------------------ mapping
 
-    fun TrackedFlightEntity.designator(): Designator =
-        Designator(designatorIata, designatorIcao, flightNumber, suffix)
-
-    fun TrackedFlightEntity.displayDesignator(): String =
-        alias ?: designator().display
-
     private fun StatusSnapshot.toEntity(flightId: Long): StatusSnapshotEntity = StatusSnapshotEntity(
         trackedFlightId = flightId,
         provider = provider,
@@ -506,6 +514,17 @@ class FlightRepository @Inject constructor(
         source = source,
     )
 }
+
+fun TrackedFlightEntity.designator(): Designator =
+    Designator(designatorIata, designatorIcao, flightNumber, suffix)
+
+/**
+ * Alias if set, else the designator — the one title used everywhere a flight
+ * is named (list rows, notifications, reminders). Top-level so platform-side
+ * callers can't drift into hand-rolling a slightly different string.
+ */
+fun TrackedFlightEntity.displayDesignator(): String =
+    alias ?: designator().display
 
 internal fun positionQueries(
     currentHex: String?,
