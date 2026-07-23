@@ -23,9 +23,9 @@ import kotlin.math.sin
  * commons-suncalc, classifies USNO light bands, and locates sunrise/sunset events
  * (bisected to the second; labeled to the minute in UI).
  *
- * Cabin-visible sunrise/sunset markers apply the cruise horizon-dip correction:
- * at ~11 km the horizon dips ≈3.1–3.4°, so the visible threshold sits near −4.2°
- * instead of −0.833°. Twilight band edges stay at their geometric USNO angles.
+ * When a geometric cruise altitude is known, cabin-visible sunrise/sunset markers
+ * apply its horizon-dip correction. Otherwise events use the surface threshold.
+ * Twilight band edges stay at their geometric USNO angles.
  */
 object DaylightEngine {
 
@@ -63,17 +63,20 @@ object DaylightEngine {
         if (altitudeMeters <= 0) 0.0 else 1.75 * kotlin.math.sqrt(altitudeMeters) / 60.0
 
     /**
-     * @param cruiseAltitudeMeters geometric cruise altitude for the cabin-visible
-     * sunrise/sunset threshold, or null to use the surface threshold only.
+     * @param cruiseAltitudeMeters explicit finite, nonnegative geometric cruise altitude
+     * for the cabin-visible sunrise/sunset threshold, or null to use the surface threshold.
      */
     fun compute(
         from: GreatCircle.Point,
         to: GreatCircle.Point,
         wheelsUp: Instant,
         wheelsDown: Instant,
-        cruiseAltitudeMeters: Double? = 11_000.0,
+        cruiseAltitudeMeters: Double? = null,
     ): Result {
         require(wheelsDown.isAfter(wheelsUp)) { "wheelsDown must be after wheelsUp" }
+        require(cruiseAltitudeMeters == null ||
+            (cruiseAltitudeMeters.isFinite() && cruiseAltitudeMeters >= 0.0)
+        ) { "cruiseAltitudeMeters must be finite and nonnegative" }
         val durationSec = Duration.between(wheelsUp, wheelsDown).seconds
         val steps = minOf(MAX_SAMPLES, maxOf(16, (durationSec / 60).toInt()))
 
