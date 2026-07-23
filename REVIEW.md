@@ -148,8 +148,6 @@ resurfacing in every review. Each notes what would flip the call.
 
 ## Ideas (novel / delightful / quirky)
 
-- **I3 — Wheels-down haptic heartbeat** — soft double-pulse on LANDED while the
-  screen is on.
 - **I5 — Jet-lag ribbon extension** — "body clock" strip from the daylight
   engine (shift = +7 h; light-exposure suggestion).
 - **I7 — Cockpit auto-engage** during the airborne window at night ("dim cabin
