@@ -47,6 +47,10 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +60,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -99,6 +105,7 @@ fun FlightDetailScreen(
         onStopOrDispose { viewModel.setScreenVisible(false) }
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var isMapInteracting by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -138,9 +145,10 @@ fun FlightDetailScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
+                    userScrollEnabled = !isMapInteracting,
                 ) {
                     item { Hero(state) }
-                    item { MapCard(state) }
+                    item { MapCard(state, onInteractionChanged = { isMapInteracting = it }) }
                     if (wide && state.snapshot != null) {
                         item {
                             Row(verticalAlignment = Alignment.Top) {
@@ -371,7 +379,8 @@ private fun AirportColumn(
 // ---------------------------------------------------------------- map
 
 @Composable
-private fun MapCard(state: DetailUiState) {
+private fun MapCard(state: DetailUiState, onInteractionChanged: (Boolean) -> Unit) {
+    val currentOnInteractionChanged by rememberUpdatedState(onInteractionChanged)
     SectionCard(stringResource(R.string.live_map)) {
         val dep = state.depAirport?.let { a -> a.lat?.let { la -> a.lon?.let { lo -> GreatCircle.Point(la, lo) } } }
         val arr = state.arrAirport?.let { a -> a.lat?.let { la -> a.lon?.let { lo -> GreatCircle.Point(la, lo) } } }
@@ -382,7 +391,28 @@ private fun MapCard(state: DetailUiState) {
                 lastFix = state.lastFix,
                 track = state.track,
                 progress = state.view.progress,
-                modifier = Modifier.fillMaxWidth().height(280.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp)
+                    // Work around maplibre-compose#726: its AndroidView and the list otherwise
+                    // both handle the same pointer stream.
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            var interacting = false
+                            try {
+                                while (true) {
+                                    val hasPressedPointer = awaitPointerEvent(PointerEventPass.Initial)
+                                        .changes.any { it.pressed }
+                                    if (hasPressedPointer != interacting) {
+                                        interacting = hasPressedPointer
+                                        currentOnInteractionChanged(interacting)
+                                    }
+                                }
+                            } finally {
+                                if (interacting) currentOnInteractionChanged(false)
+                            }
+                        }
+                    },
             )
         }
         Spacer(Modifier.height(8.dp))
