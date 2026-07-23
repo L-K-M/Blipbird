@@ -1,4 +1,4 @@
-# Blipbird 🐦📡
+# Blipbird
 
 A flight companion for Android.
 
