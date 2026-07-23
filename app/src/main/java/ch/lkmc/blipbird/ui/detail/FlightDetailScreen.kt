@@ -423,19 +423,24 @@ private fun MapCard(state: DetailUiState, onInteractionChanged: (Boolean) -> Uni
         val dep = state.depAirport?.let { a -> a.lat?.let { la -> a.lon?.let { lo -> GreatCircle.Point(la, lo) } } }
         val arr = state.arrAirport?.let { a -> a.lat?.let { la -> a.lon?.let { lo -> GreatCircle.Point(la, lo) } } }
         if (dep != null && arr != null) {
-            // TalkBack can't read the raw map surface (glm 4.2): describe the route
-            // and how far along it the aircraft is, so the map isn't a silent gap.
-            // Guard non-finite progress — roundToInt() throws on NaN, which
-            // computeProgress can only produce from garbage sub-second durations.
-            val progressPct = state.view.progress.let {
-                if (it.isFinite()) (it.coerceIn(0f, 1f) * 100).roundToInt() else 0
+            // TalkBack can't read the raw map surface (glm 4.2): describe the
+            // route, and how far along it the aircraft is once it's moving. Only
+            // announce a percentage when progress is real and > 0 — a not-yet-
+            // departed flight (0), or the NaN a garbage sub-second duration could
+            // yield, reads as "not yet departed" rather than a misleading "0%".
+            val progress = state.view.progress
+            val depCode = state.depAirport?.code ?: "?"
+            val arrCode = state.arrAirport?.code ?: "?"
+            val mapDesc = if (progress.isFinite() && progress > 0f) {
+                stringResource(
+                    R.string.map_semantics,
+                    depCode,
+                    arrCode,
+                    (progress.coerceIn(0f, 1f) * 100).roundToInt(),
+                )
+            } else {
+                stringResource(R.string.map_semantics_predeparture, depCode, arrCode)
             }
-            val mapDesc = stringResource(
-                R.string.map_semantics,
-                state.depAirport?.code ?: "?",
-                state.arrAirport?.code ?: "?",
-                progressPct,
-            )
             MapLibreRouteMap(
                 dep = dep,
                 arr = arr,
