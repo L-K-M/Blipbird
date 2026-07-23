@@ -180,7 +180,7 @@ fun BlipbirdTheme(
     }
 
     CompositionLocalProvider(LocalExtendedColors provides extended) {
-        MaterialTheme(colorScheme = colorScheme, content = content)
+        MaterialTheme(colorScheme = colorScheme, typography = BlipbirdTypography, content = content)
     }
 }
 

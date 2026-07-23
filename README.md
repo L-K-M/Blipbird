@@ -4,7 +4,7 @@ A flight companion for Android.
 
 [![CI](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml/badge.svg)](https://github.com/L-K-M/Blipbird/actions/workflows/ci.yml)
 
-**Source version:** v<!-- version -->1.0.0<!-- /version --> (no packaged GitHub Release is currently published)
+**Source version:** v<!-- version -->1.1.0<!-- /version --> (no packaged GitHub Release is currently published)
 
 > [!IMPORTANT]
 > LLM Disclosure: Blipbird was built with substantial help from large language models.
@@ -178,6 +178,7 @@ Code: see `LICENSE`. Data/attribution: displayed in-app under **Settings →
 About**, including "Weather data by Open-Meteo.com" (CC BY 4.0), OurAirports
 (public domain), mwgg/Airports (MIT), OpenTravelData (CC BY 4.0), adsb.lol
 (ODbL), OpenSky Network (optional; research/non-commercial API terms),
+Space Grotesk and Inter fonts (SIL OFL 1.1),
 commons-suncalc (Apache-2.0), great-circle math after Chris Veness (MIT),
 terminator math after Leaflet.Terminator (MIT). Airline names and codes are
 trademarks of their respective owners, used for identification only. All flight

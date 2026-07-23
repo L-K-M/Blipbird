@@ -582,6 +582,7 @@ private const val ATTRIBUTION_TEXT = """Data sources & licenses:
 • Airlines: OpenTravelData (CC BY 4.0, filtered to active carriers)
 • Weather: NOAA aviationweather.gov · Weather data by Open-Meteo.com (CC BY 4.0)
 • Solar math: commons-suncalc (Apache-2.0); great-circle formulas after Chris Veness (MIT); terminator math after Leaflet.Terminator (MIT)
+• Fonts: Space Grotesk (Florian Karsten) and Inter (Rasmus Andersson), both SIL Open Font License 1.1
 
 Privacy: No Blipbird account, backend, or analytics. User-authored flights and settings may be included in Android OS backup or device transfer; operational provider data and API keys are excluded. Configured status providers receive flight identifiers, dates, and credentials as needed; a configured OpenSky client sends OpenSky the aircraft address and your credentials. ADS-B, weather, and map hosts receive their respective queries and ordinary request metadata.
 

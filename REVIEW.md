@@ -18,12 +18,6 @@ genuinely still open.
 
 ## Open bugs
 
-### glm 1.10 · Cancelled/diverted/departed/landed re-fire after the 3-day prune — MEDIUM
-`EmittedEvent.expiresAt` shares the snapshot TTL; after prune the next refresh
-sees `previous == null` and re-emits the transition. **Owner decision (July
-2026): decouple the emitted-event ledger from the snapshot prune and retain it
-~30 days** — tiny rows, kills re-fires for any realistically re-opened flight.
-
 ### glm 1.11 · `FlightRepository.delete()` is not transactional — LOW
 Five DAO calls across two DBs; a crash mid-way orphans rows. Needs an ops-side
 `@Transaction` method.
@@ -45,10 +39,6 @@ bumps no longer zero the ledger. Optional follow-up: move `quota_ledger` (and
 the backoff table) out of the "rebuildable by design" ops DB conceptually, or
 document that the ops DB is no longer fully rebuildable.
 
-### B22 · DaylightEngine bisection early-exit is a no-op — LOW (code health)
-`return@repeat` as the last statement just continues the loop; the precision
-early-exit never fires (harmless — always 24 iterations).
-
 ### B18 · Quota ledger check-then-record race — LOW
 `canSpend` + `record` are non-atomic; bounded overshoot near the soft stop.
 
@@ -59,9 +49,7 @@ collisions). #27 proposed a provably collision-free alternative
 forensically.
 
 ### DS4-new: unique findings from the DeepSeek review (`docs/reviews/ds4.md`)
-- **DS4-B17 — `dateLocal` parsed without `runCatching`** in
-  `FlightRepository.refreshStatus`; the stored format is stable (`YYYY-MM-DD`)
-  but a malformed pin would crash the refresh loop. Defence-in-depth.
+
 - **DS4-G9 — `phaseTime` calls `Instant.now()` at composition time** (list
   card); the ViewModel already ticks a shared clock — pass `now` through the
   row data.
@@ -72,18 +60,12 @@ forensically.
 - **DS4-V19 — Ribbon weather glyphs are evenly spaced** (`weight(1f)`) while
   sample points are positioned along the great-circle fraction — glyphs drift
   from their true positions (sharpens V7).
-- **DS4-V20 — Past-due countdown reads "Departs in 0m"** — switch to
-  "Departed"-style copy when the target has passed.
+
 - **DS4-V21 — Detail countdown freezes between 15 s ticks** vs the list's 30 s
   cadence — unify tick sources, consider animation smoothing.
 
 ### glm-A: further verified defects (from the GLM backlog)
-- **Future-dated ADS-B fixes treated as fresh** — `FlightPhaseMachine` uses
-  `Duration.between(...).abs() < 30m`, so a fix timestamped in the future (clock
-  skew, buggy feeder) counts as airborne. Require `!fix.at.isAfter(now)`.
-- **Codeshare self-reference** — when ADB reports `IsCodeshared`,
-  `codeshareOf = number` marks the flight as its own codeshare (ADB exposes no
-  operating field there). Prefer null on both until enriched.
+
 - **ReferenceImporter CSV parser** doesn't handle embedded newlines in quoted
   fields / trailing doubled quotes. Harden or use a real CSV lib.
 - **No `Retry-After` honoring** — 429 just falls through the provider chain.
@@ -98,10 +80,7 @@ forensically.
   "Lands in"/"Landed" (list `phaseTime`), timeline labels "Boarding"/"Pushback"/
   "Takeoff"/"Landing"/"Gate arrival", `ATTRIBUTION_TEXT`, "Weather data by
   Open-Meteo.com", map attribution line. (glm 5.5 is the same finding.)
-- **G3 — README/impl drift:** "raw METAR one tap away" — it's always visible
-  under the decoded weather. **Owner decision (July 2026): collapse the raw
-  string behind a tap/expand affordance** so the weather card declutters and
-  the README claim becomes true.
+
 - **G5 — remainder: error observability in the UI.** #60 landed persisted
   lookup outcomes and backoff; the UI still can't distinguish "no key" /
   "quota" / "rate limited" / "offline". Thread the last error into list/detail
@@ -134,24 +113,15 @@ forensically.
 - **P7 — GeoJSON string building on the composition thread.**
 - **glm 2.3 — 13-way detail `combine` rebuilds everything per fix** (~10 s while
   airborne), recomposing heavyweight items. Split map-only state out.
-- **glm 2.2 — Hero brush built inside the composable per recomposition**
-  (`remember` it against the palette inputs).
-- **glm 2.7 — remainder: fallback monogram palette allocated per lookup** for
-  codes outside the brand table; hoist to a top-level val.
 
 ---
 
 ## Visual, layout & accessibility backlog (the "premium iOS" gap)
 
-- **V1 / glm 3.1–3.2 — No typography system, no tabular figures.** Default
-  Roboto everywhere; countdown digits wiggle as they tick. A `Typography` with
-  a display face + `"tnum"` on all numeric text is the single biggest aesthetic
-  lever. **Owner decision (July 2026): Space Grotesk for display/headline/
-  numeric text, Inter for body** (both OFL, bundleable). PLAN §10.2 (merged in
-  #13) specifies the target system.
 - **V2 — No motion design.** Screen changes are hard cuts; even slide/fade
   transitions buy disproportionate polish. (#21 added list-item animation; #62
-  added the micro-flourishes.)
+  added the micro-flourishes; the V1 type system landed July 2026 — motion is
+  the remaining aesthetic lever.)
 - **V3 — No haptics** (PLAN M4): pull-to-refresh completion, swipe thresholds,
   wheels-down.
 - **V5 — Empty map card** renders header + attribution and nothing else when
@@ -249,13 +219,12 @@ CLA/DCO process.
 
 ## Suggested next cycle
 
-1. Quick wins: glm-A future-dated fixes + codeshare self-reference, DS4-B17,
-   DS4-V20, B22, glm 2.7/glm 2.2 hoists, G3 (collapse raw METAR per owner
-   decision), glm 1.10 (30-day ledger retention per owner decision).
+1. Remaining small fixes: DS4-G9/G10, glm 1.11 transactional delete,
+   glm 1.16 route-corridor check, glm-A CSV/Retry-After/crash-logger items.
 2. G5 remainder — surface lookup outcomes in the UI (the data is persisted
    since #60).
-3. The two aesthetic levers: V1 typography (Space Grotesk display + Inter
-   body, per owner decision) + V2 motion — PLAN §10.2 is the spec.
+3. V2 motion design — the remaining aesthetic lever now that the V1 type
+   system has landed; PLAN §10.2 is the spec.
 4. Flagship feature: F6 ongoing in-flight notification (owner pick over F10).
 5. Structural: G10 navigation rework (unlocks VM scoping, predictive back, and
    removes the B4 workaround).
