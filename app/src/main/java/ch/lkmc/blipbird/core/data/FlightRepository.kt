@@ -579,21 +579,27 @@ class StatusProviderChain @Inject constructor(
         val failures = mutableSetOf<LookupOutcome>()
         var retryAfter: Duration? = null
         for (provider in listOf<FlightStatusProvider>(aeroDataBox, aeroApi)) {
-            if (!quota.canSpend(provider.name, provider.unitsPerLookup)) {
+            // Reserve the unit atomically before the request so two concurrent
+            // lookups can't both slip past the soft stop (B18); refund it below
+            // when the outcome wasn't a billable lookup (no key / error).
+            if (!quota.trySpend(provider.name, provider.unitsPerLookup)) {
                 failures += LookupOutcome.QUOTA_EXHAUSTED
                 continue
             }
             when (val result = provider.fetch(designator, date)) {
                 is StatusResult.Found -> {
-                    quota.record(provider.name, provider.unitsPerLookup)
                     return Lookup(result.flights, LookupOutcome.SUCCESS)
                 }
                 is StatusResult.NotFound -> {
-                    quota.record(provider.name, provider.unitsPerLookup)
+                    // A real lookup happened — keep the reserved unit.
                     failures += LookupOutcome.NOT_FOUND
                 }
-                is StatusResult.NoKey -> failures += LookupOutcome.NO_KEY
+                is StatusResult.NoKey -> {
+                    quota.refund(provider.name, provider.unitsPerLookup)
+                    failures += LookupOutcome.NO_KEY
+                }
                 is StatusResult.Error -> {
+                    quota.refund(provider.name, provider.unitsPerLookup)
                     failures += when {
                         result.rateLimited -> LookupOutcome.RATE_LIMITED
                         result.retryable -> LookupOutcome.TRANSIENT_ERROR
