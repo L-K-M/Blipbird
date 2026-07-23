@@ -45,13 +45,9 @@ class ArchivedFlightsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val rows: StateFlow<List<ArchivedRow>> = repository.observeArchivedFlights()
-        .map { flights ->
-            // Flow.map's transform is suspend, but the inner build is too, so
-            // iterate explicitly rather than List.map.
-            val out = mutableListOf<ArchivedRow>()
-            for (flight in flights) out += buildRow(flight)
-            out.toList()
-        }
+        // Iterable.map is inline, so calling the suspend buildRow inside its
+        // lambda is fine within this (suspend) Flow.map transform.
+        .map { flights -> flights.map { buildRow(it) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private suspend fun buildRow(f: TrackedFlightEntity): ArchivedRow {
