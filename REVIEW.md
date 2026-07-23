@@ -72,14 +72,11 @@ forensically.
   refresh METARs on their own cadence.
 - **P3 — First-launch reference import races the UI:** enrichment returns nulls
   during the CSV import and never retries. Trigger re-enrichment on completion.
-- **P4 — List rows recompose wholesale on any row change** — `contentType` +
-  stable row classes.
 - **P5 — remainder: theme flash on cold start.** The `values-night` window
   theme landed (#25); the theme spec is still collected with a default
   `initialValue` — read the first value blocking or cache it in a fast-path
   pref.
 - **P6 — No baseline profile / macrobenchmark** (PLAN M4's `:benchmark`).
-- **P7 — GeoJSON string building on the composition thread.**
 - **glm 2.3 — 13-way detail `combine` rebuilds everything per fix** (~10 s while
   airborne), recomposing heavyweight items. Split map-only state out.
 
@@ -95,8 +92,10 @@ forensically.
   wheels-down.
 - **V5 — Empty map card** renders header + attribution and nothing else when
   coordinates are unknown. Placeholder or hide.
-- **V6 — Add sheet:** plain text field for the date (use `DatePickerDialog`),
-  no loading state while resolving, silent date parse errors (glm 5.8).
+- **V6 — remainder: no loading state while resolving.** The add sheet's date
+  field is now a `DatePickerDialog` (read-only, clearable) and silent date parse
+  errors are gone with it (glm 5.8); still open: no in-sheet progress indicator
+  while a pasted batch resolves.
 - **V7 remainder — Ribbon niggles:** weather glyphs drift left of their sample
   positions (DS4-V19); sunrise/sunset times render in device TZ unlabeled;
   events can crowd on narrow phones.
