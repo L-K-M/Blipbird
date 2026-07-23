@@ -10,7 +10,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.ui.unit.IntOffset
 
 /**
@@ -30,10 +29,15 @@ object BlipbirdMotion {
 
     // ---- durations (fades, color flips, other deterministic tweens)
     const val DURATION_SHORT_MS = 150
+    // Reserved for the component-spec migration (REVIEW.md V2 remainder):
+    // status-chip color flip, sheet present. Not yet wired up.
     const val DURATION_MEDIUM_MS = 300
     const val DURATION_LONG_MS = 450
 
-    /** M3 emphasized-decelerate: fast start, gentle landing. */
+    /**
+     * M3 emphasized-decelerate: fast start, gentle landing. Reserved for the
+     * component-spec migration (REVIEW.md V2 remainder).
+     */
     val StandardEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
     /** Critically damped spatial spring for screen-scale movement. */
@@ -48,20 +52,27 @@ object BlipbirdMotion {
     /**
      * Forward navigation (row tap → detail, list → settings): the incoming
      * screen pushes in from the trailing edge and covers the outgoing one,
-     * which parallax-slides a quarter width away — the iOS-style push. The
-     * caller puts the incoming screen on top via `targetContentZIndex`.
+     * which parallax-slides a quarter width away — the iOS-style push.
+     * [zIndex] is the incoming screen's stacking order; pass its navigation
+     * depth so pushes cover and pops reveal.
      */
-    fun push(): ContentTransform =
-        slideInHorizontally(screenSpring()) { it }
-            .togetherWith(slideOutHorizontally(screenSpring()) { -it / 4 })
+    fun push(zIndex: Float): ContentTransform = ContentTransform(
+        targetContentEnter = slideInHorizontally(screenSpring()) { it },
+        initialContentExit = slideOutHorizontally(screenSpring()) { -it / 4 },
+        targetContentZIndex = zIndex,
+    )
 
     /** Back navigation: the exact reverse of [push]. */
-    fun pop(): ContentTransform =
-        slideInHorizontally(screenSpring()) { -it / 4 }
-            .togetherWith(slideOutHorizontally(screenSpring()) { it })
+    fun pop(zIndex: Float): ContentTransform = ContentTransform(
+        targetContentEnter = slideInHorizontally(screenSpring()) { -it / 4 },
+        initialContentExit = slideOutHorizontally(screenSpring()) { it },
+        targetContentZIndex = zIndex,
+    )
 
     /** Reduced-motion substitute: a quick crossfade, no spatial movement. */
-    fun crossfade(): ContentTransform =
-        fadeIn(tween(DURATION_SHORT_MS))
-            .togetherWith(fadeOut(tween(DURATION_SHORT_MS)))
+    fun crossfade(zIndex: Float): ContentTransform = ContentTransform(
+        targetContentEnter = fadeIn(tween(DURATION_SHORT_MS)),
+        initialContentExit = fadeOut(tween(DURATION_SHORT_MS)),
+        targetContentZIndex = zIndex,
+    )
 }

@@ -214,14 +214,14 @@ fun BlipbirdNav(
         targetState = current,
         transitionSpec = {
             val forward = screenRank(targetState) >= screenRank(initialState)
-            val transform = when {
-                reducedMotion -> BlipbirdMotion.crossfade()
-                forward -> BlipbirdMotion.push()
-                else -> BlipbirdMotion.pop()
-            }
             // Deeper screens render above shallower ones, so a push covers the
             // outgoing screen and a pop reveals the incoming one beneath.
-            transform.apply { targetContentZIndex = screenRank(targetState).toFloat() }
+            val zIndex = screenRank(targetState).toFloat()
+            when {
+                reducedMotion -> BlipbirdMotion.crossfade(zIndex)
+                forward -> BlipbirdMotion.push(zIndex)
+                else -> BlipbirdMotion.pop(zIndex)
+            }
         },
         label = "screen",
     ) { screen ->
