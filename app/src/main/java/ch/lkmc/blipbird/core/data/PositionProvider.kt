@@ -5,6 +5,7 @@ import ch.lkmc.blipbird.core.network.AdsbAircraft
 import ch.lkmc.blipbird.core.network.AdsbApi
 import ch.lkmc.blipbird.core.network.AdsbProviderSpec
 import java.time.Instant
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,20 +31,16 @@ class PositionProvider @Inject constructor(
     }
 
     suspend fun fetch(query: Query): PositionFix? {
+        val queryValue = query.normalizedIdentity() ?: return null
         for (spec in chain) {
             val url = spec.base + when (query) {
-                is Query.Callsign -> spec.callsignPath(query.callsign)
-                is Query.Registration -> spec.regPath(query.registration)
-                is Query.Hex -> spec.hexPath(query.icao24)
+                is Query.Callsign -> spec.callsignPath(queryValue)
+                is Query.Registration -> spec.regPath(queryValue)
+                is Query.Hex -> spec.hexPath(queryValue)
             }
             try {
                 val resp = api.byUrl(url)
-                // Require a non-null seenPos: a record with lat/lon but no
-                // position-timestamp can't be aged honestly, and the old code
-                // (`Instant.now().minusMillis(((seenPos ?: 0.0)*1000)...)`) treated
-                // such a record as brand-new and persisted it as the latest fix.
-                val ac = resp.ac.firstOrNull { it.lat != null && it.lon != null && it.seenPos != null }
-                    ?: continue
+                val ac = selectAdsbAircraft(query, resp.ac) ?: continue
                 return ac.toFix(spec.name)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -54,19 +51,54 @@ class PositionProvider @Inject constructor(
         return null
     }
 
-    private fun AdsbAircraft.toFix(source: String): PositionFix = PositionFix(
-        at = Instant.now().minusMillis(((seenPos ?: 0.0) * 1000).toLong()),
-        lat = lat!!,
-        lon = lon!!,
-        baroAltitudeFt = baroAltitudeFt,
-        onGround = onGround,
-        groundSpeedKt = gs,
-        trackDeg = track,
-        verticalRateFpm = baroRate,
-        seenPosAgeSec = seenPos ?: 0.0,
-        icao24 = hex?.lowercase(),
-        callsign = callsignTrimmed,
-        registration = r,
-        source = source,
-    )
+    private fun AdsbAircraft.toFix(source: String): PositionFix {
+        val age = seenPos!!
+        return PositionFix(
+            at = Instant.now().minusMillis((age * 1000).toLong()),
+            lat = lat!!,
+            lon = lon!!,
+            baroAltitudeFt = baroAltitudeFt,
+            onGround = onGround,
+            groundSpeedKt = gs,
+            trackDeg = track,
+            verticalRateFpm = baroRate,
+            seenPosAgeSec = age,
+            icao24 = hex?.trim()?.lowercase(Locale.ROOT),
+            callsign = callsignTrimmed,
+            registration = r?.trim(),
+            source = source,
+        )
+    }
 }
+
+internal const val MAX_ADSB_FIX_AGE_SECONDS = 300.0
+
+internal fun selectAdsbAircraft(
+    query: PositionProvider.Query,
+    aircraft: List<AdsbAircraft>,
+): AdsbAircraft? {
+    val expected = query.normalizedIdentity() ?: return null
+    return aircraft.asSequence()
+        .filter { candidate -> candidate.matches(query, expected) && candidate.hasValidPosition() }
+        .minByOrNull { it.seenPos!! }
+}
+
+private fun PositionProvider.Query.normalizedIdentity(): String? = when (this) {
+    is PositionProvider.Query.Hex -> icao24.trim().lowercase(Locale.ROOT)
+        .takeIf { it.matches(Regex("[0-9a-f]{6}")) }
+    is PositionProvider.Query.Registration -> registration.trim().uppercase(Locale.ROOT)
+        .ifEmpty { null }
+    is PositionProvider.Query.Callsign -> callsign.trim().uppercase(Locale.ROOT)
+        .ifEmpty { null }
+}
+
+private fun AdsbAircraft.matches(query: PositionProvider.Query, expected: String): Boolean = when (query) {
+    is PositionProvider.Query.Hex -> hex?.trim()?.lowercase(Locale.ROOT) == expected
+    is PositionProvider.Query.Registration -> r?.trim()?.uppercase(Locale.ROOT) == expected
+    is PositionProvider.Query.Callsign -> callsignTrimmed?.uppercase(Locale.ROOT) == expected
+}
+
+private fun AdsbAircraft.hasValidPosition(): Boolean =
+    lat != null && lat.isFinite() && lat in -90.0..90.0 &&
+        lon != null && lon.isFinite() && lon in -180.0..180.0 &&
+        seenPos != null && seenPos.isFinite() && seenPos in 0.0..MAX_ADSB_FIX_AGE_SECONDS

@@ -214,20 +214,17 @@ class FlightRepository @Inject constructor(
     fun observeTrack(flightId: Long): Flow<List<PositionFix>> =
         fixDao.observeTrack(flightId).map { list -> list.map { it.toModel() } }
 
-    /**
-     * Position resolution chain (PLAN.md §5 step 5): known hex → callsign guess →
-     * registration from the status payload. Persists the fix for track building.
-     */
+    /** Persists the first validated fix from the current aircraft identity. */
     suspend fun pollPosition(flightId: Long): PositionFix? {
         val flight = trackedDao.byId(flightId) ?: return null
         val snapshot = snapshotDao.latest(flightId)
 
-        val queries = buildList {
-            snapshot?.icao24?.let { add(PositionProvider.Query.Hex(it)) }
-            fixDao.latest(flightId)?.icao24?.let { add(PositionProvider.Query.Hex(it)) }
-            flight.designator().callsignGuess?.let { add(PositionProvider.Query.Callsign(it)) }
-            snapshot?.registration?.let { add(PositionProvider.Query.Registration(it)) }
-        }.distinct()
+        val queries = positionQueries(
+            currentHex = snapshot?.icao24,
+            currentRegistration = snapshot?.registration,
+            cachedHex = fixDao.latest(flightId)?.icao24,
+            callsignGuess = flight.designator().callsignGuess,
+        )
 
         for (q in queries) {
             val fix = positionProvider.fetch(q) ?: continue
@@ -341,6 +338,19 @@ class FlightRepository @Inject constructor(
         source = source,
     )
 }
+
+internal fun positionQueries(
+    currentHex: String?,
+    currentRegistration: String?,
+    cachedHex: String?,
+    callsignGuess: String?,
+): List<PositionProvider.Query> = buildList {
+    currentHex?.let { add(PositionProvider.Query.Hex(it)) }
+    currentRegistration?.let { add(PositionProvider.Query.Registration(it)) }
+    // A new status registration means a cached hex may identify the previous aircraft.
+    if (currentRegistration == null) cachedHex?.let { add(PositionProvider.Query.Hex(it)) }
+    callsignGuess?.let { add(PositionProvider.Query.Callsign(it)) }
+}.distinct()
 
 /**
  * Ordered status-provider failover with quota gating: AeroDataBox first (bigger
