@@ -1,30 +1,28 @@
 #!/usr/bin/env python3
-"""Generate Android launcher assets from media-sources/icon-regular.png (PLAN.md §10.1).
+"""Generate Android launcher assets from media-sources/ (PLAN.md §10.1).
 
-The master artwork is used FULL-BLEED and unaltered: it fills the entire
-adaptive-icon canvas as the background layer, and launchers apply their own
-shape mask over it (circle/squircle/rounded square — imposed by the platform,
-not by this script). Outputs, per density:
+Two switchable icon variants (Settings → Appearance → App icon), each used
+FULL-BLEED and unaltered — launchers apply their own shape mask:
 
-  mipmap-*/ic_launcher_bg.png     full-bleed artwork on the 108dp adaptive canvas
-  mipmap-*/ic_launcher.png        legacy square (full-bleed, rounded corners)
-  mipmap-*/ic_launcher_round.png  legacy round (pre-8.0 launchers require the mask)
+  icon-regular.png → ic_launcher_bg / ic_launcher / ic_launcher_round
+  icon-fun.png     → ic_launcher_fun_bg / ic_launcher_fun / ic_launcher_fun_round
 
-plus app/src/main/ic_launcher-playstore.png (512px) for the Play listing.
-The adaptive foreground is an empty vector (all art lives in the background);
-the monochrome/notification silhouette is a hand-authored vector drawable.
+Per density: *_bg is the artwork on the 108dp adaptive canvas; the plain and
+_round outputs are the pre-8.0 legacy square (rounded corners) and circle
+masks. The Play Store image (512px) comes from the regular variant. Adaptive
+foregrounds are an empty vector (all art lives in the background layer); the
+monochrome/notification silhouette is a hand-authored vector drawable.
 """
 from PIL import Image, ImageDraw
 import os
 
-SRC = os.path.join(os.path.dirname(__file__), "..", "media-sources", "icon-regular.png")
+MEDIA = os.path.join(os.path.dirname(__file__), "..", "media-sources")
 RES = os.path.join(os.path.dirname(__file__), "..", "app", "src", "main", "res")
 
+VARIANTS = {"": "icon-regular.png", "_fun": "icon-fun.png"}   # name suffix → source
 DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0, "xxxhdpi": 4.0}
 ADAPTIVE_DP = 108   # adaptive icon canvas
 LEGACY_DP = 48
-
-src = Image.open(SRC).convert("RGBA")
 
 
 def circle_crop(img: Image.Image, size: int) -> Image.Image:
@@ -49,18 +47,22 @@ def rounded_square(img: Image.Image, size: int, radius_frac: float = 0.18) -> Im
     return out
 
 
-for density, scale in DENSITIES.items():
-    d = os.path.join(RES, f"mipmap-{density}")
-    os.makedirs(d, exist_ok=True)
+for suffix, source in VARIANTS.items():
+    src = Image.open(os.path.join(MEDIA, source)).convert("RGBA")
+    for density, scale in DENSITIES.items():
+        d = os.path.join(RES, f"mipmap-{density}")
+        os.makedirs(d, exist_ok=True)
 
-    # Adaptive background: the artwork itself, full-bleed on the 108dp canvas.
-    canvas_px = round(ADAPTIVE_DP * scale)
-    src.resize((canvas_px, canvas_px), Image.LANCZOS).save(os.path.join(d, "ic_launcher_bg.png"))
+        canvas_px = round(ADAPTIVE_DP * scale)
+        src.resize((canvas_px, canvas_px), Image.LANCZOS).save(
+            os.path.join(d, f"ic_launcher{suffix}_bg.png"))
 
-    legacy_px = round(LEGACY_DP * scale)
-    rounded_square(src, legacy_px).save(os.path.join(d, "ic_launcher.png"))
-    circle_crop(src, legacy_px).save(os.path.join(d, "ic_launcher_round.png"))
+        legacy_px = round(LEGACY_DP * scale)
+        rounded_square(src, legacy_px).save(os.path.join(d, f"ic_launcher{suffix}.png"))
+        circle_crop(src, legacy_px).save(os.path.join(d, f"ic_launcher{suffix}_round.png"))
 
-src.resize((512, 512), Image.LANCZOS).convert("RGB").save(
-    os.path.join(RES, "..", "ic_launcher-playstore.png"))
+    if suffix == "":
+        src.resize((512, 512), Image.LANCZOS).convert("RGB").save(
+            os.path.join(RES, "..", "ic_launcher-playstore.png"))
+
 print("icons generated")

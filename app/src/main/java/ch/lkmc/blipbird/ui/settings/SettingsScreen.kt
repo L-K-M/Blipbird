@@ -70,7 +70,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import ch.lkmc.blipbird.core.datastore.Accent
+import ch.lkmc.blipbird.core.datastore.AppIcon
 import ch.lkmc.blipbird.core.datastore.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -355,6 +358,31 @@ private fun AppearanceSection(state: SettingsUiState, viewModel: SettingsViewMod
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
+    Spacer(Modifier.height(16.dp))
+    Text(stringResource(R.string.settings_app_icon), style = MaterialTheme.typography.bodyLarge)
+    Text(
+        stringResource(R.string.settings_app_icon_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(10.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        AppIconChoice(
+            label = stringResource(R.string.app_icon_regular),
+            // The *_bg mipmaps are plain full-bleed PNGs (the adaptive XMLs
+            // shadow ic_launcher itself, which painterResource can't decode).
+            image = R.mipmap.ic_launcher_bg,
+            selected = state.appIcon == AppIcon.REGULAR,
+            onClick = { viewModel.setAppIcon(AppIcon.REGULAR) },
+        )
+        AppIconChoice(
+            label = stringResource(R.string.app_icon_fun),
+            image = R.mipmap.ic_launcher_fun_bg,
+            selected = state.appIcon == AppIcon.FUN,
+            onClick = { viewModel.setAppIcon(AppIcon.FUN) },
+        )
+    }
+
     if (showPicker) {
         ColorPickerDialog(
             initial = Color(customSeed ?: (spec.accent as? Accent.Seed)?.argb ?: Accent.BRAND_SEED),
@@ -364,6 +392,38 @@ private fun AppearanceSection(state: SettingsUiState, viewModel: SettingsViewMod
                 viewModel.setAccent(Accent.Seed(color.toSeedArgb()))
             },
         )
+    }
+}
+
+@Composable
+private fun AppIconChoice(
+    label: String,
+    image: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(6.dp),
+    ) {
+        Image(
+            painterResource(image),
+            contentDescription = label,
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .border(
+                    width = if (selected) 3.dp else 1.dp,
+                    color = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outlineVariant,
+                    shape = CircleShape,
+                ),
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium)
     }
 }
 

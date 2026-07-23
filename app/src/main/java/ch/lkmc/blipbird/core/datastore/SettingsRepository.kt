@@ -14,6 +14,12 @@ import javax.inject.Singleton
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/** Launcher icon choice; [aliasSuffix] names the manifest activity-alias. */
+enum class AppIcon(val aliasSuffix: String) {
+    REGULAR("LauncherRegular"),
+    FUN("LauncherFun"),
+}
+
 /**
  * What tints the app: the system wallpaper palette, the curated Cockpit scheme,
  * or any user-picked seed color (presets are just well-chosen seeds).
@@ -73,6 +79,7 @@ class SettingsRepository @Inject constructor(
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val ACCENT = stringPreferencesKey("accent")
         val HIGH_CONTRAST = booleanPreferencesKey("high_contrast")
+        val APP_ICON = stringPreferencesKey("app_icon")
         val NOTIF_CRITICAL = booleanPreferencesKey("notif_critical")
         val NOTIF_STATUS = booleanPreferencesKey("notif_status")
         val NOTIF_REMINDERS = booleanPreferencesKey("notif_reminders")
@@ -88,6 +95,10 @@ class SettingsRepository @Inject constructor(
         )
     }
 
+    val appIcon: Flow<AppIcon> = context.settingsStore.data.map { p ->
+        p[Keys.APP_ICON]?.let { runCatching { AppIcon.valueOf(it) }.getOrNull() } ?: AppIcon.REGULAR
+    }
+
     val notifCritical: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_CRITICAL] ?: true }
     val notifStatus: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_STATUS] ?: true }
     val notifReminders: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_REMINDERS] ?: true }
@@ -95,6 +106,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setThemeMode(mode: ThemeMode) = context.settingsStore.edit { it[Keys.THEME_MODE] = mode.name }
     suspend fun setAccent(accent: Accent) = context.settingsStore.edit { it[Keys.ACCENT] = accent.serialize() }
     suspend fun setHighContrast(v: Boolean) = context.settingsStore.edit { it[Keys.HIGH_CONTRAST] = v }
+    suspend fun setAppIcon(icon: AppIcon) = context.settingsStore.edit { it[Keys.APP_ICON] = icon.name }
     suspend fun setNotifCritical(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_CRITICAL] = v }
     suspend fun setNotifStatus(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_STATUS] = v }
     suspend fun setNotifReminders(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_REMINDERS] = v }

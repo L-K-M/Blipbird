@@ -19,10 +19,12 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import ch.lkmc.blipbird.core.datastore.Accent
 import ch.lkmc.blipbird.core.datastore.SettingsRepository
 import ch.lkmc.blipbird.core.datastore.ThemeMode
 import ch.lkmc.blipbird.core.datastore.ThemeSpec
+import ch.lkmc.blipbird.platform.AppIconSwitcher
 import ch.lkmc.blipbird.ui.detail.FlightDetailScreen
 import ch.lkmc.blipbird.ui.list.FlightListScreen
 import ch.lkmc.blipbird.ui.settings.SettingsScreen
@@ -30,6 +32,8 @@ import ch.lkmc.blipbird.ui.theme.BlipbirdTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /** Minimal explicit back stack (documented deviation from PLAN.md's Nav3 pick). */
@@ -43,6 +47,7 @@ sealed interface Screen {
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var settings: SettingsRepository
+    @Inject lateinit var appIconSwitcher: AppIconSwitcher
 
     /** Pending notification deep link; consumed by BlipbirdNav. */
     private val deepLinkFlights = MutableStateFlow<Long?>(null)
@@ -68,6 +73,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         consumedDeepLink = savedInstanceState?.getLong(KEY_CONSUMED_DEEP_LINK, -1L) ?: -1L
+        // Re-sync the launcher alias with the stored choice: component enabled
+        // state doesn't ride Auto Backup, so a restored device would otherwise
+        // show the default icon while Settings claims the other. No-op normally.
+        lifecycleScope.launch { appIconSwitcher.apply(settings.appIcon.first()) }
         // Honor the launch intent's deep link unless it was already consumed
         // before a restore (process death can restore saved state AND re-deliver
         // the original notification intent in the same onCreate).

@@ -25,12 +25,38 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.Blipbird">
+            android:theme="@style/Theme.Blipbird" />
+
+        <!-- Switchable launcher icon (Settings → Appearance → App icon): the
+             LAUNCHER entry lives on aliases so AppIconSwitcher can swap icons
+             via component enabled state without touching the real activity
+             (notification intents keep targeting .MainActivity directly).
+             Exactly one alias is enabled at any time. -->
+        <activity-alias
+            android:name=".LauncherRegular"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".LauncherFun"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_fun"
+            android:roundIcon="@mipmap/ic_launcher_fun_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <receiver
             android:name=".platform.ReminderAlarmReceiver"
