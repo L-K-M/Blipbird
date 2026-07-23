@@ -101,11 +101,14 @@ import kotlin.math.roundToInt
 fun FlightDetailScreen(
     flightId: Long,
     onBack: () -> Unit,
-    viewModel: FlightDetailViewModel = hiltViewModel(key = "flight-$flightId"),
+    // Nav-entry-scoped (G10): BlipbirdNav provides a per-entry store owner, so
+    // this ViewModel is cleared on pop instead of accumulating per flight.
+    viewModel: FlightDetailViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(flightId) { viewModel.setFlightId(flightId) }
     // Gate the ViewModel's live-position polling on this screen actually being
-    // started: stops on navigation away AND when the app goes to background.
+    // started: pop clears the ViewModel (cancelling the poll loop), and this
+    // additionally stops it while the app is backgrounded.
     LifecycleStartEffect(flightId, viewModel) {
         viewModel.setScreenVisible(true)
         onStopOrDispose { viewModel.setScreenVisible(false) }

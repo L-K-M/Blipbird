@@ -109,10 +109,9 @@ class FlightDetailViewModel @Inject constructor(
 
     /**
      * Whether this flight's screen is started (visible or behind a dialog).
-     * Under the hand-rolled navigation the ViewModel is Activity-scoped and never
-     * cleared, so the poll loop must gate on this instead of the ViewModel's own
-     * lifetime — otherwise every detail screen ever opened keeps hitting the
-     * ADS-B APIs (every 10 s while airborne) until the process dies.
+     * Since the G10 nav rework this ViewModel is nav-entry-scoped — popping the
+     * screen clears it and cancels the poll loop — so this gate's remaining job
+     * is stopping foreground polling while the app is backgrounded.
      */
     private val screenVisible = MutableStateFlow(false)
 
