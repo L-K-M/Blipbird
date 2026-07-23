@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ch.lkmc.blipbird.core.data.QuotaLedger
 import ch.lkmc.blipbird.core.datastore.Accent
+import ch.lkmc.blipbird.core.datastore.AppIcon
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
 import ch.lkmc.blipbird.core.datastore.SettingsRepository
 import ch.lkmc.blipbird.core.datastore.ThemeMode
 import ch.lkmc.blipbird.core.datastore.ThemeSpec
+import ch.lkmc.blipbird.platform.AppIconSwitcher
 import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,6 +24,7 @@ data class QuotaRow(val provider: String, val used: Long, val allowance: Long?)
 
 data class SettingsUiState(
     val spec: ThemeSpec = ThemeSpec(),
+    val appIcon: AppIcon = AppIcon.REGULAR,
     val hasAdbKey: Boolean = false,
     val hasAeroApiKey: Boolean = false,
     val hasOpenSkyId: Boolean = false,
@@ -38,19 +41,21 @@ class SettingsViewModel @Inject constructor(
     private val keyStore: ProviderKeyStore,
     private val quotaLedger: QuotaLedger,
     private val reminders: ReminderScheduler,
+    private val appIconSwitcher: AppIconSwitcher,
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = combine(
-        settings.themeSpec,
+        combine(settings.themeSpec, settings.appIcon) { spec, icon -> spec to icon },
         keyStore.keys,
         combine(settings.notifCritical, settings.notifStatus, settings.notifReminders) { c, s, r -> Triple(c, s, r) },
         quotaLedger.observeAll().map { rows ->
             rows.filter { it.periodKey == quotaLedger.periodKey() }
                 .map { QuotaRow(it.provider, it.unitsUsed, quotaLedger.allowance(it.provider)) }
         },
-    ) { spec, keys, notifs, quota ->
+    ) { (spec, icon), keys, notifs, quota ->
         SettingsUiState(
             spec = spec,
+            appIcon = icon,
             hasAdbKey = keys.aeroDataBoxKey != null,
             hasAeroApiKey = keys.aeroApiKey != null,
             hasOpenSkyId = keys.openSkyClientId != null,
@@ -65,6 +70,11 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { settings.setThemeMode(mode) }
     fun setAccent(accent: Accent) = viewModelScope.launch { settings.setAccent(accent) }
     fun setHighContrast(v: Boolean) = viewModelScope.launch { settings.setHighContrast(v) }
+
+    fun setAppIcon(icon: AppIcon) = viewModelScope.launch {
+        settings.setAppIcon(icon)
+        appIconSwitcher.apply(icon)
+    }
     fun saveAdbKey(key: String) = viewModelScope.launch { keyStore.setAeroDataBoxKey(key) }
     fun saveAeroApiKey(key: String) = viewModelScope.launch { keyStore.setAeroApiKey(key) }
     fun clearAdbKey() = viewModelScope.launch { keyStore.setAeroDataBoxKey(null) }

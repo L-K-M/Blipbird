@@ -94,6 +94,10 @@
     <string name="theme_cockpit">Cockpit</string>
     <string name="settings_high_contrast">High contrast</string>
     <string name="settings_high_contrast_desc">Maximum-contrast black &amp; white palette for readability</string>
+    <string name="settings_app_icon">App icon</string>
+    <string name="settings_app_icon_desc">Pick the launcher icon. Some launchers close the app or move the icon when switching.</string>
+    <string name="app_icon_regular">Regular</string>
+    <string name="app_icon_fun">Fun</string>
     <string name="color_picker_title">Pick a color</string>
     <string name="color_picker_hex">Hex</string>
     <string name="color_picker_apply">Apply</string>
