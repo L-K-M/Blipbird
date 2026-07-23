@@ -18,20 +18,6 @@ genuinely still open.
 
 ## Open bugs
 
-### glm 1.19 · `goAsync()` receivers have no timeout — LOW
-`ReminderAlarmReceiver`/`BootCompletedReceiver` run Room/IO work on a
-free-standing scope under the ~10 s budget; boot reconcile should enqueue a
-`OneTimeWorkRequest` instead.
-
-### glm 1.20 · remainder: quota-ledger placement — LOW
-#60 removed the destructive fallback and added a real v1→2 migration, so schema
-bumps no longer zero the ledger. Optional follow-up: move `quota_ledger` (and
-the backoff table) out of the "rebuildable by design" ops DB conceptually, or
-document that the ops DB is no longer fully rebuildable.
-
-### B18 · Quota ledger check-then-record race — LOW
-`canSpend` + `record` are non-atomic; bounded overshoot near the soft stop.
-
 ### B14n · Notification ID scheme note
 The landed scheme is a mixed hash (astronomically unlikely but not impossible
 collisions). #27 proposed a provably collision-free alternative
@@ -88,8 +74,9 @@ forensically.
   and the named push/pop screen transitions landed (July 2026); still open:
   migrating component-embedded specs (status-chip color flip, sheet present)
   onto the tokens, and the in-app reduce-motion toggle (§18).
-- **V3 — No haptics** (PLAN M4): pull-to-refresh completion, swipe thresholds,
-  wheels-down.
+- **V3 — remainder: haptics** (PLAN M4): the pull-to-refresh threshold haptic
+  landed (shared `BirdRefreshIndicator`); still open: swipe-to-dismiss thresholds
+  and a wheels-down pulse.
 - **V5 — Empty map card** renders header + attribution and nothing else when
   coordinates are unknown. Placeholder or hide.
 - **V6 — remainder: no loading state while resolving.** The add sheet's date
