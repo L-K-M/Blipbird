@@ -168,4 +168,36 @@ class DaylightEngineTest {
         )
         assertTrue(result.samples.size <= 2050)
     }
+
+    @Test fun `moon illumination sweeps new to full across a synodic month`() {
+        var minFraction = 1.0
+        var maxFraction = 0.0
+        var sawWaxing = false
+        var sawWaning = false
+        var t = equinoxNoon
+        repeat(60) {                                   // 12 h steps ≈ 30 days
+            val moon = DaylightEngine.moon(0.0, 0.0, t)
+            assertTrue(moon.illuminatedFraction in 0.0..1.0, "fraction ${moon.illuminatedFraction}")
+            minFraction = minOf(minFraction, moon.illuminatedFraction)
+            maxFraction = maxOf(maxFraction, moon.illuminatedFraction)
+            if (moon.waxing) sawWaxing = true else sawWaning = true
+            t = t.plusSeconds(12 * 3600)
+        }
+        assertTrue(minFraction < 0.05, "no new moon in the month: min $minFraction")
+        assertTrue(maxFraction > 0.95, "no full moon in the month: max $maxFraction")
+        assertTrue(sawWaxing && sawWaning, "expected both waxing and waning phases")
+    }
+
+    @Test fun `moon rises and sets at the equator within a day`() {
+        var up = false
+        var down = false
+        var t = equinoxNoon
+        repeat(24) {
+            val moon = DaylightEngine.moon(0.0, 0.0, t)
+            assertTrue(moon.altitudeDeg in -90.0..90.0, "altitude ${moon.altitudeDeg}")
+            if (moon.altitudeDeg > 0) up = true else down = true
+            t = t.plusSeconds(3600)
+        }
+        assertTrue(up && down, "moon neither rose nor set over 24 h at the equator")
+    }
 }

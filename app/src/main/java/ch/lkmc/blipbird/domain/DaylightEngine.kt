@@ -4,6 +4,8 @@ import ch.lkmc.blipbird.core.model.LightBand
 import ch.lkmc.blipbird.core.model.RouteSample
 import ch.lkmc.blipbird.core.model.SunEvent
 import ch.lkmc.blipbird.core.model.SunEventType
+import org.shredzone.commons.suncalc.MoonIllumination
+import org.shredzone.commons.suncalc.MoonPosition
 import org.shredzone.commons.suncalc.SunPosition
 import java.time.Duration
 import java.time.Instant
@@ -61,6 +63,27 @@ object DaylightEngine {
     /** Horizon dip in degrees for a geometric altitude above the surface, refracted (1.75′·√h). */
     fun horizonDipDeg(altitudeMeters: Double): Double =
         if (altitudeMeters <= 0) 0.0 else 1.75 * kotlin.math.sqrt(altitudeMeters) / 60.0
+
+    data class MoonSnapshot(
+        /** Illuminated fraction of the lunar disc, 0 (new) .. 1 (full). */
+        val illuminatedFraction: Double,
+        /** True between new and full moon — the lit limb sits on the right (northern-sky convention). */
+        val waxing: Boolean,
+        /** Altitude above the local horizon, degrees; ≤ 0 means the moon is not up. */
+        val altitudeDeg: Double,
+    )
+
+    /** Moon phase and local altitude for the ribbon's night decoration (REVIEW.md I10). */
+    fun moon(lat: Double, lon: Double, at: Instant): MoonSnapshot {
+        val illumination = MoonIllumination.compute().on(at).execute()
+        val position = MoonPosition.compute().on(at).at(lat, lon).execute()
+        return MoonSnapshot(
+            illuminatedFraction = illumination.fraction,
+            // suncalc phase runs -180° (new) → 0° (full) → +180° (next new).
+            waxing = illumination.phase < 0.0,
+            altitudeDeg = position.altitude,
+        )
+    }
 
     /**
      * @param cruiseAltitudeMeters explicit finite, nonnegative geometric cruise altitude

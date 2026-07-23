@@ -14,9 +14,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -32,6 +36,7 @@ import ch.lkmc.blipbird.domain.GreatCircle
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 /**
  * The flight ribbon (PLAN.md §9.4): a horizontal strip of the whole flight,
@@ -102,6 +107,11 @@ fun FlightRibbon(
             }
         }
 
+        // Night decoration (I10): star field on the fully dark segments and a
+        // moon glyph with its current phase — computed once per daylight change,
+        // like the gradient above.
+        val nightDecor = remember(daylight) { nightDecor(daylight) }
+
         Canvas(
             Modifier
                 .fillMaxWidth()
@@ -111,6 +121,42 @@ fun FlightRibbon(
             val h = size.height
             if (ribbonBrush != null) {
                 drawRoundRect(brush = ribbonBrush, size = Size(w, h), cornerRadius = CornerRadius(h / 2))
+            }
+
+            if (nightDecor.stars.isNotEmpty() || nightDecor.moon != null) {
+                // Clip to the pill so edge-of-ribbon stars respect the rounded ends.
+                val pill = Path().apply {
+                    addRoundRect(RoundRect(0f, 0f, w, h, CornerRadius(h / 2, h / 2)))
+                }
+                clipPath(pill) {
+                    for (star in nightDecor.stars) {
+                        drawCircle(
+                            color = ext.ribbonStars,
+                            radius = h * star.radiusFrac,
+                            center = Offset(star.xFrac * w, star.yFrac * h),
+                            alpha = star.alpha,
+                        )
+                    }
+                    nightDecor.moon?.let { moon ->
+                        val center = Offset(moon.xFrac * w, h / 2)
+                        val r = h * 0.22f
+                        drawCircle(ext.ribbonMoon, radius = r, center = center)
+                        if (moon.illuminatedFraction < 0.97f) {
+                            // Carve the unlit part: a night-colored disc slides
+                            // off the lit one (offset 0 = new, 2r = full); the
+                            // lit limb stays on the right while waxing.
+                            val shadowCenter = center + Offset(
+                                (if (moon.waxing) -1f else 1f) * 2f * r * moon.illuminatedFraction, 0f,
+                            )
+                            val disc = Path().apply {
+                                addOval(Rect(center - Offset(r, r), Size(2 * r, 2 * r)))
+                            }
+                            clipPath(disc) {
+                                drawCircle(ext.ribbonNight, radius = r, center = shadowCenter)
+                            }
+                        }
+                    }
+                }
             }
 
             // Sunrise/sunset markers (theme-aware, not hardcoded)
@@ -195,6 +241,66 @@ private fun fractionOf(event: SunEvent, daylight: DaylightEngine.Result): Double
     val last = daylight.samples.last().at.epochSecond
     if (last == first) return 0.0
     return ((event.at.epochSecond - first).toDouble() / (last - first)).coerceIn(0.0, 1.0)
+}
+
+/** Precomputed night-segment decoration (I10): star field plus a phase-correct moon glyph. */
+private data class NightDecor(val stars: List<Star>, val moon: Moon?) {
+    data class Star(val xFrac: Float, val yFrac: Float, val radiusFrac: Float, val alpha: Float)
+    data class Moon(val xFrac: Float, val illuminatedFraction: Float, val waxing: Boolean)
+}
+
+private fun nightDecor(daylight: DaylightEngine.Result): NightDecor {
+    val samples = daylight.samples
+    if (samples.size < 2) return NightDecor(emptyList(), null)
+
+    // Contiguous fraction ranges where the ribbon has bottomed out at the solid
+    // night color — below nautical twilight, matching bandColor() above.
+    val runs = mutableListOf<Pair<Double, Double>>()
+    var runStart: Double? = null
+    for (sample in samples) {
+        val dark = sample.solarElevationDeg < DaylightEngine.NAUTICAL_DEG
+        if (dark && runStart == null) runStart = sample.fraction
+        if (!dark && runStart != null) {
+            runs += runStart to sample.fraction
+            runStart = null
+        }
+    }
+    runStart?.let { runs += it to samples.last().fraction }
+
+    // Deterministic star field — seeded on wheels-up so it's stable for the
+    // flight instead of reshuffling on every recomposition.
+    val random = Random(samples.first().at.epochSecond)
+    val stars = mutableListOf<NightDecor.Star>()
+    for ((start, end) in runs) {
+        val width = end - start
+        if (width < 0.03) continue
+        val count = (width * 46).roundToInt().coerceAtLeast(2)
+        repeat(count) {
+            stars += NightDecor.Star(
+                // Inset from the run edges so no star sits on the twilight blend.
+                xFrac = (start + width * (0.06 + 0.88 * random.nextDouble())).toFloat(),
+                yFrac = 0.18f + 0.64f * random.nextFloat(),
+                radiusFrac = 0.035f + 0.03f * random.nextFloat(),
+                alpha = 0.45f + 0.5f * random.nextFloat(),
+            )
+        }
+    }
+
+    // Moon at the middle of the longest dark run — only when it's actually up there.
+    val moon = runs.maxByOrNull { it.second - it.first }
+        ?.takeIf { it.second - it.first >= 0.05 }
+        ?.let { (start, end) ->
+            val midFraction = (start + end) / 2
+            val sample = samples[samples.indexOfLast { it.fraction <= midFraction }.coerceAtLeast(0)]
+            val snapshot = DaylightEngine.moon(sample.lat, sample.lon, sample.at)
+            if (snapshot.altitudeDeg > 0.0) NightDecor.Moon(
+                xFrac = midFraction.toFloat(),
+                illuminatedFraction = snapshot.illuminatedFraction.toFloat(),
+                waxing = snapshot.waxing,
+            ) else null
+        }
+
+    return NightDecor(stars, moon)
 }
 
 /** Continuous color from solar elevation: warm day → orange dusk → civil twilight → night. */
