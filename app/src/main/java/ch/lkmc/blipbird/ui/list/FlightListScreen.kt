@@ -1,5 +1,10 @@
 package ch.lkmc.blipbird.ui.list
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -62,8 +67,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -84,6 +91,7 @@ import ch.lkmc.blipbird.ui.components.landsInText
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.monogramColor
 import ch.lkmc.blipbird.ui.components.monogramContentColor
+import ch.lkmc.blipbird.ui.components.rememberReducedMotion
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 import ch.lkmc.blipbird.ui.theme.SkyPalette
 import kotlinx.coroutines.launch
@@ -163,55 +171,64 @@ fun FlightListScreen(
                 )
             },
         ) {
-            if (state.rows.isEmpty()) {
-                Column(Modifier.fillMaxSize()) {
-                    if (!state.hasStatusKey) {
-                        DataSourceCta(
-                            onOpenSettings = onOpenSettings,
-                            modifier = Modifier.padding(horizontal = 16.dp).padding(top = 16.dp),
+            when {
+                // Skeleton only for the pre-first-emission window; once flights
+                // load (even to empty) we fall through to the real states, so an
+                // empty account still lands on the empty card, not a stuck shimmer.
+                state.loading -> {
+                    FlightListSkeleton(Modifier.fillMaxSize())
+                }
+                state.rows.isEmpty() -> {
+                    Column(Modifier.fillMaxSize()) {
+                        if (!state.hasStatusKey) {
+                            DataSourceCta(
+                                onOpenSettings = onOpenSettings,
+                                modifier = Modifier.padding(horizontal = 16.dp).padding(top = 16.dp),
+                            )
+                        }
+                        EmptyState(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            onAdd = { showAddSheet = true },
                         )
-                    }
-                    EmptyState(
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        onAdd = { showAddSheet = true },
-                    )
-                    if (state.archivedCount > 0) {
-                        ArchivedFlightsLink(
-                            onClick = onOpenArchived,
-                            modifier = Modifier.padding(bottom = 24.dp),
-                        )
+                        if (state.archivedCount > 0) {
+                            ArchivedFlightsLink(
+                                onClick = onOpenArchived,
+                                modifier = Modifier.padding(bottom = 24.dp),
+                            )
+                        }
                     }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    // Extra bottom room so the FAB never covers the last card.
-                    contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
-                ) {
-                    if (!state.hasStatusKey) {
-                        item(key = "data-source-cta") { DataSourceCta(onOpenSettings) }
-                    }
-                    // A distinct contentType keeps the flight rows in their own
-                    // slot-reuse pool, so LazyColumn never tries to recycle the
-                    // CTA item's composition as a row (or vice versa) — that plus
-                    // the @Immutable FlightRow is the P4 recomposition fix.
-                    items(state.rows, key = { it.id }, contentType = { "flight-row" }) { row ->
-                        DismissibleFlightCard(
-                            row = row,
-                            onClick = { onOpenFlight(row.id) },
-                            onArchive = { archiveWithUndo(row.id) },
-                            onDelete = { deleteWithUndo(row.id) },
-                            onRename = { alias -> viewModel.rename(row.id, alias) },
-                            modifier = Modifier.animateItem(),
-                        )
-                    }
-                    // A quiet, deemphasized way into the archived flights — a
-                    // footer link, not a top-bar action button with a badge (which
-                    // read as "archive selection" + a notification).
-                    if (state.archivedCount > 0) {
-                        item(key = "archived-link") {
-                            ArchivedFlightsLink(onClick = onOpenArchived)
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        // Extra bottom room so the FAB never covers the last card.
+                        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
+                    ) {
+                        if (!state.hasStatusKey) {
+                            item(key = "data-source-cta") { DataSourceCta(onOpenSettings) }
+                        }
+                        // A distinct contentType keeps the flight rows in their own
+                        // slot-reuse pool, so LazyColumn never tries to recycle the
+                        // CTA item's composition as a row (or vice versa) — that plus
+                        // the @Immutable FlightRow is the P4 recomposition fix.
+                        items(state.rows, key = { it.id }, contentType = { "flight-row" }) { row ->
+                            DismissibleFlightCard(
+                                row = row,
+                                onClick = { onOpenFlight(row.id) },
+                                onArchive = { archiveWithUndo(row.id) },
+                                onDelete = { deleteWithUndo(row.id) },
+                                onRename = { alias -> viewModel.rename(row.id, alias) },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                        // A quiet, deemphasized way into the archived flights — a
+                        // footer link, not a top-bar action button with a badge (which
+                        // read as "archive selection" + a notification).
+                        if (state.archivedCount > 0) {
+                            item(key = "archived-link") {
+                                ArchivedFlightsLink(onClick = onOpenArchived)
+                            }
                         }
                     }
                 }
@@ -632,5 +649,49 @@ private fun EmptyState(modifier: Modifier = Modifier, onAdd: () -> Unit) {
         )
         Spacer(Modifier.height(20.dp))
         Button(onClick = onAdd) { Text(stringResource(R.string.add_flight)) }
+    }
+}
+
+/**
+ * Loading skeleton for the brief pre-Room window on a cold start, so the saved
+ * flights don't pop in over a flash of the empty state (glm 3.10). A few
+ * card-shaped blocks sweep a soft highlight left-to-right; reduced-motion swaps
+ * the sweep for a still fill so nothing autonomously animates.
+ */
+@Composable
+private fun FlightListSkeleton(modifier: Modifier = Modifier) {
+    val base = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    val highlight = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+    // Run the transition unconditionally (no conditional composable calls); the
+    // swept value is simply unused when motion is reduced.
+    val transition = rememberInfiniteTransition(label = "skeleton")
+    val shift by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1400f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)),
+        label = "skeleton-shift",
+    )
+    val brush = if (rememberReducedMotion()) {
+        SolidColor(base)
+    } else {
+        Brush.linearGradient(
+            colors = listOf(base, highlight, base),
+            start = Offset(shift - 500f, 0f),
+            end = Offset(shift, 0f),
+        )
+    }
+    Column(
+        modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        repeat(4) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(150.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(brush),
+            )
+        }
     }
 }

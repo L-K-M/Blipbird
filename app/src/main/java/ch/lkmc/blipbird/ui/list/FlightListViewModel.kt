@@ -88,7 +88,24 @@ data class ListUiState(
     val addError: String? = null,
     /** Number of archived flights — gates the "Past flights" entry point. */
     val archivedCount: Int = 0,
+    /**
+     * True only until the flights flow first emits — the pre-Room window on a
+     * cold start. Gates a loading skeleton so the list no longer flashes the
+     * "No flights yet" empty state before the saved flights load (glm 3.10).
+     */
+    val loading: Boolean = true,
 )
+
+/**
+ * Loading vs loaded distinction for the list, folded into one flow so [uiState]
+ * stays at five combine args (no six-arg typed overload). [Loading] is the
+ * pre-first-emission state; once the flights flow emits — even an empty list —
+ * we're [Loaded] and the skeleton gives way to the list or the empty state.
+ */
+private sealed interface RowsState {
+    data object Loading : RowsState
+    data class Loaded(val rows: List<FlightRow>) : RowsState
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -126,7 +143,7 @@ class FlightListViewModel @Inject constructor(
     /** Reference-airport hits keyed by IATA/ICAO; misses are rare and just re-query. */
     private val airportCache = ConcurrentHashMap<String, ch.lkmc.blipbird.core.database.AirportEntity>()
 
-    private val rows: StateFlow<List<FlightRow>> = repository.observeFlights()
+    private val rowsState: StateFlow<RowsState> = repository.observeFlights()
         .flatMapLatest { flights ->
             if (flights.isEmpty()) flowOf(emptyList())
             else combine(flights.map { flight -> rowFlow(flight) }) { it.toList() }
@@ -138,21 +155,24 @@ class FlightListViewModel @Inject constructor(
             val (done, active) = list.partition {
                 it.view.status == FlightStatus.LANDED || it.view.status == FlightStatus.ARRIVED
             }
-            active.sortedBy { it.view.nextEventAt ?: Instant.MAX } +
-                done.sortedByDescending { it.view.nextEventAt ?: Instant.MIN }
+            RowsState.Loaded(
+                active.sortedBy { it.view.nextEventAt ?: Instant.MAX } +
+                    done.sortedByDescending { it.view.nextEventAt ?: Instant.MIN }
+            )
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RowsState.Loading)
 
     val uiState: StateFlow<ListUiState> =
         combine(
-            rows,
+            rowsState,
             refreshing,
             keyStore.hasAnyStatusKey,
             addError,
             repository.observeArchivedFlights().map { it.size },
-        ) { r, busy, hasKey, err, archivedCount ->
+        ) { rows, busy, hasKey, err, archivedCount ->
             ListUiState(
-                rows = r,
+                rows = (rows as? RowsState.Loaded)?.rows ?: emptyList(),
+                loading = rows is RowsState.Loading,
                 refreshing = busy,
                 hasStatusKey = hasKey,
                 addError = err,
