@@ -8,6 +8,8 @@ import java.time.Instant
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -39,6 +41,47 @@ class DaylightEngineTest {
     @Test fun `horizon dip at cruise is about three degrees`() {
         val dip = DaylightEngine.horizonDipDeg(11_000.0)
         assertTrue(dip in 2.9..3.2, "got $dip")
+    }
+
+    @Test fun `omitted and null altitude use the same surface event`() {
+        val from = GreatCircle.Point(0.0, 0.0)
+        val to = GreatCircle.Point(0.0, 0.0)
+        val up = Instant.parse("2026-03-20T17:00:00Z")
+        val down = Instant.parse("2026-03-20T19:00:00Z")
+
+        val omitted = DaylightEngine.compute(from, to, up, down)
+        val explicitNull = DaylightEngine.compute(from, to, up, down, null)
+
+        assertEquals(explicitNull.events, omitted.events)
+        assertEquals(1, omitted.events.size)
+        assertEquals(SunEventType.SUNSET, omitted.events.single().type)
+        assertFalse(omitted.events.single().cabinVisible)
+    }
+
+    @Test fun `explicit cruise altitude delays sunset and marks cabin visibility`() {
+        val from = GreatCircle.Point(0.0, 0.0)
+        val to = GreatCircle.Point(0.0, 0.0)
+        val up = Instant.parse("2026-03-20T17:00:00Z")
+        val down = Instant.parse("2026-03-20T19:00:00Z")
+
+        val surface = DaylightEngine.compute(from, to, up, down)
+        val cabin = DaylightEngine.compute(from, to, up, down, 11_000.0)
+
+        assertEquals(1, cabin.events.size)
+        assertTrue(cabin.events.single().at > surface.events.single().at)
+        assertTrue(cabin.events.single().cabinVisible)
+    }
+
+    @Test fun `invalid explicit altitude is rejected`() {
+        val point = GreatCircle.Point(0.0, 0.0)
+        val up = Instant.parse("2026-03-20T17:00:00Z")
+        val down = Instant.parse("2026-03-20T19:00:00Z")
+
+        for (altitude in listOf(-1.0, Double.NaN, Double.POSITIVE_INFINITY)) {
+            assertFailsWith<IllegalArgumentException> {
+                DaylightEngine.compute(point, point, up, down, altitude)
+            }
+        }
     }
 
     @Test fun `daytime transatlantic eastbound overnight flight crosses into night and back`() {
