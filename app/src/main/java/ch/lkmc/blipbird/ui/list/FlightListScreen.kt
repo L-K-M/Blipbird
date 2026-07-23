@@ -183,7 +183,11 @@ fun FlightListScreen(
                     if (!state.hasStatusKey) {
                         item(key = "data-source-cta") { DataSourceCta(onOpenSettings) }
                     }
-                    items(state.rows, key = { it.id }) { row ->
+                    // A distinct contentType keeps the flight rows in their own
+                    // slot-reuse pool, so LazyColumn never tries to recycle the
+                    // CTA item's composition as a row (or vice versa) — that plus
+                    // the @Immutable FlightRow is the P4 recomposition fix.
+                    items(state.rows, key = { it.id }, contentType = { "flight-row" }) { row ->
                         DismissibleFlightCard(
                             row = row,
                             onClick = { onOpenFlight(row.id) },

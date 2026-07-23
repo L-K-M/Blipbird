@@ -1,5 +1,6 @@
 package ch.lkmc.blipbird.ui.list
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ch.lkmc.blipbird.core.data.FlightRepository
@@ -42,6 +43,14 @@ import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
+/**
+ * Marked [Immutable] so Compose can skip a row whose value is unchanged: every
+ * field is an immutable val, but the java.time types would otherwise make the
+ * class infer as unstable and re-run [FlightRowCard] on unrelated list changes
+ * (P4). Rows still recompose when they should — the shared `now` tick changes
+ * every field-derived countdown, and `==` catches any data change.
+ */
+@Immutable
 data class FlightRow(
     val id: Long,
     val title: String,             // designator or alias
