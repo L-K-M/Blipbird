@@ -65,7 +65,16 @@ ported); #27 → #32 (alternative collision-free ID scheme noted below in B14n).
 
 **Superseded in this cycle:** #48/#49 → already on `main` via #34 (+#39 for the
 track key); #52 → #43; #54 → #40; #53 → ported by hand onto #40's planner (its
-branch would have conflicted with the richer recovery model).
+branch would have conflicted with the richer recovery model). #56 (a competing
+root-level `ANALYSIS.md`) closed — this file remains the single backlog.
+
+### Third cycle
+
+| Area | PR(s) | Items | What landed |
+|------|-------|-------|-------------|
+| Daylight altitude API | #57 | — | `DaylightEngine.compute` defaults to the surface threshold and validates explicit altitudes; the detail ribbon now passes the ~11 km cruise assumption explicitly, so app behavior is unchanged |
+| ADS-B identity | #58 | glm 1.16 / B20 / DS4-B7 (identity part) | Position fixes validated against the normalized query identity (hex/registration/callsign), freshest valid record wins, malformed/stale (>5 min) records rejected, cached hex skipped when the status payload carries a fresh registration (aircraft-swap guard) |
+
 
 ---
 
@@ -80,10 +89,11 @@ ledger retention vs transition idempotency.
 Four DAO calls across two DBs; a crash mid-way orphans rows. Needs an ops-side
 `@Transaction` method.
 
-### glm 1.16 / B20 · Position lookup doesn't verify it found the right aircraft — LOW
-First result with lat/lon wins; no cross-check against the snapshot's
-`icao24`/registration or a route/time corridor (PLAN.md §5 step 5). A colliding
-callsign paints someone else's track.
+### glm 1.16 / B20 · remainder: route-corridor sanity check — LOW
+#58 landed identity matching (fixes only accepted when the record's
+hex/registration/callsign equals the query) and freshness/validity gates. Still
+open: for CALLSIGN-derived fixes the identity can genuinely collide day-to-day —
+a great-circle-corridor plausibility check (PLAN.md §5 step 5) would close it.
 
 ### glm 1.19 · `goAsync()` receivers have no timeout — LOW
 `ReminderAlarmReceiver`/`BootCompletedReceiver` run Room/IO work on a

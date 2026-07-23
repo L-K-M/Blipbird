@@ -249,6 +249,10 @@ class FlightDetailViewModel @Inject constructor(
                     GreatCircle.Point(depLat, depLon),
                     GreatCircle.Point(arrLat, arrLon),
                     up, down,
+                    // The engine defaults to the surface threshold since #57; the
+                    // ribbon's cabin-visible markers deliberately assume a typical
+                    // ~11 km cruise (PLAN.md §9.4) when the real altitude is unknown.
+                    cruiseAltitudeMeters = 11_000.0,
                 )
             }.getOrNull()
         }
