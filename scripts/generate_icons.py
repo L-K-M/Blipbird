@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Android launcher assets from media-sources/icon.png (PLAN.md §10.1).
+"""Generate Android launcher assets from media-sources/icon-regular.png (PLAN.md §10.1).
 
 The master artwork is used FULL-BLEED and unaltered: it fills the entire
 adaptive-icon canvas as the background layer, and launchers apply their own
@@ -17,7 +17,7 @@ the monochrome/notification silhouette is a hand-authored vector drawable.
 from PIL import Image, ImageDraw
 import os
 
-SRC = os.path.join(os.path.dirname(__file__), "..", "media-sources", "icon.png")
+SRC = os.path.join(os.path.dirname(__file__), "..", "media-sources", "icon-regular.png")
 RES = os.path.join(os.path.dirname(__file__), "..", "app", "src", "main", "res")
 
 DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0, "xxxhdpi": 4.0}

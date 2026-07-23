@@ -130,7 +130,7 @@ Regenerate bundled reference data / icons:
 
 ```bash
 python3 scripts/generate_reference_data.py   # writes app/src/main/assets/reference/ + lockfile
-python3 scripts/generate_icons.py            # regenerates launcher mipmaps from media-sources/icon.png
+python3 scripts/generate_icons.py            # regenerates launcher mipmaps from media-sources/icon-regular.png
 ```
 
 ## Releasing
