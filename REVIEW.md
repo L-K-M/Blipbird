@@ -20,8 +20,9 @@ genuinely still open.
 
 ### glm 1.10 · Cancelled/diverted/departed/landed re-fire after the 3-day prune — MEDIUM
 `EmittedEvent.expiresAt` shares the snapshot TTL; after prune the next refresh
-sees `previous == null` and re-emits the transition. Needs a policy decision on
-ledger retention vs transition idempotency.
+sees `previous == null` and re-emits the transition. **Owner decision (July
+2026): decouple the emitted-event ledger from the snapshot prune and retain it
+~30 days** — tiny rows, kills re-fires for any realistically re-opened flight.
 
 ### glm 1.11 · `FlightRepository.delete()` is not transactional — LOW
 Five DAO calls across two DBs; a crash mid-way orphans rows. Needs an ops-side
@@ -98,7 +99,9 @@ forensically.
   "Takeoff"/"Landing"/"Gate arrival", `ATTRIBUTION_TEXT`, "Weather data by
   Open-Meteo.com", map attribution line. (glm 5.5 is the same finding.)
 - **G3 — README/impl drift:** "raw METAR one tap away" — it's always visible
-  under the decoded weather; collapse it behind a tap or update the README.
+  under the decoded weather. **Owner decision (July 2026): collapse the raw
+  string behind a tap/expand affordance** so the weather card declutters and
+  the README claim becomes true.
 - **G5 — remainder: error observability in the UI.** #60 landed persisted
   lookup outcomes and backoff; the UI still can't distinguish "no key" /
   "quota" / "rate limited" / "offline". Thread the last error into list/detail
@@ -143,8 +146,9 @@ forensically.
 - **V1 / glm 3.1–3.2 — No typography system, no tabular figures.** Default
   Roboto everywhere; countdown digits wiggle as they tick. A `Typography` with
   a display face + `"tnum"` on all numeric text is the single biggest aesthetic
-  lever. *Needs a font choice from the owner.* PLAN §10.2 (merged in #13)
-  specifies the target.
+  lever. **Owner decision (July 2026): Space Grotesk for display/headline/
+  numeric text, Inter for body** (both OFL, bundleable). PLAN §10.2 (merged in
+  #13) specifies the target system.
 - **V2 — No motion design.** Screen changes are hard cuts; even slide/fade
   transitions buy disproportionate polish. (#21 added list-item animation; #62
   added the micro-flourishes.)
@@ -179,7 +183,8 @@ forensically.
 - **F5 — "Boarding" as a real status** — ADB `boarding`/`gateClosed` collapse
   into SCHEDULED; `strings.xml` already ships the word. *(M)*
 - **F6 — Ongoing in-flight notification** (`Notification.ProgressStyle` on API
-  36+, plain progress below; PLAN §13). *(M)*
+  36+, plain progress below; PLAN §13). *(M)* **Owner pick (July 2026): the
+  next cycle's flagship feature.**
 - **F7 — "Next flight" Glance widget.** *(M)*
 - **F10 — Layover awareness** — chained tracked flights: connection time +
   buffer warnings. *(M)*
@@ -245,11 +250,12 @@ CLA/DCO process.
 ## Suggested next cycle
 
 1. Quick wins: glm-A future-dated fixes + codeshare self-reference, DS4-B17,
-   DS4-V20, B22, glm 2.7/glm 2.2 hoists.
+   DS4-V20, B22, glm 2.7/glm 2.2 hoists, G3 (collapse raw METAR per owner
+   decision), glm 1.10 (30-day ledger retention per owner decision).
 2. G5 remainder — surface lookup outcomes in the UI (the data is persisted
    since #60).
-3. The two aesthetic levers: V1 typography (owner picks a face) + V2 motion —
-   PLAN §10.2 is the spec.
-4. One flagship feature: F6 ongoing notification or F10 layover awareness.
+3. The two aesthetic levers: V1 typography (Space Grotesk display + Inter
+   body, per owner decision) + V2 motion — PLAN §10.2 is the spec.
+4. Flagship feature: F6 ongoing in-flight notification (owner pick over F10).
 5. Structural: G10 navigation rework (unlocks VM scoping, predictive back, and
-   removes the B4 workaround); glm 1.10 emitted-event retention policy.
+   removes the B4 workaround).
