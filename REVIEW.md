@@ -185,12 +185,15 @@ CLA/DCO process.
 
 ## Suggested next cycle
 
-1. Remaining small fixes: DS4-G9/G10, glm 1.11 transactional delete,
-   glm 1.16 route-corridor check, glm-A CSV/Retry-After/crash-logger items.
-2. G5 remainder — surface lookup outcomes in the UI (the data is persisted
-   since #60).
-3. V2 motion design — the remaining aesthetic lever now that the V1 type
-   system has landed; PLAN §10.2 is the spec.
-4. Flagship feature: F6 ongoing in-flight notification (owner pick over F10).
-5. Structural: G10 navigation rework (unlocks VM scoping, predictive back, and
-   removes the B4 workaround).
+(The previous next-cycle list landed wholesale via #63–#67: small fixes, G5
+outcome surfacing, V2 motion core, the F6 flagship, and the G10 nav rework.)
+
+1. Quick wins: glm 1.19 receiver timeouts, B18 quota race, DS4-P10/P7 thread
+   hops, glm 2.2/P4 recomposition hygiene.
+2. V2 remainder — migrate component-embedded animation specs onto the
+   BlipbirdMotion tokens; in-app reduce-motion toggle (§18).
+3. Polish pass: V5 empty map card, V6 add-sheet date picker, V7 ribbon
+   niggles, V9 detail density, V10 collapsing top bars.
+4. Next feature from the value/effort list: F2 auto-archive or F5 real
+   Boarding status.
+5. Structural: P2 ribbon/weather recompute gating; glm 2.3 detail-state split.
