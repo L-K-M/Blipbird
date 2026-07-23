@@ -18,22 +18,43 @@ genuinely still open.
 
 ## Open bugs
 
-### B14n · Notification ID scheme note
-The landed scheme is a mixed hash (astronomically unlikely but not impossible
-collisions). #27 proposed a provably collision-free alternative
-(`floorMod(flightId, 500M) * 4 + channelIndex`) — adopt if IDs ever matter
-forensically.
+None currently prioritized — the remaining known findings are deliberate
+deferrals, recorded under **Won't do (for now)** below.
 
-### DS4-new: unique findings from the DeepSeek review (`docs/reviews/ds4.md`)
+---
+
+## Won't do (for now)
+
+Fixable, but the cost/benefit doesn't land yet — parked here so they stop
+resurfacing in every review. Each notes what would flip the call.
+
+- **B14n — collision-free notification IDs.** #27's
+  `floorMod(flightId, 500M) * 4 + channelIndex` is provably collision-free vs the
+  landed mixed hash (collisions astronomically unlikely, not impossible).
+  *Not now:* the ongoing in-flight notification would orphan on the update that
+  ships the new scheme — the new id can't cancel a card posted under the
+  old-hash id — for a benefit that only bites if ids ever need to be forensically
+  stable. *Revisit* if ids start mattering forensically, or fold it into a
+  notification rework that can clear the stale cards.
 
 - **DS4-P10 — `planeBitmap` renders on the composition thread** on first use
-  (cached after); consider pre-rendering or a vector drawable.
-- **DS4-V19 — Ribbon weather glyphs are evenly spaced** (`weight(1f)`) while
-  sample points are positioned along the great-circle fraction — glyphs drift
-  from their true positions (sharpens V7).
+  (cached after). *Not now:* moving it off-thread would make the live aircraft
+  icon appear a frame late — worse than the sub-millisecond one-time draw it
+  removes. *Revisit* by converting it to a bundled vector drawable (no runtime
+  draw at all), which is the real fix.
 
-- **DS4-V21 — Detail countdown freezes between 15 s ticks** vs the list's 30 s
-  cadence — unify tick sources, consider animation smoothing.
+- **DS4-V19 — Ribbon weather glyphs are evenly spaced** (`weight(1f)`) rather than
+  at their true along-route position (would sharpen V7). *Not now:*
+  `WeatherSample.fraction` is only an even `i/(n-1)` index, so the real position
+  isn't available at the ribbon; a correct fix needs
+  `WeatherRepository.routeWeather` to carry the true fraction through. *Revisit*
+  together with the V7 ribbon pass.
+
+- **DS4-V21 — Detail countdown updates on a 15 s tick** vs the list's 30 s.
+  *Not now:* the remedy ("unify tick sources") spans two independent ViewModels
+  for a barely-perceptible effect — minute-granularity countdowns don't visibly
+  change faster than 15 s anyway. *Revisit* if a shared clock source lands for
+  another reason.
 
 ---
 
