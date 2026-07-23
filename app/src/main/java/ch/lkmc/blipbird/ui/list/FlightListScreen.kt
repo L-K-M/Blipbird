@@ -20,8 +20,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -101,6 +103,14 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+
+/**
+ * Min card width for the adaptive flight/archived grids: one column on phones, a
+ * second once the window fits another ~380 dp card (tablets/foldables/landscape).
+ * Shared across the two parallel lists so they break into columns at the same
+ * width (V12).
+ */
+val ListGridMinCardWidth = 380.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -216,19 +226,28 @@ fun FlightListScreen(
                     }
                 }
                 else -> {
-                    LazyColumn(
+                    // One column on phones; a second (or third) once the window is
+                    // wide enough for another ~380 dp card — tablets, foldables,
+                    // landscape (V12). Phones are unchanged since Adaptive resolves
+                    // to a single column below ~800 dp.
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = ListGridMinCardWidth),
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         // Extra bottom room so the FAB never covers the last card.
                         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
                     ) {
+                        // The CTA spans every column — it's a banner, not a card.
                         if (!state.hasStatusKey) {
-                            item(key = "data-source-cta") { DataSourceCta(onOpenSettings) }
+                            item(key = "data-source-cta", span = { GridItemSpan(maxLineSpan) }) {
+                                DataSourceCta(onOpenSettings)
+                            }
                         }
                         // A distinct contentType keeps the flight rows in their own
-                        // slot-reuse pool, so LazyColumn never tries to recycle the
-                        // CTA item's composition as a row (or vice versa) — that plus
-                        // the @Immutable FlightRow is the P4 recomposition fix.
+                        // slot-reuse pool, so the grid never recycles the CTA/footer
+                        // composition as a row (or vice versa) — that plus the
+                        // @Immutable FlightRow is the P4 recomposition fix.
                         items(state.rows, key = { it.id }, contentType = { "flight-row" }) { row ->
                             DismissibleFlightCard(
                                 row = row,
@@ -240,10 +259,10 @@ fun FlightListScreen(
                             )
                         }
                         // A quiet, deemphasized way into the archived flights — a
-                        // footer link, not a top-bar action button with a badge (which
-                        // read as "archive selection" + a notification).
+                        // full-width footer link, not a top-bar action button with a
+                        // badge (which read as "archive selection" + a notification).
                         if (state.archivedCount > 0) {
-                            item(key = "archived-link") {
+                            item(key = "archived-link", span = { GridItemSpan(maxLineSpan) }) {
                                 ArchivedFlightsLink(onClick = onOpenArchived)
                             }
                         }

@@ -107,8 +107,11 @@ resurfacing in every review. Each notes what would flip the call.
   scroll behavior). The detail screen deliberately keeps a regular bar — it
   leads with the sky-gradient hero, so a large collapsing title above it would
   double up. *Revisit* only if the hero is ever reworked.
-- **V12 — remainder: large-screen pass.** Detail two-pane landed; list/tablet
-  grid and landscape-specific layouts still open.
+- **V12 — remainder: list-detail two-pane.** Detail two-pane landed; the flight
+  list and the archived list now flow into a multi-column `LazyVerticalGrid`
+  (`Adaptive(380.dp)` → one column on phones, two+ on tablets/foldables/
+  landscape). Still open: a canonical list-detail layout (tap a flight → detail
+  in a side pane on wide screens) — a larger nav change deferred on its own.
 - **glm 3.8 — Plane glyphs always point right** in the list/hero route rows —
   a LHR→NRT flight visually flies backwards.
 
