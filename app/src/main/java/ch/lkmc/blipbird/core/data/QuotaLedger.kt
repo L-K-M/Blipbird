@@ -39,14 +39,17 @@ class QuotaLedger @Inject constructor(
         val budget = budgets[provider] ?: return true
         // Snapshot the period once: computing it inside the transaction risks
         // reading one month and writing the next if the body straddles UTC
-        // midnight at month-end.
+        // midnight at month-end. Floor units at zero (as [refund] does) so a
+        // misconfigured negative unitsPerLookup can't *reduce* usage and hand
+        // out free quota.
         val period = periodKey()
+        val safeUnits = units.coerceAtLeast(0)
         return db.withTransaction {
             val used = dao.used(provider, period) ?: 0
-            if (used + units > budget.softStop) {
+            if (used + safeUnits > budget.softStop) {
                 false
             } else {
-                dao.add(provider, period, units)
+                dao.add(provider, period, safeUnits)
                 true
             }
         }
