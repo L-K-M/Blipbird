@@ -93,11 +93,16 @@ fun AddFlightSheet(
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 Button(
-                    // Block re-taps while a batch resolves so a double-tap can't
-                    // enqueue the same flights twice (V6).
-                    enabled = !submitting && input.isNotBlank(),
+                    // Stay enabled (filled/primary) while submitting so the
+                    // spinner keeps its on-primary contrast — a disabled button
+                    // mutes the container and a white-ish indicator would wash
+                    // out. The onClick guard, not `enabled`, is what stops a
+                    // double-tap from enqueuing the same batch twice (V6).
+                    enabled = input.isNotBlank(),
                     onClick = {
-                        if (input.isNotBlank()) onAdd(input, selectedDate, alias.trim().ifEmpty { null })
+                        if (!submitting && input.isNotBlank()) {
+                            onAdd(input, selectedDate, alias.trim().ifEmpty { null })
+                        }
                     },
                 ) {
                     if (submitting) {
