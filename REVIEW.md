@@ -97,8 +97,6 @@ resurfacing in every review. Each notes what would flip the call.
   onto the tokens, and the in-app reduce-motion toggle (§18).
 - **V3 — remainder: haptics** (PLAN M4): the pull-to-refresh threshold haptic
   landed (shared `BirdRefreshIndicator`); still open: swipe-to-dismiss thresholds.
-- **V5 — Empty map card** renders header + attribution and nothing else when
-  coordinates are unknown. Placeholder or hide.
 - **V6 — remainder: no loading state while resolving.** The add sheet's date
   field is now a `DatePickerDialog` (read-only, clearable) and silent date parse
   errors are gone with it (glm 5.8); still open: no in-sheet progress indicator
@@ -106,9 +104,6 @@ resurfacing in every review. Each notes what would flip the call.
 - **V7 remainder — Ribbon niggles:** weather glyphs drift left of their sample
   positions (DS4-V19); sunrise/sunset times render in device TZ unlabeled;
   events can crowd on narrow phones.
-- **V9 — Detail density:** `Tag` icon reused for check-in and registration;
-  registration duplicated in `AirlineCard`; "Gate arrival" next to "Landed" in
-  the timeline reads inconsistently.
 - **V10 — Top bars don't collapse** (`scrollBehavior`); large-title collapse is
   half the "expensive iOS" gestalt.
 - **V12 — remainder: large-screen pass.** Detail two-pane landed; list/tablet
@@ -116,8 +111,6 @@ resurfacing in every review. Each notes what would flip the call.
 - **glm 3.8 — Plane glyphs always point right** in the list/hero route rows —
   a LHR→NRT flight visually flies backwards.
 - **glm 3.10 — No loading skeletons** (PLAN §9.2 now specifies them, #13).
-- **glm 4.2 — remainder: the map has no semantics** for TalkBack (the ribbon
-  summary landed in #59).
 
 ---
 

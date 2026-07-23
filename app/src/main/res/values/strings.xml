@@ -74,6 +74,8 @@
     <string name="weather_route_pending">Route forecast available closer to departure</string>
     <string name="airline">Airline</string>
     <string name="live_map">Live map</string>
+    <string name="map_unavailable">Route map appears once the airports resolve</string>
+    <string name="map_semantics">Route map from %1$s to %2$s, aircraft %3$d%% along the route</string>
     <string name="map_no_position">No live position — showing planned route</string>
     <string name="map_opensky_hint">Optional: add an OpenSky API client in Settings to draw the exact flown path.</string>
     <string name="last_seen_ago">Last seen %1$s ago</string>
