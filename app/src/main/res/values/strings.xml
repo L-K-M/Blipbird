@@ -14,6 +14,7 @@
     <string name="add_flight_date_clear">Clear date</string>
     <string name="date_picker_confirm">OK</string>
     <string name="add_flight_action">Track</string>
+    <string name="add_flight_submitting">Adding flight…</string>
     <string name="add_flight_alias_hint">Name (optional), e.g. “Mom’s flight home”</string>
     <string name="empty_list_title">No flights yet</string>
     <string name="empty_list_body">Add a flight number like CA861 or CCA861 to start tracking. You can paste several at once.</string>

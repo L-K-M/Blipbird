@@ -20,6 +20,7 @@ import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.domain.LookupOutcome
 import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -260,6 +261,14 @@ class FlightListViewModel @Inject constructor(
                 }
                 if (added > 0) onFirstTrack()
                 onResult(failed == 0 && added > 0)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A DAO/IO failure or parser bug would otherwise escape the
+                // coroutine (crash) and leave the sheet with a silently vanished
+                // spinner. Surface it and report the result instead.
+                addError.value = "Couldn't add flight — please try again"
+                onResult(false)
             } finally {
                 // Clears once the tokens are resolved and tracked; the per-flight
                 // refreshes above run in the background (child launches) and

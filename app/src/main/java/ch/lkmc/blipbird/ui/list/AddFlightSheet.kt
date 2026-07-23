@@ -37,6 +37,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
@@ -91,6 +93,9 @@ fun AddFlightSheet(
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(16.dp))
+            // Announced by the spinner's semantics so TalkBack signals the
+            // in-flight submit — the button label stays "Track" throughout.
+            val submittingLabel = stringResource(R.string.add_flight_submitting)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 Button(
                     // Stay enabled (filled/primary) while submitting so the
@@ -107,7 +112,9 @@ fun AddFlightSheet(
                 ) {
                     if (submitting) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier
+                                .size(18.dp)
+                                .semantics { contentDescription = submittingLabel },
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onPrimary,
                         )
