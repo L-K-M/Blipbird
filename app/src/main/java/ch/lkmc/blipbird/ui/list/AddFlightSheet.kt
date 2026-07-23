@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
@@ -98,6 +99,13 @@ fun AddFlightSheet(
             val submittingLabel = stringResource(R.string.add_flight_submitting)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 Button(
+                    // Announce the in-flight submit as a semantic *state* on the
+                    // button itself, so TalkBack says "Adding flight…" rather than
+                    // just "Track, button" and a non-sighted user knows their tap
+                    // registered (the spinner alone reads as an extra label).
+                    modifier = Modifier.semantics {
+                        if (submitting) stateDescription = submittingLabel
+                    },
                     // Stay enabled (filled/primary) while submitting so the
                     // spinner keeps its on-primary contrast — a disabled button
                     // mutes the container and a white-ish indicator would wash
