@@ -144,6 +144,9 @@ class ReminderReconcileWorker @AssistedInject constructor(
         // Transient post-boot failures (a Room lock, AlarmManager not ready yet):
         // back off and let WorkManager retry a couple of times before giving up,
         // rather than leaving reminders unreconciled until the next refresh cycle.
+        // Log it so a persistent failure (a migration issue, say, not a lock)
+        // leaves a breadcrumb instead of vanishing after the last attempt.
+        android.util.Log.w("ReminderReconcile", "boot reconcile failed (attempt ${runAttemptCount + 1})", e)
         if (runAttemptCount < 2) Result.retry() else Result.failure()
     }
 
