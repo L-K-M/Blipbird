@@ -19,6 +19,7 @@ import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.TimeUnit
@@ -134,9 +135,19 @@ class ReminderReconcileWorker @AssistedInject constructor(
     private val reminders: ReminderScheduler,
 ) : CoroutineWorker(appContext, params) {
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = try {
         reminders.reconcileAll()
-        return Result.success()
+        Result.success()
+    } catch (e: CancellationException) {
+        throw e   // let WorkManager's stop/cancel propagate, don't swallow it
+    } catch (e: Exception) {
+        // Transient post-boot failures (a Room lock, AlarmManager not ready yet):
+        // back off and let WorkManager retry a couple of times before giving up,
+        // rather than leaving reminders unreconciled until the next refresh cycle.
+        // Log it so a persistent failure (a migration issue, say, not a lock)
+        // leaves a breadcrumb instead of vanishing after the last attempt.
+        android.util.Log.w("ReminderReconcile", "boot reconcile failed (attempt ${runAttemptCount + 1})", e)
+        if (runAttemptCount < 2) Result.retry() else Result.failure()
     }
 
     companion object {

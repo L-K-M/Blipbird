@@ -37,20 +37,41 @@ class QuotaLedger @Inject constructor(
      */
     suspend fun trySpend(provider: String, units: Long): Boolean {
         val budget = budgets[provider] ?: return true
+        // Snapshot the period once: computing it inside the transaction risks
+        // reading one month and writing the next if the body straddles UTC
+        // midnight at month-end. Floor units at zero (as [refund] does) so a
+        // misconfigured negative unitsPerLookup can't *reduce* usage and hand
+        // out free quota.
+        val period = periodKey()
+        val safeUnits = units.coerceAtLeast(0)
         return db.withTransaction {
-            val used = dao.used(provider, periodKey()) ?: 0
-            if (used + units > budget.softStop) {
+            val used = dao.used(provider, period) ?: 0
+            if (used + safeUnits > budget.softStop) {
                 false
             } else {
-                dao.add(provider, periodKey(), units)
+                dao.add(provider, period, safeUnits)
                 true
             }
         }
     }
 
-    /** Give back units reserved by [trySpend] when no billable request was made. */
+    /**
+     * Give back units reserved by [trySpend] when no billable request was made.
+     * Clamped so a refund can never drive the period below zero (which would hand
+     * out free quota): a lookup that straddles the UTC month boundary reserves
+     * under one period key and would refund under the next — and any future
+     * double-refund would do the same. The period is snapshot once (same reason
+     * as [trySpend]) and a stray negative arg is floored at zero. Read + clamp +
+     * subtract atomically.
+     */
     suspend fun refund(provider: String, units: Long) {
-        if (budgets.containsKey(provider)) dao.add(provider, periodKey(), -units)
+        if (!budgets.containsKey(provider)) return
+        val period = periodKey()
+        db.withTransaction {
+            val current = dao.used(provider, period) ?: 0
+            val safeRefund = units.coerceAtLeast(0).coerceAtMost(current)
+            if (safeRefund > 0) dao.add(provider, period, -safeRefund)
+        }
     }
 
     suspend fun used(provider: String): Long = dao.used(provider, periodKey()) ?: 0
