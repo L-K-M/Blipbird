@@ -76,6 +76,8 @@ import ch.lkmc.blipbird.ui.components.BirdRefreshIndicator
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.countdownText
+import ch.lkmc.blipbird.ui.components.departsInText
+import ch.lkmc.blipbird.ui.components.landsInText
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.monogramColor
 import ch.lkmc.blipbird.ui.components.monogramContentColor
@@ -528,9 +530,9 @@ private fun phaseTime(row: FlightRow): String {
     val at = row.view.nextEventAt ?: return stringResource(R.string.value_unknown)
     return when (row.view.nextEventLabel) {
         ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.DEPARTS_IN ->
-            "Departs in ${countdownText(Duration.between(Instant.now(), at))}"
+            departsInText(Duration.between(Instant.now(), at))
         ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.LANDS_IN ->
-            "Lands in ${countdownText(Duration.between(Instant.now(), at))}"
+            landsInText(Duration.between(Instant.now(), at))
         ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.LANDED_AT ->
             "Landed ${localTime(at, row.arrTz?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault())}"
         else -> stringResource(R.string.value_unknown)

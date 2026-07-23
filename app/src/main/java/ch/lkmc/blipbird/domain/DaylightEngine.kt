@@ -142,11 +142,13 @@ object DaylightEngine {
             var lo = samples[i - 1].fraction
             var hi = samples[i].fraction
             var eLo = e0
-            repeat(24) {
+            for (iteration in 0 until 24) {
                 val mid = (lo + hi) / 2
                 val eMid = elevAt(mid) - thresholdDeg
                 if (eLo * eMid <= 0) hi = mid else { lo = mid; eLo = eMid }
-                if ((hi - lo) * durationSec < 1.0) return@repeat
+                // B22: a real break — return@repeat only continued the loop, so
+                // the ~1 s precision early-exit never fired.
+                if ((hi - lo) * durationSec < 1.0) break
             }
             val f = (lo + hi) / 2
             val p = GreatCircle.intermediate(from, to, f)

@@ -67,6 +67,8 @@ class FlightRepository @Inject constructor(
         val REFRESH_DEBOUNCE: Duration = Duration.ofSeconds(30)
         /** Minimum spacing between OpenSky trajectory backfills per flight. */
         val TRACK_BACKFILL_INTERVAL: Duration = Duration.ofMinutes(10)
+        /** Notification-dedup ledger outlives the data prune (glm 1.10). */
+        val EVENT_LEDGER_RETENTION: Duration = Duration.ofDays(30)
     }
 
     // ------------------------------------------------------------------ tracking
@@ -147,7 +149,9 @@ class FlightRepository @Inject constructor(
         }
 
         val designator = flight.designator()
-        val date = flight.dateLocal?.let { java.time.LocalDate.parse(it) }
+        // The stored format is our own (YYYY-MM-DD), but a corrupted pin must
+        // degrade to an undated lookup, not crash every refresh (DS4-B17).
+        val date = flight.dateLocal?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
         val attemptedAt = Instant.now()
         val lookups = mutableListOf(statusProviders.fetchCandidates(designator, date))
         var candidates = lookups.last().candidates
@@ -222,7 +226,10 @@ class FlightRepository @Inject constructor(
                     eventType = event.type.name,
                     fingerprint = event.fingerprint,
                     emittedAt = Instant.now().toEpochMilli(),
-                    expiresAt = expiryFor(snapshot),
+                    // Decoupled from the 3-day snapshot prune (glm 1.10, owner
+                    // decision): pruning the dedup ledger with the data made
+                    // terminal transitions re-fire on the next refresh.
+                    expiresAt = Instant.now().plus(EVENT_LEDGER_RETENTION).toEpochMilli(),
                 )
             )
             if (inserted != -1L) {

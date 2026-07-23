@@ -103,4 +103,31 @@ class FlightPhaseMachineTest {
             view.derivedBoardingAt,
         )
     }
+
+    private fun fixAt(at: Instant) = ch.lkmc.blipbird.core.model.PositionFix(
+        at = at, lat = 46.2, lon = 6.1, baroAltitudeFt = 35_000.0, onGround = false,
+        groundSpeedKt = 450.0, trackDeg = 270.0, verticalRateFpm = 0.0,
+        seenPosAgeSec = 5.0, icao24 = "aabbcc", callsign = "CCA861",
+        registration = null, source = "test",
+    )
+
+    @Test fun `future-dated fix does not count as airborne`() {
+        // Clock-skewed or buggy feeders can stamp fixes ahead of wall-clock;
+        // abs() alone treated a fix 10 minutes in the future as live.
+        val view = FlightPhaseMachine.derive(
+            snapshot(schedDep = NOW.plus(Duration.ofHours(2))),
+            fixAt(NOW.plus(Duration.ofMinutes(10))),
+            NOW,
+        )
+        assertEquals(FlightStatus.ON_TIME, view.status)
+    }
+
+    @Test fun `slightly skewed recent fix still counts as airborne`() {
+        val view = FlightPhaseMachine.derive(
+            snapshot(schedDep = NOW.minus(Duration.ofHours(1))),
+            fixAt(NOW.plusSeconds(30)),   // within the 60 s skew tolerance
+            NOW,
+        )
+        assertEquals(FlightStatus.EN_ROUTE, view.status)
+    }
 }

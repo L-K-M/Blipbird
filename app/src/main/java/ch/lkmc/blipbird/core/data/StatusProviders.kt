@@ -116,7 +116,10 @@ class AeroDataBoxProvider @Inject constructor(
             registration = aircraft?.reg,
             icao24 = aircraft?.modeS?.lowercase(),
             operatingDesignator = if (codeshareStatus == "IsCodeshared") null else number?.replace(" ", ""),
-            codeshareOf = if (codeshareStatus == "IsCodeshared") number?.replace(" ", "") else null,
+            // ADB flags a codeshare but never names the operating flight here, so
+            // there is nothing truthful to store: the queried number as its own
+            // codeshare was a self-reference (glm-A). Null until enriched.
+            codeshareOf = null,
             greatCircleKm = greatCircleDistance?.km,
         )
     }

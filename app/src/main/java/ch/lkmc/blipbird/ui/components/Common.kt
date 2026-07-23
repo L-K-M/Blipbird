@@ -112,6 +112,17 @@ internal fun contrastRatio(foreground: Color, background: Color): Double {
 }
 
 /**
+ * Phase countdown lines shared by list and detail. Past-due targets switch to
+ * in-progress copy (DS4-V20): while the data is stale, "Departing…" is honest
+ * where "Departs in 0m" reads like a frozen clock.
+ */
+fun departsInText(untilDeparture: Duration): String =
+    if (untilDeparture.isNegative) "Departing…" else "Departs in ${countdownText(untilDeparture)}"
+
+fun landsInText(untilArrival: Duration): String =
+    if (untilArrival.isNegative) "Landing…" else "Lands in ${countdownText(untilArrival)}"
+
+/**
  * Countdown with adaptive granularity: days → h m → m. Past-due targets clamp to
  * "0m" — "Lands in -2h 15m" (stale data) is never shown to the user.
  */

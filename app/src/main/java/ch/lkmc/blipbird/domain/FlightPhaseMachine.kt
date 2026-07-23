@@ -50,7 +50,12 @@ object FlightPhaseMachine {
         val depDelay = if (schedDep != null && bestDep != null && bestDep.isAfter(schedDep))
             Duration.between(schedDep, bestDep).takeIf { it.toMinutes() >= 5 } else null
 
+        // A fix must be recent AND not from the future: clock-skewed or buggy
+        // feeders can stamp fixes ahead of wall-clock, and abs() alone would
+        // treat those as live. One minute of forward tolerance covers benign
+        // device/feeder skew.
         val airborne = lastFix != null && !lastFix.onGround &&
+            !lastFix.at.isAfter(now.plusSeconds(60)) &&
             Duration.between(lastFix.at, now).abs() < Duration.ofMinutes(30)
 
         val status = when (snapshot.status) {

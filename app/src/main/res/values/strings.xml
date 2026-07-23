@@ -60,6 +60,8 @@
     <string name="add_to_calendar">Add to calendar</string>
     <string name="flight_ribbon">Along the route</string>
     <string name="weather">Weather</string>
+    <string name="metar_show_raw">Show raw METAR</string>
+    <string name="metar_hide_raw">Hide raw METAR</string>
     <string name="weather_route_pending">Route forecast available closer to departure</string>
     <string name="airline">Airline</string>
     <string name="live_map">Live map</string>

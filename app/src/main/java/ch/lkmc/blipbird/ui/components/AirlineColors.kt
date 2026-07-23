@@ -134,14 +134,15 @@ private val BRAND_COLORS: Map<String, Color> = mapOf(
 fun monogramColor(code: String): Color {
     val normalized = code.trim().uppercase()
     BRAND_COLORS[normalized]?.let { return it }
-    val palette = listOf(
-        Color(0xFF1667D9), Color(0xFF00696E), Color(0xFF7B4FA6), Color(0xFFB3541E),
-        Color(0xFF2E7D32), Color(0xFF9C27B0), Color(0xFF00838F), Color(0xFF5D4037),
-        Color(0xFFAD1457), Color(0xFF283593), Color(0xFF00695C), Color(0xFFEF6C00),
-    )
-    val idx = abs(normalized.hashCode()) % palette.size
-    return palette[idx]
+    return FALLBACK_PALETTE[abs(normalized.hashCode()) % FALLBACK_PALETTE.size]
 }
+
+// Hoisted (glm 2.7): monograms draw per list row; no per-lookup allocation.
+private val FALLBACK_PALETTE = listOf(
+    Color(0xFF1667D9), Color(0xFF00696E), Color(0xFF7B4FA6), Color(0xFFB3541E),
+    Color(0xFF2E7D32), Color(0xFF9C27B0), Color(0xFF00838F), Color(0xFF5D4037),
+    Color(0xFFAD1457), Color(0xFF283593), Color(0xFF00695C), Color(0xFFEF6C00),
+)
 
 /** WCAG-picked black/white for the monogram letters on [monogramColor]. */
 fun monogramContentColor(code: String): Color = statusContentColor(monogramColor(code))

@@ -4,6 +4,7 @@ import android.content.Intent
 import android.provider.CalendarContract
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -64,6 +65,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -80,6 +82,8 @@ import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.agoText
 import ch.lkmc.blipbird.ui.components.countdownText
+import ch.lkmc.blipbird.ui.components.departsInText
+import ch.lkmc.blipbird.ui.components.landsInText
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.statusText
 import ch.lkmc.blipbird.ui.components.monogramColor
@@ -247,14 +251,17 @@ private fun Hero(state: DetailUiState) {
     val snapshot = state.snapshot
     val cs = MaterialTheme.colorScheme
     val ext = LocalExtendedColors.current
+    // glm 2.2: the hero recomposes on every clock tick / fix; only rebuild the
+    // gradient when the palette actually changes.
+    val heroBrush = remember(cs.primary, cs.primaryContainer, cs.surfaceVariant) {
+        Brush.verticalGradient(
+            listOf(cs.primary.copy(alpha = 0.30f), cs.primaryContainer.copy(alpha = 0.55f), cs.surfaceVariant.copy(alpha = 0.4f)),
+        )
+    }
     Column(
         Modifier
             .clip(RoundedCornerShape(26.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(cs.primary.copy(alpha = 0.30f), cs.primaryContainer.copy(alpha = 0.55f), cs.surfaceVariant.copy(alpha = 0.4f)),
-                )
-            )
+            .background(heroBrush)
             .padding(20.dp),
     ) {
         // date + aircraft chip row
@@ -320,8 +327,8 @@ private fun Hero(state: DetailUiState) {
         val at = state.view.nextEventAt
         if (at != null) {
             val label = when (state.view.nextEventLabel) {
-                FlightPhaseMachine.NextEvent.DEPARTS_IN -> "Departs in ${countdownText(Duration.between(Instant.now(), at))}"
-                FlightPhaseMachine.NextEvent.LANDS_IN -> "Lands in ${countdownText(Duration.between(Instant.now(), at))}"
+                FlightPhaseMachine.NextEvent.DEPARTS_IN -> departsInText(Duration.between(Instant.now(), at))
+                FlightPhaseMachine.NextEvent.LANDS_IN -> landsInText(Duration.between(Instant.now(), at))
                 FlightPhaseMachine.NextEvent.LANDED_AT -> "Landed at ${localTime(at, zoneOf(state.arrAirport?.tz))}"
                 else -> null
             }
@@ -772,12 +779,26 @@ private fun WeatherStation(
             }
         }
     }
+    // G3 (owner decision): the raw string is one tap away, not always-on — the
+    // decoded line carries the meaning; the METAR itself is for avgeeks.
+    var showRaw by remember(w.rawMetar) { mutableStateOf(false) }
     Spacer(Modifier.height(6.dp))
     Text(
-        w.rawMetar,
-        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+        stringResource(if (showRaw) R.string.metar_hide_raw else R.string.metar_show_raw),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(role = Role.Button) { showRaw = !showRaw }
+            .padding(vertical = 2.dp, horizontal = 2.dp),
     )
+    if (showRaw) {
+        Text(
+            w.rawMetar,
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+        )
+    }
 }
 
 @Composable
