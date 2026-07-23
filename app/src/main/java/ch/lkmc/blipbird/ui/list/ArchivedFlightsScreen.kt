@@ -13,8 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -93,10 +94,14 @@ fun ArchivedFlightsScreen(
         if (rows.isEmpty()) {
             ArchivedEmptyState(Modifier.padding(padding).fillMaxSize())
         } else {
-            LazyColumn(
+            // Matches the main list: one column on phones, more once the window is
+            // wide enough for another ~380 dp card (V12 large-screen pass).
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 380.dp),
                 modifier = Modifier.padding(padding).fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(rows, key = { it.id }, contentType = { "archived-row" }) { row ->
                     ArchivedFlightCard(
