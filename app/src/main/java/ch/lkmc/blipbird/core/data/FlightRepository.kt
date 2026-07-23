@@ -581,7 +581,11 @@ class StatusProviderChain @Inject constructor(
         for (provider in listOf<FlightStatusProvider>(aeroDataBox, aeroApi)) {
             // Reserve the unit atomically before the request so two concurrent
             // lookups can't both slip past the soft stop (B18); refund it below
-            // when the outcome wasn't a billable lookup (no key / error).
+            // when the outcome wasn't a billable lookup (no key / error). This
+            // assumes the current providers (AeroDataBox via RapidAPI, AeroAPI)
+            // only count successful calls, so errors and 429s aren't billed — if
+            // a provider ever bills for failed requests, drop the refund on Error
+            // and keep it only for NoKey.
             if (!quota.trySpend(provider.name, provider.unitsPerLookup)) {
                 failures += LookupOutcome.QUOTA_EXHAUSTED
                 continue

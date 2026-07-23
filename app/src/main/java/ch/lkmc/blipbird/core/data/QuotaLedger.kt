@@ -48,9 +48,19 @@ class QuotaLedger @Inject constructor(
         }
     }
 
-    /** Give back units reserved by [trySpend] when no billable request was made. */
+    /**
+     * Give back units reserved by [trySpend] when no billable request was made.
+     * Clamped so a refund can never drive the period below zero (which would hand
+     * out free quota): a lookup that straddles the UTC month boundary reserves
+     * under one period key and would refund under the next — and any future
+     * double-refund would do the same. Read + clamp + subtract atomically.
+     */
     suspend fun refund(provider: String, units: Long) {
-        if (budgets.containsKey(provider)) dao.add(provider, periodKey(), -units)
+        if (!budgets.containsKey(provider)) return
+        db.withTransaction {
+            val current = dao.used(provider, periodKey()) ?: 0
+            if (current > 0) dao.add(provider, periodKey(), -(units.coerceAtMost(current)))
+        }
     }
 
     suspend fun used(provider: String): Long = dao.used(provider, periodKey()) ?: 0
