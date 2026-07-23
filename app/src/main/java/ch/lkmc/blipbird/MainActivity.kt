@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,9 +26,11 @@ import ch.lkmc.blipbird.core.datastore.SettingsRepository
 import ch.lkmc.blipbird.core.datastore.ThemeMode
 import ch.lkmc.blipbird.core.datastore.ThemeSpec
 import ch.lkmc.blipbird.platform.AppIconSwitcher
+import ch.lkmc.blipbird.ui.components.rememberReducedMotion
 import ch.lkmc.blipbird.ui.detail.FlightDetailScreen
 import ch.lkmc.blipbird.ui.list.FlightListScreen
 import ch.lkmc.blipbird.ui.settings.SettingsScreen
+import ch.lkmc.blipbird.ui.theme.BlipbirdMotion
 import ch.lkmc.blipbird.ui.theme.BlipbirdTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -203,18 +206,49 @@ fun BlipbirdNav(
 
     BackHandler(enabled = backStack.size > 1) { backStack.removeAt(backStack.lastIndex) }
 
-    when (current) {
-        is Screen.List -> FlightListScreen(
-            onOpenFlight = { backStack.add(Screen.Detail(it)) },
-            onOpenSettings = { backStack.add(Screen.Settings) },
-            onFirstTrack = onFirstTrack,
-        )
-        is Screen.Detail -> FlightDetailScreen(
-            flightId = current.flightId,
-            onBack = { backStack.removeAt(backStack.lastIndex) },
-        )
-        is Screen.Settings -> SettingsScreen(
-            onBack = { backStack.removeAt(backStack.lastIndex) },
-        )
+    // Screen changes were hard cuts (REVIEW.md V2); they now run the named
+    // push/pop specs from BlipbirdMotion (PLAN.md §10.2), or a plain crossfade
+    // when the user removed animations.
+    val reducedMotion = rememberReducedMotion()
+    AnimatedContent(
+        targetState = current,
+        transitionSpec = {
+            val forward = screenRank(targetState) >= screenRank(initialState)
+            val transform = when {
+                reducedMotion -> BlipbirdMotion.crossfade()
+                forward -> BlipbirdMotion.push()
+                else -> BlipbirdMotion.pop()
+            }
+            // Deeper screens render above shallower ones, so a push covers the
+            // outgoing screen and a pop reveals the incoming one beneath.
+            transform.apply { targetContentZIndex = screenRank(targetState).toFloat() }
+        },
+        label = "screen",
+    ) { screen ->
+        when (screen) {
+            is Screen.List -> FlightListScreen(
+                onOpenFlight = { backStack.add(Screen.Detail(it)) },
+                onOpenSettings = { backStack.add(Screen.Settings) },
+                onFirstTrack = onFirstTrack,
+            )
+            is Screen.Detail -> FlightDetailScreen(
+                flightId = screen.flightId,
+                onBack = { backStack.removeAt(backStack.lastIndex) },
+            )
+            is Screen.Settings -> SettingsScreen(
+                onBack = { backStack.removeAt(backStack.lastIndex) },
+            )
+        }
     }
+}
+
+/**
+ * Navigation depth for transition direction and z-order: moving to a deeper
+ * (or equal — e.g. a deep link replacing one detail with another) screen is a
+ * push, to a shallower one a pop.
+ */
+private fun screenRank(screen: Screen): Int = when (screen) {
+    is Screen.List -> 0
+    is Screen.Settings -> 1
+    is Screen.Detail -> 2
 }

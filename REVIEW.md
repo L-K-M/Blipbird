@@ -118,10 +118,10 @@ forensically.
 
 ## Visual, layout & accessibility backlog (the "premium iOS" gap)
 
-- **V2 — No motion design.** Screen changes are hard cuts; even slide/fade
-  transitions buy disproportionate polish. (#21 added list-item animation; #62
-  added the micro-flourishes; the V1 type system landed July 2026 — motion is
-  the remaining aesthetic lever.)
+- **V2 — remainder: motion-token adoption.** The `BlipbirdMotion` token object
+  and the named push/pop screen transitions landed (July 2026); still open:
+  migrating component-embedded specs (status-chip color flip, sheet present)
+  onto the tokens, and the in-app reduce-motion toggle (§18).
 - **V3 — No haptics** (PLAN M4): pull-to-refresh completion, swipe thresholds,
   wheels-down.
 - **V5 — Empty map card** renders header + attribution and nothing else when
