@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -107,6 +108,18 @@ interface QuotaLedgerDao {
 
     @Query("SELECT * FROM quota_ledger")
     fun observeAll(): Flow<List<QuotaLedgerEntity>>
+}
+
+@Dao
+interface StatusLookupAttemptDao {
+    @Query("SELECT * FROM status_lookup_attempt WHERE trackedFlightId = :flightId")
+    suspend fun byFlightId(flightId: Long): StatusLookupAttemptEntity?
+
+    @Upsert
+    suspend fun upsert(attempt: StatusLookupAttemptEntity)
+
+    @Query("DELETE FROM status_lookup_attempt WHERE trackedFlightId = :flightId")
+    suspend fun deleteForFlight(flightId: Long)
 }
 
 @Dao

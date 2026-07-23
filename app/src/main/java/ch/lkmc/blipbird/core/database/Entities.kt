@@ -93,6 +93,15 @@ data class QuotaLedgerEntity(
     val unitsUsed: Long,
 )
 
+@Entity(tableName = "status_lookup_attempt")
+data class StatusLookupAttemptEntity(
+    @PrimaryKey val trackedFlightId: Long,
+    val attemptedAt: Long,
+    val outcome: String,
+    val consecutiveFailures: Int,
+    val nextEligibleAt: Long,
+)
+
 // Reference tables (imported from bundled assets; rebuildable, never backed up).
 
 @Entity(
