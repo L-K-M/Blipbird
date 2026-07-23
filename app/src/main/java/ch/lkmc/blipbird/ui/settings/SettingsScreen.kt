@@ -161,6 +161,7 @@ fun SettingsScreen(
             ToggleRow(stringResource(R.string.channel_critical), state.notifCritical) { viewModel.setNotifCritical(it) }
             ToggleRow(stringResource(R.string.channel_status), state.notifStatus) { viewModel.setNotifStatus(it) }
             ToggleRow(stringResource(R.string.channel_reminders), state.notifReminders) { viewModel.setNotifReminders(it) }
+            ToggleRow(stringResource(R.string.channel_ongoing), state.notifInFlight) { viewModel.setNotifInFlight(it) }
             Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.settings_precise_alerts), style = MaterialTheme.typography.bodyLarge)
             Text(

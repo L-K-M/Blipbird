@@ -8,6 +8,7 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.data.FlightRepository
+import ch.lkmc.blipbird.core.data.displayDesignator
 import ch.lkmc.blipbird.core.datastore.SettingsRepository
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import dagger.hilt.EntryPoint
@@ -145,7 +146,7 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 val emitter = entryPoint.emitter()
                 val flight = repo.flight(flightId) ?: return@launch
                 val snapshot = repo.latestSnapshot(flightId) ?: return@launch
-                val designator = flight.alias ?: with(repo) { flight.displayDesignator() }
+                val designator = flight.displayDesignator()
                 val stale = Duration.between(snapshot.fetchedAt, Instant.now()) > Duration.ofMinutes(30)
                 val fmt = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
                 val text = when (kind) {

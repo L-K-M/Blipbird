@@ -83,6 +83,7 @@ class SettingsRepository @Inject constructor(
         val NOTIF_CRITICAL = booleanPreferencesKey("notif_critical")
         val NOTIF_STATUS = booleanPreferencesKey("notif_status")
         val NOTIF_REMINDERS = booleanPreferencesKey("notif_reminders")
+        val NOTIF_IN_FLIGHT = booleanPreferencesKey("notif_in_flight")
     }
 
     val themeSpec: Flow<ThemeSpec> = context.settingsStore.data.map { p ->
@@ -102,6 +103,7 @@ class SettingsRepository @Inject constructor(
     val notifCritical: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_CRITICAL] ?: true }
     val notifStatus: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_STATUS] ?: true }
     val notifReminders: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_REMINDERS] ?: true }
+    val notifInFlight: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_IN_FLIGHT] ?: true }
 
     suspend fun setThemeMode(mode: ThemeMode) = context.settingsStore.edit { it[Keys.THEME_MODE] = mode.name }
     suspend fun setAccent(accent: Accent) = context.settingsStore.edit { it[Keys.ACCENT] = accent.serialize() }
@@ -110,4 +112,5 @@ class SettingsRepository @Inject constructor(
     suspend fun setNotifCritical(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_CRITICAL] = v }
     suspend fun setNotifStatus(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_STATUS] = v }
     suspend fun setNotifReminders(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_REMINDERS] = v }
+    suspend fun setNotifInFlight(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_IN_FLIGHT] = v }
 }

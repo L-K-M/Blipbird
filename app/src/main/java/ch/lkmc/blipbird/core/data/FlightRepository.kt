@@ -33,6 +33,15 @@ import javax.inject.Singleton
 /** Posted by the repository after ledger dedup; implemented by the platform layer. */
 interface NotificationSink {
     suspend fun post(flightId: Long, designator: String, event: NotificationPlanner.Event)
+
+    /**
+     * Reconcile the ongoing in-flight notification (F6) with [snapshot]:
+     * post/update while airborne, cancel otherwise. Null always cancels —
+     * the delete/archive paths pass null so a stale ongoing card can't
+     * outlive its flight. The snapshot is passed in (rather than looked up
+     * by the sink) to keep the platform layer free of repository deps.
+     */
+    suspend fun syncOngoing(flightId: Long, designator: String, snapshot: StatusSnapshot?)
 }
 
 /**
@@ -99,7 +108,11 @@ class FlightRepository @Inject constructor(
     suspend fun flight(id: Long): TrackedFlightEntity? = trackedDao.byId(id)
     suspend fun activeFlights(): List<TrackedFlightEntity> = trackedDao.activeList()
 
-    suspend fun archive(id: Long) = trackedDao.archive(id)
+    suspend fun archive(id: Long) {
+        trackedDao.archive(id)
+        // An archived flight must not keep a live progress card up (F6).
+        syncOngoingQuietly(id, "", null)
+    }
 
     suspend fun setAlias(id: Long, alias: String?) = trackedDao.setAlias(id, alias?.trim()?.takeIf { it.isNotEmpty() })
 
@@ -107,6 +120,24 @@ class FlightRepository @Inject constructor(
         trackedDao.unarchive(id)
         // Insert paths that bypass track() must also re-arm the self-cancelling worker.
         backgroundRefresh.ensureScheduled()
+        // Restore the ongoing card right away if the flight is mid-air (F6).
+        trackedDao.byId(id)?.let { flight ->
+            syncOngoingQuietly(id, flight.displayDesignator(), snapshotDao.latest(id)?.toModel())
+        }
+    }
+
+    /**
+     * Ongoing-card reconciliation is best-effort: it must never fail the
+     * primary operation that triggered it (the DB write already committed),
+     * and the card self-corrects on the next worker pass anyway.
+     */
+    private suspend fun syncOngoingQuietly(flightId: Long, designator: String, snapshot: StatusSnapshot?) {
+        try {
+            notificationSink.syncOngoing(flightId, designator, snapshot)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
     }
 
     /**
@@ -133,6 +164,8 @@ class FlightRepository @Inject constructor(
         }
         trackedDao.delete(id)
         trackBackfillAt.remove(id)
+        // A deleted flight must not keep a live progress card up (F6).
+        syncOngoingQuietly(id, "", null)
     }
 
     // ------------------------------------------------------------------ status
@@ -244,6 +277,11 @@ class FlightRepository @Inject constructor(
         val entity = snapshot.toEntity(flightId)
         snapshotDao.insert(entity)
         recordLookupAttempt(flightId, LookupOutcome.SUCCESS, date, attemptedAt)
+
+        // Every fresh snapshot re-reconciles the ongoing in-flight card (F6):
+        // ProgressStyle progress is a posted value, so it only advances when we
+        // repost on legitimate data updates (PLAN.md §13).
+        syncOngoingQuietly(flightId, flight.displayDesignator(), snapshot)
 
         // Diff against previous and emit through the persisted dedup ledger.
         val events = NotificationPlanner.diff(previous?.toModel(), snapshot)
@@ -412,12 +450,6 @@ class FlightRepository @Inject constructor(
 
     // ------------------------------------------------------------------ mapping
 
-    fun TrackedFlightEntity.designator(): Designator =
-        Designator(designatorIata, designatorIcao, flightNumber, suffix)
-
-    fun TrackedFlightEntity.displayDesignator(): String =
-        alias ?: designator().display
-
     private fun StatusSnapshot.toEntity(flightId: Long): StatusSnapshotEntity = StatusSnapshotEntity(
         trackedFlightId = flightId,
         provider = provider,
@@ -500,6 +532,17 @@ class FlightRepository @Inject constructor(
         source = source,
     )
 }
+
+fun TrackedFlightEntity.designator(): Designator =
+    Designator(designatorIata, designatorIcao, flightNumber, suffix)
+
+/**
+ * Alias if set, else the designator — the one title used everywhere a flight
+ * is named (list rows, notifications, reminders). Top-level so platform-side
+ * callers can't drift into hand-rolling a slightly different string.
+ */
+fun TrackedFlightEntity.displayDesignator(): String =
+    alias ?: designator().display
 
 internal fun positionQueries(
     currentHex: String?,

@@ -2,6 +2,7 @@ package ch.lkmc.blipbird.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import ch.lkmc.blipbird.core.data.FlightRepository
 import ch.lkmc.blipbird.core.data.QuotaLedger
 import ch.lkmc.blipbird.core.datastore.Accent
 import ch.lkmc.blipbird.core.datastore.AppIcon
@@ -10,6 +11,7 @@ import ch.lkmc.blipbird.core.datastore.SettingsRepository
 import ch.lkmc.blipbird.core.datastore.ThemeMode
 import ch.lkmc.blipbird.core.datastore.ThemeSpec
 import ch.lkmc.blipbird.platform.AppIconSwitcher
+import ch.lkmc.blipbird.platform.NotificationEmitter
 import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,6 +34,7 @@ data class SettingsUiState(
     val notifCritical: Boolean = true,
     val notifStatus: Boolean = true,
     val notifReminders: Boolean = true,
+    val notifInFlight: Boolean = true,
     val quota: List<QuotaRow> = emptyList(),
 )
 
@@ -42,12 +45,16 @@ class SettingsViewModel @Inject constructor(
     private val quotaLedger: QuotaLedger,
     private val reminders: ReminderScheduler,
     private val appIconSwitcher: AppIconSwitcher,
+    private val repository: FlightRepository,
+    private val notifications: NotificationEmitter,
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = combine(
         combine(settings.themeSpec, settings.appIcon) { spec, icon -> spec to icon },
         keyStore.keys,
-        combine(settings.notifCritical, settings.notifStatus, settings.notifReminders) { c, s, r -> Triple(c, s, r) },
+        combine(settings.notifCritical, settings.notifStatus, settings.notifReminders, settings.notifInFlight) { c, s, r, f ->
+            listOf(c, s, r, f)
+        },
         quotaLedger.observeAll().map { rows ->
             rows.filter { it.periodKey == quotaLedger.periodKey() }
                 .map { QuotaRow(it.provider, it.unitsUsed, quotaLedger.allowance(it.provider)) }
@@ -60,9 +67,10 @@ class SettingsViewModel @Inject constructor(
             hasAeroApiKey = keys.aeroApiKey != null,
             hasOpenSkyId = keys.openSkyClientId != null,
             hasOpenSkySecret = keys.openSkyClientSecret != null,
-            notifCritical = notifs.first,
-            notifStatus = notifs.second,
-            notifReminders = notifs.third,
+            notifCritical = notifs[0],
+            notifStatus = notifs[1],
+            notifReminders = notifs[2],
+            notifInFlight = notifs[3],
             quota = quota,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
@@ -85,6 +93,12 @@ class SettingsViewModel @Inject constructor(
     fun clearOpenSkySecret() = viewModelScope.launch { keyStore.setOpenSkyClientSecret(null) }
     fun setNotifCritical(v: Boolean) = viewModelScope.launch { settings.setNotifCritical(v) }
     fun setNotifStatus(v: Boolean) = viewModelScope.launch { settings.setNotifStatus(v) }
+    fun setNotifInFlight(v: Boolean) = viewModelScope.launch {
+        settings.setNotifInFlight(v)
+        // Apply immediately: a card the user just disabled must not linger
+        // until the next worker pass (re-enabling restores it on that pass).
+        if (!v) repository.activeFlights().forEach { notifications.cancelOngoing(it.id) }
+    }
 
     fun setNotifReminders(v: Boolean) = viewModelScope.launch {
         settings.setNotifReminders(v)
