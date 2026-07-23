@@ -91,10 +91,13 @@ resurfacing in every review. Each notes what would flip the call.
 
 ## Visual, layout & accessibility backlog (the "premium iOS" gap)
 
-- **V2 — remainder: motion-token adoption.** The `BlipbirdMotion` token object
-  and the named push/pop screen transitions landed (July 2026); still open:
-  migrating component-embedded specs (status-chip color flip, sheet present)
-  onto the tokens, and the in-app reduce-motion toggle (§18).
+- **V2 — remainder: component motion-token adoption.** The `BlipbirdMotion`
+  token object, the named push/pop screen transitions, and now the in-app
+  reduce-motion toggle (§18 — a persisted setting OR-ed with the system animator
+  scale, gating every `rememberReducedMotion` flourish app-wide) have landed.
+  Still open: migrating the component-embedded specs (status-chip color flip,
+  sheet present) onto the `BlipbirdMotion.DURATION_*` tokens — a cosmetic
+  refactor whose intended durations want an on-device eye.
 - **V3 — remainder: swipe-to-dismiss haptic.** The pull-to-refresh threshold
   haptic landed (#69); a swipe-to-dismiss threshold haptic was tried and reverted
   — firing mid-drag read as the archive/delete committing before finger-release.

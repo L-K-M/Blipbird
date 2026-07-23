@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -80,18 +81,27 @@ fun StatusWord(status: FlightStatus) {
 }
 
 /**
- * True when the system animator scale is 0 ("remove animations"); autonomous
- * flourishes (split-flap cascades, flapping, swoops) should sit still then.
- * Direct-manipulation feedback that tracks the finger is fine either way.
+ * In-app "reduce motion" override (§18), provided at the app root from the
+ * settings store. [rememberReducedMotion] OR-s it with the system animator
+ * scale, so users on an OS without an accessible animation toggle still get one.
+ */
+val LocalReduceMotionPref = staticCompositionLocalOf { false }
+
+/**
+ * True when the system animator scale is 0 ("remove animations") **or** the
+ * in-app reduce-motion toggle is on; autonomous flourishes (split-flap cascades,
+ * flapping, swoops) should sit still then. Direct-manipulation feedback that
+ * tracks the finger is fine either way.
  */
 @Composable
 fun rememberReducedMotion(): Boolean {
     val context = LocalContext.current
-    return remember(context) {
+    val systemReduced = remember(context) {
         Settings.Global.getFloat(
             context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f,
         ) == 0f
     }
+    return systemReduced || LocalReduceMotionPref.current
 }
 
 /** Select the WCAG black/white foreground with the higher contrast ratio. */

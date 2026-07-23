@@ -35,6 +35,7 @@ data class SettingsUiState(
     val notifStatus: Boolean = true,
     val notifReminders: Boolean = true,
     val notifInFlight: Boolean = true,
+    val reduceMotion: Boolean = false,
     val quota: List<QuotaRow> = emptyList(),
 )
 
@@ -59,7 +60,8 @@ class SettingsViewModel @Inject constructor(
             rows.filter { it.periodKey == quotaLedger.periodKey() }
                 .map { QuotaRow(it.provider, it.unitsUsed, quotaLedger.allowance(it.provider)) }
         },
-    ) { (spec, icon), keys, notifs, quota ->
+        settings.reduceMotion,
+    ) { (spec, icon), keys, notifs, quota, reduceMotion ->
         SettingsUiState(
             spec = spec,
             appIcon = icon,
@@ -71,6 +73,7 @@ class SettingsViewModel @Inject constructor(
             notifStatus = notifs[1],
             notifReminders = notifs[2],
             notifInFlight = notifs[3],
+            reduceMotion = reduceMotion,
             quota = quota,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
@@ -78,6 +81,7 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { settings.setThemeMode(mode) }
     fun setAccent(accent: Accent) = viewModelScope.launch { settings.setAccent(accent) }
     fun setHighContrast(v: Boolean) = viewModelScope.launch { settings.setHighContrast(v) }
+    fun setReduceMotion(v: Boolean) = viewModelScope.launch { settings.setReduceMotion(v) }
 
     fun setAppIcon(icon: AppIcon) = viewModelScope.launch {
         settings.setAppIcon(icon)
