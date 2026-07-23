@@ -229,7 +229,12 @@ class FlightListViewModel @Inject constructor(
         // Ignore a re-entrant call while a batch is still resolving — defense in
         // depth behind the sheet's own submit guard. compareAndSet flips the flag
         // atomically, closing the check-then-set gap if two callers ever race.
-        if (!_adding.compareAndSet(expect = false, update = true)) return
+        if (!_adding.compareAndSet(expect = false, update = true)) {
+            // Still honor the callback contract every other path keeps: report
+            // "not accepted" so a caller awaiting onResult can't hang on the drop.
+            onResult(false)
+            return
+        }
         viewModelScope.launch {
             try {
                 val tokens = DesignatorParser.splitBatch(input)
