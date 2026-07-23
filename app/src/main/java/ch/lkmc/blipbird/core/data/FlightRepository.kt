@@ -107,6 +107,7 @@ class FlightRepository @Inject constructor(
     fun observeFlight(id: Long): Flow<TrackedFlightEntity?> = trackedDao.observeById(id)
     suspend fun flight(id: Long): TrackedFlightEntity? = trackedDao.byId(id)
     suspend fun activeFlights(): List<TrackedFlightEntity> = trackedDao.activeList()
+    fun observeArchivedFlights(): Flow<List<TrackedFlightEntity>> = trackedDao.observeArchived()
 
     suspend fun archive(id: Long) {
         trackedDao.archive(id)

@@ -116,8 +116,11 @@ resurfacing in every review. Each notes what would flip the call.
 
 ## Missing features (value ÷ effort ordered)
 
-- **F2 — Auto-archive landed flights** after ~24 h into a "Past flights"
-  section. *(S)*
+- **F2 — remainder: auto-archive on landing.** The "Past flights" section
+  landed — archived flights are now browsable from the list top bar, and each can
+  be restored or permanently deleted (closing the recoverability gap where an
+  archived flight vanished once the undo snackbar dismissed). Still open:
+  automatically archiving landed flights after ~24 h. *(S)*
 - **F5 — "Boarding" as a real status** — ADB `boarding`/`gateClosed` collapse
   into SCHEDULED; `strings.xml` already ships the word. *(M)*
 - **F7 — "Next flight" Glance widget.** *(M)*

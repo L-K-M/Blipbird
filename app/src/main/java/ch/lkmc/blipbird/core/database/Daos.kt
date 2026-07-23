@@ -19,6 +19,9 @@ interface TrackedFlightDao {
     @Query("SELECT * FROM tracked_flight WHERE archived = 0")
     suspend fun activeList(): List<TrackedFlightEntity>
 
+    @Query("SELECT * FROM tracked_flight WHERE archived = 1 ORDER BY createdAt DESC")
+    fun observeArchived(): Flow<List<TrackedFlightEntity>>
+
     @Query("SELECT * FROM tracked_flight WHERE id = :id")
     suspend fun byId(id: Long): TrackedFlightEntity?
 
