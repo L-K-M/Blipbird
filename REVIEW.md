@@ -102,8 +102,11 @@ resurfacing in every review. Each notes what would flip the call.
 - **V7 remainder — Ribbon niggles:** weather glyphs drift left of their sample
   positions (DS4-V19); sunrise/sunset times render in device TZ unlabeled;
   events can crowd on narrow phones.
-- **V10 — Top bars don't collapse** (`scrollBehavior`); large-title collapse is
-  half the "expensive iOS" gestalt.
+- **V10 — remainder: detail top bar.** The index screens (My flights, Settings,
+  Past flights) now use a collapsing `LargeTopAppBar` (`exitUntilCollapsed`
+  scroll behavior). The detail screen deliberately keeps a regular bar — it
+  leads with the sky-gradient hero, so a large collapsing title above it would
+  double up. *Revisit* only if the hero is ever reworked.
 - **V12 — remainder: large-screen pass.** Detail two-pane landed; list/tablet
   grid and landscape-specific layouts still open.
 - **glm 3.8 — Plane glyphs always point right** in the list/hero route rows —
