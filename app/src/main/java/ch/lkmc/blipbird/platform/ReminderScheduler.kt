@@ -10,6 +10,8 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -24,7 +26,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -37,8 +43,8 @@ import javax.inject.Singleton
  * Time-anchored reminders (boarding, landing-soon) on exact alarms when the user
  * granted SCHEDULE_EXACT_ALARM (PLAN.md §12.2): one stable PendingIntent identity
  * per flight/event, reconciled whenever the source milestone changes, and rebuilt
- * on boot / permission-state change by [BootCompletedReceiver]. Degrades silently
- * to the WorkManager cadence when not granted.
+ * on boot / permission-state change by [BootCompletedReceiver]. Degrades to a
+ * best-effort delayed WorkManager delivery when exact access is unavailable.
  */
 @Singleton
 class ReminderScheduler @Inject constructor(
@@ -96,7 +102,8 @@ class ReminderScheduler @Inject constructor(
             flightId,
             KIND_BOARDING,
             boardingAt,
-            boardingAt?.isAfter(now) == true && up == null && !airborne && !terminal,
+            boardingAt != null && up == null && !airborne && !terminal,
+            now,
         )
 
         val landingSoonAt = snapshot.arrTimes.best?.minus(LANDING_LEAD)
@@ -105,7 +112,8 @@ class ReminderScheduler @Inject constructor(
             flightId,
             KIND_LANDING_SOON,
             landingSoonAt,
-            landingSoonAt?.isAfter(now) == true && down == null && !terminal,
+            landingSoonAt != null && down == null && !terminal,
+            now,
         )
     }
 
@@ -118,13 +126,25 @@ class ReminderScheduler @Inject constructor(
         cancelKind(flightId, KIND_LANDING_SOON)
     }
 
-    private fun reconcileKind(flightId: Long, kind: String, at: Instant?, wanted: Boolean) {
-        if (!wanted || at == null) {
+    private fun reconcileKind(
+        flightId: Long,
+        kind: String,
+        at: Instant?,
+        eligible: Boolean,
+        now: Instant,
+    ) {
+        if (!eligible || at == null) {
             cancelKind(flightId, kind)
             return
         }
+        // Once due, the alarm/fallback handoff owns delivery and revalidates all
+        // current state. Reconciliation must not cancel that in-flight work.
+        if (!at.isAfter(now)) {
+            cancelAlarmKind(flightId, kind)
+            return
+        }
         if (canUseExactAlarms() && setExact(flightId, kind, at)) {
-            ReminderDeliveryWorker.cancel(context, flightId, kind)
+            ReminderDeliveryWorker.cancelScheduled(context, flightId, kind)
         } else {
             cancelAlarmKind(flightId, kind)
             ReminderDeliveryWorker.schedule(context, flightId, kind, at)
@@ -147,7 +167,7 @@ class ReminderScheduler @Inject constructor(
 
     private fun cancelKind(flightId: Long, kind: String) {
         cancelAlarmKind(flightId, kind)
-        ReminderDeliveryWorker.cancel(context, flightId, kind)
+        ReminderDeliveryWorker.cancelScheduled(context, flightId, kind)
     }
 
     private fun cancelAlarmKind(flightId: Long, kind: String) {
@@ -259,8 +279,17 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val flightId = intent.getLongExtra(ReminderScheduler.EXTRA_FLIGHT_ID, -1)
         val kind = intent.getStringExtra(ReminderScheduler.EXTRA_KIND) ?: return
-        if (flightId < 0) return
-        ReminderDeliveryWorker.enqueueFiredAlarm(context, flightId, kind)
+        if (flightId <= 0) return
+        val pending = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                // Await only WorkManager's durable enqueue, never network or a
+                // flight lock, before releasing the receiver's short budget.
+                ReminderDeliveryWorker.enqueueFiredAlarm(context, flightId, kind).result.get()
+            } finally {
+                pending.finish()
+            }
+        }
     }
 }
 
@@ -312,15 +341,25 @@ class ReminderDeliveryWorker @AssistedInject constructor(
                 kind = kind,
                 requiresExact = false,
                 delayMillis = Duration.between(Instant.now(), at).toMillis().coerceAtLeast(0),
+                workName = reminderScheduleWorkName(flightId, kind),
+                policy = ExistingWorkPolicy.REPLACE,
+                expedited = false,
             )
         }
 
-        fun enqueueFiredAlarm(context: Context, flightId: Long, kind: String) {
-            enqueue(context, flightId, kind, requiresExact = true, delayMillis = 0)
-        }
+        fun enqueueFiredAlarm(context: Context, flightId: Long, kind: String): Operation = enqueue(
+            context = context,
+            flightId = flightId,
+            kind = kind,
+            requiresExact = true,
+            delayMillis = 0,
+            workName = reminderDeliveryWorkName(flightId, kind),
+            policy = ExistingWorkPolicy.KEEP,
+            expedited = true,
+        )
 
-        fun cancel(context: Context, flightId: Long, kind: String) {
-            WorkManager.getInstance(context).cancelUniqueWork(workName(flightId, kind))
+        fun cancelScheduled(context: Context, flightId: Long, kind: String) {
+            WorkManager.getInstance(context).cancelUniqueWork(reminderScheduleWorkName(flightId, kind))
         }
 
         private fun enqueue(
@@ -329,8 +368,11 @@ class ReminderDeliveryWorker @AssistedInject constructor(
             kind: String,
             requiresExact: Boolean,
             delayMillis: Long,
-        ) {
-            val request = OneTimeWorkRequestBuilder<ReminderDeliveryWorker>()
+            workName: String,
+            policy: ExistingWorkPolicy,
+            expedited: Boolean,
+        ): Operation {
+            val builder = OneTimeWorkRequestBuilder<ReminderDeliveryWorker>()
                 .setInputData(
                     workDataOf(
                         ReminderScheduler.EXTRA_FLIGHT_ID to flightId,
@@ -338,18 +380,26 @@ class ReminderDeliveryWorker @AssistedInject constructor(
                         KEY_REQUIRES_EXACT to requiresExact,
                     )
                 )
-                .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
-                .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                workName(flightId, kind),
-                ExistingWorkPolicy.REPLACE,
-                request,
+            if (delayMillis > 0) {
+                builder.setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
+            }
+            if (expedited) {
+                builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            }
+            return WorkManager.getInstance(context).enqueueUniqueWork(
+                workName,
+                policy,
+                builder.build(),
             )
         }
-
-        private fun workName(flightId: Long, kind: String) = "blipbird-reminder:$flightId:$kind"
     }
 }
+
+internal fun reminderScheduleWorkName(flightId: Long, kind: String) =
+    "blipbird-reminder-schedule:$flightId:$kind"
+
+internal fun reminderDeliveryWorkName(flightId: Long, kind: String) =
+    "blipbird-reminder-delivery:$flightId:$kind"
 
 /** Rebuilds reminders after reboot or exact-alarm permission changes. */
 class BootCompletedReceiver : BroadcastReceiver() {

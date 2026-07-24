@@ -1,6 +1,8 @@
 package ch.lkmc.blipbird
 
 import ch.lkmc.blipbird.platform.reminderDeliveryEligible
+import ch.lkmc.blipbird.platform.reminderDeliveryWorkName
+import ch.lkmc.blipbird.platform.reminderScheduleWorkName
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -46,6 +48,14 @@ class ReminderEligibilityTest {
                 actual = now.minusSeconds(30),
                 now = now,
             )
+        )
+    }
+
+    @Test
+    fun firedDeliveryHasIndependentWorkIdentity() {
+        assertFalse(
+            reminderScheduleWorkName(42, "boarding") ==
+                reminderDeliveryWorkName(42, "boarding")
         )
     }
 }

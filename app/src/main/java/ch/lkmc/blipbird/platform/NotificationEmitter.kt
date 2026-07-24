@@ -209,7 +209,12 @@ class NotificationEmitter @Inject constructor(
         val slots = NotificationPlanner.EventType.entries.map { it.name.lowercase(java.util.Locale.ROOT) } +
             listOf(CHANNEL_ONGOING, "reminder-${ReminderScheduler.KIND_BOARDING}", "reminder-${ReminderScheduler.KIND_LANDING_SOON}")
         slots.forEach { slot -> manager.cancel(notificationTag(flightId, slot), SLOT_ID) }
-        // Remove identities posted by releases before semantic tags.
+        cancelLegacyForFlight(flightId)
+    }
+
+    /** Remove integer-ID notifications posted by releases before semantic tags. */
+    fun cancelLegacyForFlight(flightId: Long) {
+        val manager = NotificationManagerCompat.from(context)
         listOf(CHANNEL_CRITICAL, CHANNEL_STATUS, CHANNEL_REMINDERS, CHANNEL_ONGOING)
             .forEach { channel -> manager.cancel(stableId(flightId, channel)) }
     }

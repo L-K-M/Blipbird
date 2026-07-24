@@ -2757,7 +2757,7 @@ The 15-minute bucket is a notification-noise policy, not a claim about whether
 Add typed extras or a versioned route URI:
 
 ```text
-blipbird://itinerary/7/transition/19?event=<immutable-ledger-id-or-token>
+blipbird://itinerary/v1/7/transition/19?event=<immutable-ledger-id-or-token>
 ```
 
 Use this URI as `Intent.data` on the explicit internal PendingIntent so Android
@@ -2808,7 +2808,8 @@ As part of Phase 1 identity hardening, give reminder PendingIntents versioned pe
 flight/per-kind data URIs and move flight notifications to
 `flight:<id>:<semantic-slot>` tags with fixed IDs. Every flight notification
 content PendingIntent uses `Intent.data` such as
-`blipbird://flight/<id>/<slot>?event=<immutable-ledger-id-or-token>`; request-code
+`blipbird://flight/v1/<id>/<slot>?event=<immutable-ledger-id-or-token>`; reminder
+alarms use `blipbird://alarm/v1/flight/<id>/<kind>`. Request-code
 hashes or extras alone are not identity. Activity redelivery state persists and
 compares the full immutable invocation token, so a later event for the same
 flight remains actionable. Cancel legacy hashed notifications and PendingIntents

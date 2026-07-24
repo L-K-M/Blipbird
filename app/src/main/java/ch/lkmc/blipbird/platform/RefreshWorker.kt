@@ -83,7 +83,10 @@ class RefreshWorker @AssistedInject constructor(
             }
             var refreshed = false
             if (due) {
-                val fresh = statusRefresh.refreshFlight(flight.id)
+                val fresh = statusRefresh.refreshFlight(
+                    flight.id,
+                    reconcileBackgroundSchedule = false,
+                )
                 if (fresh != null) {
                     refreshed = true  // refreshStatus reconciled the ongoing card
                 }
@@ -103,7 +106,8 @@ class RefreshWorker @AssistedInject constructor(
                 }
             }
         }
-        statusRefresh.reconcileSchedule()
+        // Never synchronously cancel the unique work from inside its own worker.
+        statusRefresh.reconcileSchedule(allowCancel = false)
         return Result.success()
     }
 
@@ -190,11 +194,15 @@ class ReminderReconcileWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val reminders: ReminderScheduler,
     private val repository: FlightRepository,
+    private val notifications: NotificationEmitter,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = try {
         reminders.reconcileAll()
-        repository.activeFlights().forEach { repository.reconcileOngoing(it.id) }
+        repository.activeFlights().forEach {
+            notifications.cancelLegacyForFlight(it.id)
+            repository.reconcileOngoing(it.id)
+        }
         Result.success()
     } catch (e: CancellationException) {
         throw e   // let WorkManager's stop/cancel propagate, don't swallow it

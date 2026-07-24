@@ -21,12 +21,16 @@ class StatusRefreshCoordinator @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val scheduleMutex = Mutex()
 
-    suspend fun refreshFlight(flightId: Long, force: Boolean = false): StatusSnapshot? =
+    suspend fun refreshFlight(
+        flightId: Long,
+        force: Boolean = false,
+        reconcileBackgroundSchedule: Boolean = true,
+    ): StatusSnapshot? =
         try {
             repository.refreshStatus(flightId, force)
         } finally {
             reconcileReminderBestEffort(flightId)
-            reconcileSchedule()
+            if (reconcileBackgroundSchedule) reconcileSchedule()
         }
 
     fun refreshNewFlights(flightIds: Collection<Long>) {
@@ -42,10 +46,12 @@ class StatusRefreshCoordinator @Inject constructor(
      * Phase-one scheduling facade. All startup and lifecycle paths converge here
      * so a worker cancelling itself cannot race a concurrent tracked-flight write.
      */
-    suspend fun reconcileSchedule() = scheduleMutex.withLock {
+    suspend fun reconcileSchedule(allowCancel: Boolean = true) = scheduleMutex.withLock {
         try {
-            if (repository.activeFlights().isEmpty()) backgroundRefresh.cancel()
-            else backgroundRefresh.schedule()
+            if (repository.activeFlights().isNotEmpty()) backgroundRefresh.schedule()
+            else if (allowCancel) backgroundRefresh.cancel()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.w("StatusRefresh", "Background refresh reconciliation failed", e)
         }

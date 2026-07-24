@@ -127,7 +127,15 @@ class ItineraryRepository @Inject constructor(
                     lockedGraph != null &&
                     lockedGraph.matchesCommittedEdit(request, completedDesignators, name)
                 ) {
-                    return@withFlights SaveItineraryResult(lockedGraph.id, emptyList())
+                    val destructiveTargets = (
+                        request.legs.mapNotNull { it.replacesFlightId } + request.deleteRemovedFlightIds
+                    ).distinct()
+                    if (destructiveTargets.all { trackedDao.byId(it) == null }) {
+                        return@withFlights SaveItineraryResult(lockedGraph.id, emptyList())
+                    }
+                    throw ItineraryValidationException(
+                        message = "This draft is stale. Review its removed flights before saving again",
+                    )
                 }
                 beforeCommit(lockedGraph)
                 userDb.withTransaction {
@@ -146,9 +154,15 @@ class ItineraryRepository @Inject constructor(
             val currentLegByFlight = currentLegs.associateBy { it.trackedFlightId }
             val replacementIds = request.legs.mapNotNull { it.replacesFlightId }.distinct()
             val deletedFlightIds = (replacementIds + request.deleteRemovedFlightIds).distinct()
-            if (deletedFlightIds.isNotEmpty()) {
-                if (current == null || deletedFlightIds.any { it !in currentLegByFlight }) {
-                    throw ItineraryValidationException(message = "A removed flight no longer belongs to this itinerary")
+            if (request.deleteRemovedFlightIds.any { current == null || it !in currentLegByFlight }) {
+                throw ItineraryValidationException(message = "A removed flight no longer belongs to this itinerary")
+            }
+            replacementIds.forEach { replacedId ->
+                val replaced = trackedDao.byId(replacedId)
+                    ?: throw ItineraryValidationException(message = "A replaced flight no longer exists")
+                val membership = itineraryDao.itineraryIdForFlight(replaced.id)
+                if (membership != null && membership != current?.id) {
+                    throw ItineraryValidationException(message = "A replaced flight belongs to another itinerary")
                 }
             }
             val newFlightIds = mutableListOf<Long>()

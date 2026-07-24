@@ -38,7 +38,7 @@ class FlightLifecycleCoordinator @Inject constructor(
     suspend fun saveItinerary(request: SaveItineraryRequest): SaveItineraryResult {
         val result = commitWithLockedCleanup { queueCleanup ->
             itineraries.save(request) { graph ->
-                queueCleanup(graph.cleanupTasksFor(request))
+                queueCleanup(cleanupTasksFor(graph, request))
             }
         }
         statusRefresh.reconcileSchedule()
@@ -217,14 +217,21 @@ class FlightLifecycleCoordinator @Inject constructor(
             enqueueCleanupRetry()
             throw e
         } catch (e: Exception) {
-            reconcileBestEffort { processPendingLocked() }
+            try {
+                reconcileBestEffort { processPendingLocked() }
+            } finally {
+                enqueueCleanupRetry()
+            }
             throw e
         }
-        reconcileBestEffort {
-            cleanupDao.markReady(mutationId)
-            processPendingLocked()
+        try {
+            reconcileBestEffort {
+                cleanupDao.markReady(mutationId)
+                processPendingLocked()
+            }
+        } finally {
+            enqueueCleanupRetry()
         }
-        enqueueCleanupRetry()
         return result
     }
 
@@ -244,15 +251,24 @@ class FlightLifecycleCoordinator @Inject constructor(
             if (mutationId != null) enqueueCleanupRetry()
             throw e
         } catch (e: Exception) {
-            if (mutationId != null) reconcileBestEffort { processPendingLocked() }
+            if (mutationId != null) {
+                try {
+                    reconcileBestEffort { processPendingLocked() }
+                } finally {
+                    enqueueCleanupRetry()
+                }
+            }
             throw e
         }
         mutationId?.let { id ->
-            reconcileBestEffort {
-                cleanupDao.markReady(id)
-                processPendingLocked()
+            try {
+                reconcileBestEffort {
+                    cleanupDao.markReady(id)
+                    processPendingLocked()
+                }
+            } finally {
+                enqueueCleanupRetry()
             }
-            enqueueCleanupRetry()
         }
         result
     }
@@ -275,10 +291,24 @@ class FlightLifecycleCoordinator @Inject constructor(
         }
     }
 
-    private fun Itinerary?.cleanupTasksFor(
+    private suspend fun cleanupTasksFor(
+        graph: Itinerary?,
         request: SaveItineraryRequest,
     ): List<PlatformCleanupTaskEntity> {
-        val graph = this ?: return emptyList()
+        val replacementIds = (
+            request.legs.mapNotNull { it.replacesFlightId } + request.deleteRemovedFlightIds
+        ).toSet()
+        val graphTasks = graph?.graphCleanupTasksFor(request).orEmpty()
+        val coveredFlightIds = graphTasks.filter { it.targetKind == TARGET_FLIGHT }.map { it.targetId }.toSet()
+        val detachedFlightTasks = (replacementIds - coveredFlightIds).mapNotNull { flightId ->
+            flights.flight(flightId)?.cleanupTask(DESIRED_ABSENT)
+        }
+        return (graphTasks + detachedFlightTasks).distinctBy { Triple(it.targetKind, it.targetId, it.desiredUserState) }
+    }
+
+    private fun Itinerary.graphCleanupTasksFor(
+        request: SaveItineraryRequest,
+    ): List<PlatformCleanupTaskEntity> {
         val replacementIds = (
             request.legs.mapNotNull { it.replacesFlightId } + request.deleteRemovedFlightIds
         ).toSet()
@@ -287,14 +317,14 @@ class FlightLifecycleCoordinator @Inject constructor(
             val second = outbound.existingFlightId ?: return@mapNotNull null
             first to second
         }.toSet()
-        val flightByLeg = graph.legs.associate { it.id to it.flight.id }
-        val removedTransitions = graph.transitions.filter { transition ->
+        val flightByLeg = legs.associate { it.id to it.flight.id }
+        val removedTransitions = transitions.filter { transition ->
             val inbound = flightByLeg[transition.inboundLegId] ?: return@filter true
             val outbound = flightByLeg[transition.outboundLegId] ?: return@filter true
             (inbound to outbound) !in retainedPairs
         }
         return buildList {
-            graph.legs.filter { it.flight.id in replacementIds }.forEach { leg ->
+            legs.filter { it.flight.id in replacementIds }.forEach { leg ->
                 add(leg.flight.cleanupTask(DESIRED_ABSENT))
             }
             removedTransitions.forEach { transition ->
