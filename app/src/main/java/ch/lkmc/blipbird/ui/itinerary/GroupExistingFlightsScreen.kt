@@ -121,7 +121,7 @@ fun GroupExistingFlightsScreen(
                     TextButton(
                         enabled = selected.size in ItineraryRepository.MIN_LEGS..ItineraryRepository.MAX_LEGS,
                         onClick = {
-                             val legs = ordered.filter { it.id in selected }.map { it.toDraftLeg() }
+                            val legs = ordered.filter { it.id in selected }.map { it.toDraftLeg() }
                             onContinue(ItineraryDraft(draftId = draftId, legs = legs, dirty = true))
                         },
                     ) { Text(stringResource(R.string.continue_label)) }
@@ -150,11 +150,14 @@ fun GroupExistingFlightsScreen(
                 items(ordered, key = { it.id }) { flight ->
                     val checked = flight.id in selected
                     val enabled = checked || selected.size < ItineraryRepository.MAX_LEGS
+                    val stateLabel = stringResource(
+                        if (checked) R.string.selected else R.string.not_selected
+                    )
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .itineraryBorder(22.dp)
-                            .semantics { stateDescription = if (checked) "Selected" else "Not selected" }
+                            .semantics { stateDescription = stateLabel }
                             .clickable(enabled = enabled, role = Role.Checkbox) { toggle(flight) },
                         shape = RoundedCornerShape(22.dp),
                         colors = CardDefaults.cardColors(

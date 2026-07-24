@@ -105,6 +105,7 @@ fun ItineraryEditorScreen(
     val creationCheckComplete by viewModel.creationCheckComplete.collectAsStateWithLifecycle()
     val creationCheckSucceeded by viewModel.creationCheckSucceeded.collectAsStateWithLifecycle()
     val committedItineraryId by viewModel.committedItineraryId.collectAsStateWithLifecycle()
+    val missing by viewModel.missing.collectAsStateWithLifecycle()
     val draft = drafts[draftId]
     var localError by remember { mutableStateOf<String?>(null) }
     var showDiscard by remember { mutableStateOf(false) }
@@ -143,6 +144,12 @@ fun ItineraryEditorScreen(
             onSaved(checkNotNull(committedItineraryId))
         }
     }
+    LaunchedEffect(missing) {
+        if (missing) {
+            draftStore.remove(draftId)
+            onBack()
+        }
+    }
 
     fun update(transform: (ItineraryDraft) -> ItineraryDraft) {
         val current = draftStore.draft(draftId) ?: return
@@ -179,7 +186,9 @@ fun ItineraryEditorScreen(
             viewModel.save(current)
         }
     }
-    BackHandler(enabled = draft?.dirty == true) { showDiscard = true }
+    // Always consume system back: swallowing it while a save commits beats
+    // cancelling the Room transaction by popping the entry (and its ViewModel).
+    BackHandler { if (!saving) requestBack() }
 
     Scaffold(
         topBar = {
@@ -192,7 +201,7 @@ fun ItineraryEditorScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = ::requestBack) {
+                    IconButton(onClick = ::requestBack, enabled = !saving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
@@ -282,7 +291,10 @@ fun ItineraryEditorScreen(
                                 update { current -> current.copy(legs = current.legs.movedWithTransitions(index, index + 1)) }
                             },
                             onRemove = {
-                                if (itineraryId != null && leg.originalMemberFlightId != null) {
+                                val wasPersistedMember = persisted?.legs?.any {
+                                    it.flight.id == leg.originalMemberFlightId
+                                } == true
+                                if (itineraryId != null && wasPersistedMember) {
                                     removeLegRowId = leg.rowId
                                 } else {
                                     update { current ->
@@ -531,22 +543,25 @@ fun ItineraryEditorScreen(
             error = pasteError,
             onAdd = { input ->
                 val bytes = input.toByteArray(Charsets.UTF_8).size
-                val tokens = DesignatorParser.splitBatch(input)
-                when {
-                    bytes > ItineraryRepository.MAX_PASTE_BYTES -> {
-                        pasteError = "Pasted flight list is larger than 4 KiB"
-                    }
-                    tokens.isEmpty() -> pasteError = "No flight number recognized"
-                    draft != null && tokens.size + draft.legs.count { it.designator.isNotBlank() } > ItineraryRepository.MAX_LEGS -> {
-                        pasteError = "An itinerary can contain at most ${ItineraryRepository.MAX_LEGS} flights"
-                    }
-                    else -> {
-                        update { current ->
-                            val retained = current.legs.filter { it.designator.isNotBlank() || it.existingFlightId != null }
-                            current.copy(legs = retained + tokens.map { ItineraryDraftLeg(designator = it) })
+                if (bytes > ItineraryRepository.MAX_PASTE_BYTES) {
+                    pasteError = "Pasted flight list is larger than 4 KiB"
+                } else {
+                    val tokens = DesignatorParser.splitBatch(input)
+                    when {
+                        tokens.isEmpty() -> pasteError = "No flight number recognized"
+                        draft != null && tokens.size + draft.legs.count { it.designator.isNotBlank() } > ItineraryRepository.MAX_LEGS -> {
+                            pasteError = "An itinerary can contain at most ${ItineraryRepository.MAX_LEGS} flights"
                         }
-                        pasteError = null
-                        showPaste = false
+                        else -> {
+                            update { current ->
+                                val retained = current.legs.filter {
+                                    it.designator.isNotBlank() || it.existingFlightId != null
+                                }
+                                current.copy(legs = retained + tokens.map { ItineraryDraftLeg(designator = it) })
+                            }
+                            pasteError = null
+                            showPaste = false
+                        }
                     }
                 }
             },
@@ -600,7 +615,19 @@ fun ItineraryEditorScreen(
                             Column(Modifier.fillMaxWidth()) {
                                 Text(flight.displayDesignator())
                                 if (flight.alias != null) Text(flight.designator().display)
-                                flight.dateLocal?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                                val confirmed = DateIntentSource.decode(flight.dateIntentSource) ==
+                                    DateIntentSource.USER_CONFIRMED
+                                Text(
+                                    if (confirmed) {
+                                        flight.dateLocal?.let { value ->
+                                            runCatching { LocalDate.parse(value) }.getOrNull()
+                                                ?.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
+                                        } ?: stringResource(R.string.itinerary_date_needs_confirmation)
+                                    } else {
+                                        stringResource(R.string.itinerary_date_needs_confirmation)
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
                             }
                         }
                 }
@@ -767,6 +794,7 @@ private fun PasteFlightsDialog(
     onAdd: (String) -> Unit,
 ) {
     var text by rememberSaveable { mutableStateOf("") }
+    var inputError by rememberSaveable { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.itinerary_paste_several)) },
@@ -774,13 +802,20 @@ private fun PasteFlightsDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = text,
-                    onValueChange = { text = it },
+                    onValueChange = { value ->
+                        if (value.toByteArray(Charsets.UTF_8).size <= ItineraryRepository.MAX_PASTE_BYTES) {
+                            text = value
+                            inputError = null
+                        } else {
+                            inputError = "Pasted flight list is larger than 4 KiB"
+                        }
+                    },
                     label = { Text(stringResource(R.string.add_flight_hint)) },
                     minLines = 4,
                     maxLines = 8,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                error?.let {
+                (inputError ?: error)?.let {
                     Text(
                         it,
                         color = MaterialTheme.colorScheme.error,

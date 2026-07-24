@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -49,6 +50,18 @@ class ItineraryEditorViewModel @Inject constructor(
 
     val itinerary: StateFlow<Itinerary?> = (itineraryId?.let(itineraries::observeItinerary) ?: flowOf(null))
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Edit mode only: true once Room confirms the target is gone (deleted via
+     * Settings or another entry point). Room never emits a transient null for a
+     * persisted itinerary, so the initial false is safe. Lets the screen leave
+     * instead of idling on a spinner with a draft that can never save.
+     */
+    val missing: StateFlow<Boolean> = itineraryId
+        ?.let { id ->
+            itineraries.observeItinerary(id).map { it == null }
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+        } ?: MutableStateFlow(false)
 
     val availableFlights: StateFlow<List<TrackedFlightEntity>> = itineraries.observeUngroupedFlights()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
