@@ -1156,7 +1156,10 @@ scheduledWindow =
 ```
 
 Both values are `Instant`. Never subtract local clock strings or fixed UTC
-offsets. Convert to airport-local zones only for display.
+offsets. Convert to airport-local zones only for display. The existing
+`AirportRef.tz` field carries an IANA zone ID when the provider supplies one;
+when it is null, fall back to UTC for display rather than guessing from
+coordinates.
 
 `scheduled` here means the scheduled values in the latest permitted snapshot.
 The current schema does not preserve a distinct first-observed or booked
@@ -1888,7 +1891,10 @@ Migration behavior:
 - Add Room migration-test/schema assets, an `androidTest` source set, and CI
   managed-device/emulator execution; current CI does not run instrumentation.
 
-There is no reason for destructive fallback.
+There is no reason for destructive fallback. Because Room does not support
+downgrade, a botched v2 migration on a production install cannot be rolled back
+to v1 without clearing user data; test the migration against the committed v1
+schema on the emulator before any release channel ships the bump.
 
 ### 10.8 Durable platform cleanup outbox
 
@@ -2635,6 +2641,10 @@ must not be mistaken for process-death redelivery.
 
 ### 13.4 Notification identity
 
+The current `NotificationEmitter` calls `notify(stableId(flightId, channel), …)`
+— a single Int ID namespace with no tag. Migration to tagged slots is a real
+change, not a renaming.
+
 Use `NotificationManagerCompat.notify(tag, id, ...)` with fixed semantic slots:
 `transition:<id>:window` and `transition:<id>:continuity`, each with a fixed ID.
 Do not depend on a hash being collision-free across flight and transition
@@ -2814,7 +2824,8 @@ Deliverables:
 
 - Accept this proposal or record changes.
 - Create an ADR for neutral transitions and factual connection windows without
-  MCT risk labels.
+  MCT risk labels. Use the existing `docs/decisions/TEMPLATE.md` format; this
+  and the provider-rights ADRs below are the first entries in `docs/decisions/`.
 - Decide the initial official-airport registry scope.
 - Update the glossary with itinerary, leg, transition, destination stay,
   connection window, MCT, self-transfer, and surface transfer.
@@ -2825,6 +2836,10 @@ Deliverables:
   fail; live windows cannot.
 - Add Room migration-test and Compose/instrumentation dependencies, schema
   assets, an `androidTest` tree, and CI managed-device/emulator execution.
+  This is a non-trivial CI addition: the current `.github/workflows/ci.yml`
+  has no emulator job, so an API-level matrix, shard count, startup timeout,
+  and `runs-on` selection must all be added before instrumentation tests can
+  gate merges.
 - Run a small copy/comprehension prototype before fixing the visual hierarchy.
 
 Exit criteria:
@@ -2835,6 +2850,17 @@ Exit criteria:
 - User DB migration tests can run in CI before a schema is changed.
 
 ### Phase 1: persistence, lifecycle, and navigation foundation
+
+This phase is large. Ship it as at least two reviewable slices:
+
+- **1a — Schema and lifecycle:** entities, DAO, enums, User DB migration,
+  repository, lifecycle coordinator, cleanup outbox, and their tests.
+- **1b — Notification identity and navigation:** versioned data URIs, semantic
+  tags, legacy cleanup, tagged route saver, and navigation tests.
+
+1b can proceed in parallel with 1a once the cleanup-outbox interface is fixed,
+since it touches different files (`NotificationEmitter`, `ReminderScheduler`,
+`MainActivity`).
 
 Deliverables:
 
