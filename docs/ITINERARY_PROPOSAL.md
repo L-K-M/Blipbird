@@ -154,11 +154,15 @@ convenience layer, never the source of truth.
 
 A connection window is arithmetic. A useful risk assessment is contextual.
 
-Flighty's July 2026 description of its Connection Assistant says it considers
-MCT, airport, route, nationality, baggage recheck, seat location, passport
-control, security, terminal transfer, predicted gates, and live conditions.
-Blipbird currently has only a subset of those inputs. A generic red/amber/green
-score would look more certain than its evidence.
+Flighty's July 2026 description of its Connection Assistant says it uses MCT as
+the baseline input for classifying relaxed/normal/tight/at-risk, then
+personalizes by airport, route, nationality, baggage recheck, seat location,
+passport control, security, terminal transfer, **historical-gate prediction**,
+and live conditions. Critically, Flighty displays the MCT figure directly
+alongside its own connection classification — it does not substitute MCT with
+proprietary logic or hide the filed minimum. Blipbird currently has only a
+subset of those inputs. A generic red/amber/green score would look more certain
+than its evidence.
 
 The first version may truthfully say:
 
@@ -269,10 +273,10 @@ relationships between them, not multi-flight refresh capacity.
 | User database | Version 1 contains only `tracked_flight` | New user-owned aggregate and migration are required |
 | Batch add | All tokens share one optional date; alias only applies to a one-token batch | It cannot represent an overnight or multi-day itinerary |
 | Batch failure | Valid tokens can be inserted while invalid tokens fail | Itinerary creation needs all-or-nothing user-DB writes |
-| Flight identity | One provider candidate is selected; the repository may pin its departure-local date without recording whether that date was user-authored | Ambiguous same-day/multi-leg candidates need explicit identity selection and date provenance |
+| Flight identity | `InstanceSelector.select()` picks one candidate by operational priority; the repository may pin its departure-local date without recording whether that date was user-authored | Ambiguous same-day/multi-leg candidates need explicit identity selection and date provenance |
 | Status model | The normalized model separates gate `OUT/IN` from runway `OFF/ON`, but current provider adapters populate them differently | Gate-to-gate windows are possible only when the selected adapter supplies the required values |
 | Reference data | Airports and airlines only | No MCT, terminal graph, metro-airport relation, or guide links exist |
-| List sort | Global next-event ordering | It would destroy user-authored leg order inside a group |
+| List sort | Active flights sorted ascending by next event; finished flights sunk below, sorted descending by next event | It would destroy user-authored leg order inside a group |
 | Adaptive list | Flight/archive cards already flow through an adaptive 380 dp grid | Itinerary index cards should join that grid rather than replacing it with a narrower single-column shell |
 | Navigation save format | Screens encode as untagged `Long`; negative values are sentinels | A second positive-ID route needs tagged serialization |
 | ViewModel stores | Keyed by `Screen` equality | Navigation must prevent duplicate equal routes or adopt serialized unique entry IDs |
@@ -738,8 +742,15 @@ Composer rules:
   draft in an activity-level `ItineraryDraftStoreViewModel` `SavedStateHandle`
   keyed by that ID; the current per-entry `NavEntryOwner` does not provide a
   saved-state registry capable of restoring route-scoped handles after process
-  death. Clear after an idempotent Save returns the committed graph, or on
-  Discard. Back with edits offers `Keep editing` and `Discard draft`.
+  death. The activity-level ViewModel uses the activity’s `SavedStateRegistry`
+  (the same one that backs `NavEntryStoresViewModel`), so `SavedStateHandle`
+  writes survive process death. Multiple concurrent drafts use distinct
+  `SavedStateHandle` keys within the single ViewModel; the `draftId` serves
+  that purpose. A draft restored after process death is not a committed
+  itinerary — the editor re-checks the creation request ID with the repository
+  before allowing save. Clear after an idempotent Save returns the committed
+  graph, or on Discard. Back with edits offers `Keep editing` and `Discard
+  draft`.
 - On Save, focus and announce the first invalid field.
 - A date does not resolve same-day duplicate or multi-leg provider candidates.
   Live route, timing, and guidance remain suppressed until each new leg has a
@@ -1082,7 +1093,23 @@ Preserve Blipbird's visual language:
 
 ## 8. Transition and connection semantics
 
-### 8.1 Use gate milestones
+### 8.1 Timing realism: gate assignment windows
+
+Gates and terminals are typically assigned 24–48 hours before departure. A
+direct connection whose onward leg is more than two days away will normally show
+`Gate not yet assigned` for that leg. The connection-window arithmetic is still
+correct from scheduled or estimated times, but location guidance (terminal, gate)
+is temporally limited.
+
+The product must not use the absence of a gate to imply a problem. When the
+onward departure is more than the typical gate-assignment horizon, show
+`Onward gate not yet assigned — check closer to departure` rather than
+`Onward location not reported`.
+
+This is a product-copy distinction, not a new data source. The existing
+missing-gate states already handle `null` gracefully.
+
+### 8.2 Use gate milestones
 
 For a user-confirmed direct connection, the connection window is:
 
@@ -1121,7 +1148,7 @@ Do not infer gate arrival from `FlightStatus.LANDED`; that can mean runway `ON`.
 Do not infer gate departure from `DEPARTED` or `EN_ROUTE`; those phases can come
 from runway times, provider status, or clock inference.
 
-### 8.2 Latest scheduled window
+### 8.3 Latest scheduled window
 
 ```kotlin
 scheduledWindow =
@@ -1129,14 +1156,17 @@ scheduledWindow =
 ```
 
 Both values are `Instant`. Never subtract local clock strings or fixed UTC
-offsets. Convert to airport-local zones only for display.
+offsets. Convert to airport-local zones only for display. The existing
+`AirportRef.tz` field carries an IANA zone ID when the provider supplies one;
+when it is null, fall back to UTC for display rather than guessing from
+coordinates.
 
 `scheduled` here means the scheduled values in the latest permitted snapshot.
 The current schema does not preserve a distinct first-observed or booked
 schedule. Label it `Latest scheduled`, and do not imply that it is the original
 schedule if a provider has revised that field.
 
-### 8.3 Latest calculated window
+### 8.4 Latest calculated window
 
 Select each endpoint independently:
 
@@ -1167,7 +1197,7 @@ gate departure`, shortened to `Latest calculated` only when nearby copy defines
 the measurement. `Current` alone is too easy to read as live, equally fresh, or
 guaranteed.
 
-### 8.4 Remaining time after arrival
+### 8.5 Remaining time after arrival
 
 Once actual inbound `IN` is known and onward `OUT` has not occurred, also show:
 
@@ -1179,7 +1209,7 @@ Label it `Until onward departure`, not `Time to make connection`. Boarding or
 gate closure can occur earlier, and the current model has no universal cutoff.
 Put `Boarding or gate closing may be earlier` directly beside this countdown.
 
-### 8.5 Window change
+### 8.6 Window change
 
 ```kotlin
 windowChange = latestCalculatedWindow - latestScheduledWindow
@@ -1195,7 +1225,7 @@ This is a useful, factual signal that avoids an invented feasibility threshold.
 It is relative to the latest scheduled values, not necessarily the schedule the
 traveler originally booked.
 
-### 8.6 Airport continuity
+### 8.7 Airport continuity
 
 Normalize airport identity as sets of known codes:
 
@@ -1218,7 +1248,7 @@ Different airports in one city are not equivalent without a reviewed metro-
 airport dataset and transfer plan. `LHR -> LGW` may be a surface transfer or may
 simply separate a London stay from a later flight; adjacency alone cannot decide.
 
-### 8.7 Transition intent and suggestion
+### 8.8 Transition intent and suggestion
 
 ```kotlin
 enum class TransitionIntent {
@@ -1242,6 +1272,14 @@ The 24-hour value is only a prompt heuristic. It is not persisted as truth, an
 MCT, or a validity rule. `INVALID_OVERLAP`, airport mismatch, stale data, and
 disruption are assessment issues, not transition types.
 
+One known failure mode of the 24-hour heuristic: a same-airport short-haul
+connection with a scheduled gap below 24 hours may be suggested as a direct
+connection, while a same-airport international-to-international connection with
+an overnight gap above 24 hours (e.g., a 28-hour FRA stopover on a long-haul
+itinerary) would be suggested as a destination stay even though the user intended
+a connection. The heuristic is a convenience, not a classification rule. The user
+must confirm intent explicitly and may override the suggestion.
+
 User confirmation persists only transition intent. Provider-derived airport
 codes do not become rights-free user data merely because the user taps Confirm.
 Derive a normalized airport-pair fingerprint from two confirmed occurrence
@@ -1254,7 +1292,7 @@ continuity disruption, suppress timing/guidance, and may emit the narrowly scope
 continuity event before asking for route review. A future independently user-
 entered route would be separate user-authored data with explicit fields.
 
-### 8.8 Disruption precedence
+### 8.9 Disruption precedence
 
 For a direct connection, apply factual states before timing interpretation:
 
@@ -1273,7 +1311,7 @@ For a direct connection, apply factual states before timing interpretation:
 When a higher-priority disruption applies, retain raw times in details but do
 not lead with a reassuring connection duration.
 
-### 8.9 Freshness
+### 8.10 Freshness
 
 The current model's `fetchedAt` is the device's retrieval time, not a provider
 field-update timestamp. A newly fetched response may still contain old upstream
@@ -1308,12 +1346,18 @@ The exact thresholds belong in a tested policy object and should use
 explicitly is sufficient; this feature need not block on the broader injectable-
 clock refactor.
 
-### 8.10 Pure domain API
+### 8.11 Pure domain API
 
 ```kotlin
 data class ConfirmedOccurrencePair(
     val inboundBindingId: Long,
     val outboundBindingId: Long,
+    /**
+     * Computed from the confirmed bindings’ airport identities at time of
+     * confirmation; not independently stored. Two pairs with matching binding
+     * IDs but differing fingerprints indicate a data-model corruption or stale
+     * reference data, not a legitimate transition reassessment.
+     */
     val airportPairFingerprint: String,
     val continuityAtConfirmation: Continuity,
     val expiresAt: Instant,
@@ -1377,7 +1421,14 @@ object TransitionEngine {
 ```
 
 Keep wording out of the engine. It returns typed facts; resources and UI state
-produce localized copy. For `DESTINATION_STAY` and `UNKNOWN`, it may return a
+produce localized copy. The engine is a pure function over the input; null,
+expired, or ineligible fields in `TransitionInput` map to null or disrupted
+fields in `TransitionAssessment` — the engine never throws or returns a sentinel
+for a well-formed input. The caller (repository or ViewModel) is responsible for
+omitting transitions that have not yet been confirmed or whose legs lack the
+required data.
+
+For `DESTINATION_STAY` and `UNKNOWN`, it may return a
 plain break duration but no connection assessment, checklist, MCT, or erosion
 event. For `SURFACE_TRANSFER`, the gross break explicitly excludes travel time.
 For `DIRECT_CONNECTION`, null/expired/replaced bindings or a confirmed pair that
@@ -1388,7 +1439,7 @@ suppresses those outputs but remains eligible for only the continuity event.
 `SURFACE_TRANSFER` likewise requires a confirmed different-airport pair before
 showing pair-specific transfer facts.
 
-### 8.11 Optional MCT model
+### 8.12 Optional MCT model
 
 ```kotlin
 data class MatchedRuleDimension(
@@ -1691,11 +1742,24 @@ enum class BookingArrangement {
     UNKNOWN,
 }
 
+enum class Continuity {
+    SAME_AIRPORT,
+    DIFFERENT_AIRPORTS,
+    UNKNOWN,
+}
+
 enum class DateIntentSource {
     USER_CONFIRMED,
     NEXT_OCCURRENCE,
     PROVIDER_RESOLVED_LEGACY,
     LEGACY_UNKNOWN,
+}
+
+enum class TransitionIntent {
+    DIRECT_CONNECTION,
+    DESTINATION_STAY,
+    SURFACE_TRANSFER,
+    UNKNOWN,
 }
 
 enum class BaggagePlan {
@@ -1717,6 +1781,16 @@ membership index prevents using the same tracked row twice. Until stable
 occurrence identity exists, warn on identical normalized designator/date rows and
 require explicit candidate review; once bindings exist, reject the same physical
 occurrence twice while allowing genuinely distinct multi-leg occurrences.
+
+**Codeshare handling.** A codeshare adds complexity in an itinerary context
+because the operating designator and marketing designator may differ between
+legs. Track by operating identity at the occurrence-binding level while
+preserving the user-entered marketing designator on `TrackedFlightEntity`.
+Codeshare resolution follows the existing `IdentityResolver` path. The new
+concern is that two adjacent legs with the same operating carrier may not share
+one ticket, just as two legs with different marketing carriers may be booked
+together. The booking-arrangement question must ask per transition regardless of
+carrier alignment.
 
 ### 10.3 Why not put `itineraryId` and `ordinal` on `tracked_flight`
 
@@ -1817,14 +1891,19 @@ Migration behavior:
 - Add Room migration-test/schema assets, an `androidTest` source set, and CI
   managed-device/emulator execution; current CI does not run instrumentation.
 
-There is no reason for destructive fallback.
+There is no reason for destructive fallback. Because Room does not support
+downgrade, a botched v2 migration on a production install cannot be rolled back
+to v1 without clearing user data; test the migration against the committed v1
+schema on the emulator before any release channel ships the bump.
 
 ### 10.8 Durable platform cleanup outbox
 
 Lifecycle cancellation crosses Room, AlarmManager, WorkManager, and Android's
 notification service. Idempotent calls alone are not crash-safe once the User DB
-row containing an ID has been deleted. Bump `OpsDatabase` from 2 to 3 in Phase 1
-and add a small operational outbox:
+row containing an ID has been deleted. Bump `OpsDatabase` from version 2 to
+version 3 in Phase 1 (the current schema is v2; if a concurrent change bumps it
+first, use the actual current version plus one rather than hard-failing on
+version constants) and add a small operational outbox:
 
 ```kotlin
 @Entity(
@@ -1861,7 +1940,8 @@ Commit and test `OpsDatabase/3.json` and `MIGRATION_2_3`.
 ### 10.9 Operational notification state and ledger
 
 When transition notifications ship after occurrence bindings, bump `OpsDatabase`
-from 4 to 5 and add state, emitted-event, and ordered delivery-command rows:
+from version 4 to version 5 (relative to the then-current schema, not a fixed
+constant) and add state, emitted-event, and ordered delivery-command rows:
 
 ```kotlin
 @Entity(
@@ -1954,7 +2034,8 @@ time, location, and transfer guidance for newly added legs does.
 The current provider layer returns candidate snapshots and discards provider
 instance IDs such as FlightAware's `fa_flight_id`. Before live itinerary
 guidance ships, an identity increment
-should bump `OpsDatabase` from 3 to 4 and persist, under provider-approved TTL,
+should bump `OpsDatabase` from version 3 to version 4 (relative to the
+Phase 1 schema) and persist, under provider-approved TTL,
 an operational binding such as:
 
 ```kotlin
@@ -2377,9 +2458,13 @@ Rules:
   in every UI/notification assessment even if physical cleanup is delayed. A
   one-time maintenance wake at the earliest relevant expiry can trigger cleanup.
 
-The current ordered provider chain returns on the first `Found`, and the current
-DAO then chooses the newest row across providers. That is incompatible with a
-connection-only capability gate. Introduce a `ProviderCapabilityRouter` before
+The current ordered provider chain returns on the first `Found`, and
+`InstanceSelector.select()` then picks one candidate (by operational priority)
+before persistence — only one snapshot row is written per refresh. The DAO
+`latest(flightId)` query only resolves which historical row is newest across
+past refreshes. That pipeline is incompatible with a connection-only capability
+gate: a later general-status refresh can overwrite a previously eligible row.
+Introduce a `ProviderCapabilityRouter` before
 dispatch:
 
 - Each adapter declares rights-approved use cases, gate/runway families,
@@ -2396,7 +2481,8 @@ dispatch:
   silently seeds state unless equivalence is explicitly tested.
 
 `BlipbirdApp` startup, every lifecycle mutation, and every refresh completion call
-`reconcileSchedule()` rather than the old unconditional `ensureScheduled()`.
+`reconcileSchedule()` rather than the old unconditional `RefreshWorker.schedule()`
+(`BlipbirdApp.onCreate` → `RefreshWorker.schedule(this)`).
 
 ### 12.2 Connection-aware priority
 
@@ -2554,6 +2640,10 @@ death, not only the route target: a later notification for the same transition
 must not be mistaken for process-death redelivery.
 
 ### 13.4 Notification identity
+
+The current `NotificationEmitter` calls `notify(stableId(flightId, channel), …)`
+— a single Int ID namespace with no tag. Migration to tagged slots is a real
+change, not a renaming.
 
 Use `NotificationManagerCompat.notify(tag, id, ...)` with fixed semantic slots:
 `transition:<id>:window` and `transition:<id>:continuity`, each with a fixed ID.
@@ -2734,7 +2824,8 @@ Deliverables:
 
 - Accept this proposal or record changes.
 - Create an ADR for neutral transitions and factual connection windows without
-  MCT risk labels.
+  MCT risk labels. Use the existing `docs/decisions/TEMPLATE.md` format; this
+  and the provider-rights ADRs below are the first entries in `docs/decisions/`.
 - Decide the initial official-airport registry scope.
 - Update the glossary with itinerary, leg, transition, destination stay,
   connection window, MCT, self-transfer, and surface transfer.
@@ -2745,6 +2836,10 @@ Deliverables:
   fail; live windows cannot.
 - Add Room migration-test and Compose/instrumentation dependencies, schema
   assets, an `androidTest` tree, and CI managed-device/emulator execution.
+  This is a non-trivial CI addition: the current `.github/workflows/ci.yml`
+  has no emulator job, so an API-level matrix, shard count, startup timeout,
+  and `runs-on` selection must all be added before instrumentation tests can
+  gate merges.
 - Run a small copy/comprehension prototype before fixing the visual hierarchy.
 
 Exit criteria:
@@ -2755,6 +2850,17 @@ Exit criteria:
 - User DB migration tests can run in CI before a schema is changed.
 
 ### Phase 1: persistence, lifecycle, and navigation foundation
+
+This phase is large. Ship it as at least two reviewable slices:
+
+- **1a — Schema and lifecycle:** entities, DAO, enums, User DB migration,
+  repository, lifecycle coordinator, cleanup outbox, and their tests.
+- **1b — Notification identity and navigation:** versioned data URIs, semantic
+  tags, legacy cleanup, tagged route saver, and navigation tests.
+
+1b can proceed in parallel with 1a once the cleanup-outbox interface is fixed,
+since it touches different files (`NotificationEmitter`, `ReminderScheduler`,
+`MainActivity`).
 
 Deliverables:
 
@@ -3584,7 +3690,12 @@ rights needed by a distributed open-source Android client.
 
 - FlightAware's selected plan, raw display/retention, and distributed-client
   credential rights still require direct confirmation before updating Blipbird's
-  cost/legal model.
+  cost/legal model. The AeroAPI developer portal (`flightaware.com/aeroapi/portal/
+  documentation`) renders field-level schema client-side and could not be fetched
+  non-interactively; field names `fa_flight_id` and `actual_out` are confirmed via
+  official sample code, while `actual_in`, `actual_off`, and `actual_on` follow the
+  documented naming convention but should be confirmed in a browser session before
+  the Phase 3 capability router relies on them.
 - Cirium's public Flex documentation is legacy; trial/application paths exist,
   while current production terms remain provider-reviewed/non-public.
 - Some marketplace plan details for AeroDataBox require an authenticated account.
