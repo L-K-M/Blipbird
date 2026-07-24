@@ -1,10 +1,15 @@
 package ch.lkmc.blipbird.ui.list
 
+import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.data.FlightRepository
+import ch.lkmc.blipbird.core.data.FlightLifecycleCoordinator
 import ch.lkmc.blipbird.core.data.IdentityResolver
+import ch.lkmc.blipbird.core.data.ItineraryRepository
+import ch.lkmc.blipbird.core.data.StatusRefreshCoordinator
 import ch.lkmc.blipbird.core.database.ReferenceDao
 import ch.lkmc.blipbird.core.database.TrackedFlightEntity
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
@@ -13,13 +18,17 @@ import ch.lkmc.blipbird.core.model.Designator
 import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.core.model.StatusSnapshot
 import ch.lkmc.blipbird.core.model.TrackRequest
+import ch.lkmc.blipbird.core.model.TransitionIntent
 import ch.lkmc.blipbird.domain.DaylightEngine
 import ch.lkmc.blipbird.domain.DesignatorParser
 import ch.lkmc.blipbird.domain.FlightDates
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.domain.LookupOutcome
-import ch.lkmc.blipbird.platform.ReminderScheduler
+import ch.lkmc.blipbird.ui.itinerary.dateSpan
+import ch.lkmc.blipbird.ui.itinerary.designatorLine
+import ch.lkmc.blipbird.ui.itinerary.displayTitle
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -83,17 +92,31 @@ data class FlightRow(
 
 data class ListUiState(
     val rows: List<FlightRow> = emptyList(),
+    val itineraries: List<ItineraryHomeRow> = emptyList(),
     val refreshing: Boolean = false,
     val hasStatusKey: Boolean = true,
     val addError: String? = null,
     /** Number of archived flights — gates the "Past flights" entry point. */
     val archivedCount: Int = 0,
+    val ungroupedCount: Int = 0,
     /**
      * True only until the flights flow first emits — the pre-Room window on a
      * cold start. Gates a loading skeleton so the list no longer flashes the
      * "No flights yet" empty state before the saved flights load (glm 3.10).
      */
     val loading: Boolean = true,
+)
+
+@Immutable
+data class ItineraryHomeRow(
+    val id: Long,
+    val title: String,
+    val dateSpan: String?,
+    val designators: String,
+    val flightCount: Int,
+    val transitions: List<TransitionIntent>,
+    val sortDate: LocalDate?,
+    val createdAt: Long,
 )
 
 /**
@@ -107,13 +130,27 @@ private sealed interface RowsState {
     data class Loaded(val rows: List<FlightRow>) : RowsState
 }
 
+private sealed interface ItineraryRowsState {
+    data object Loading : ItineraryRowsState
+    data class Loaded(val rows: List<ItineraryHomeRow>) : ItineraryRowsState
+}
+
+private data class HomeContentState(
+    val flights: List<FlightRow>,
+    val itineraries: List<ItineraryHomeRow>,
+    val loading: Boolean,
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class FlightListViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: FlightRepository,
+    private val itineraryRepository: ItineraryRepository,
+    private val lifecycle: FlightLifecycleCoordinator,
+    private val statusRefresh: StatusRefreshCoordinator,
     private val identity: IdentityResolver,
     private val referenceDao: ReferenceDao,
-    private val reminders: ReminderScheduler,
     keyStore: ProviderKeyStore,
 ) : ViewModel() {
 
@@ -162,23 +199,59 @@ class FlightListViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RowsState.Loading)
 
+    private val itineraryRowsState: StateFlow<ItineraryRowsState> = itineraryRepository.observeActive()
+        .map { itineraries ->
+            ItineraryRowsState.Loaded(
+                itineraries.map { itinerary ->
+                    ItineraryHomeRow(
+                        id = itinerary.id,
+                        title = itinerary.displayTitle(context),
+                        dateSpan = itinerary.dateSpan(context),
+                        designators = itinerary.designatorLine(
+                            limit = 4,
+                            separator = " ${context.getString(R.string.itinerary_designator_separator)} ",
+                            overflowLabel = { context.getString(R.string.itinerary_more_flights, it) },
+                        ),
+                        flightCount = itinerary.legs.size,
+                        transitions = itinerary.transitions.map { it.intent },
+                        sortDate = itinerary.legs.mapNotNull { it.date }.minOrNull(),
+                        createdAt = itinerary.createdAt,
+                    )
+                }.sortedWith(
+                    compareBy<ItineraryHomeRow> { it.sortDate == null }
+                        .thenBy { it.sortDate }
+                        .thenBy { it.createdAt }
+                )
+            )
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ItineraryRowsState.Loading)
+
+    private val contentState = combine(rowsState, itineraryRowsState) { flights, itineraries ->
+        val loadedFlights = (flights as? RowsState.Loaded)?.rows.orEmpty()
+        val loadedItineraries = (itineraries as? ItineraryRowsState.Loaded)?.rows.orEmpty()
+        HomeContentState(
+            flights = loadedFlights,
+            itineraries = loadedItineraries,
+            loading = flights is RowsState.Loading || itineraries is ItineraryRowsState.Loading,
+        )
+    }
+
     val uiState: StateFlow<ListUiState> =
         combine(
-            rowsState,
+            contentState,
             refreshing,
             keyStore.hasAnyStatusKey,
             addError,
-            repository.observeArchivedFlights().map { it.size },
-        ) { rs, busy, hasKey, err, archivedCount ->
-            // Exhaustive over RowsState so a future variant is a compile error,
-            // not a silent fall-through to an empty, not-loading list.
-            val (loadedRows, isLoading) = when (rs) {
-                is RowsState.Loading -> emptyList<FlightRow>() to true
-                is RowsState.Loaded -> rs.rows to false
-            }
+            combine(
+                repository.observeArchivedFlights().map { it.size },
+                itineraryRepository.observeArchived().map { it.size },
+            ) { flights, itineraries -> flights + itineraries },
+        ) { content, busy, hasKey, err, archivedCount ->
             ListUiState(
-                rows = loadedRows,
-                loading = isLoading,
+                rows = content.flights,
+                itineraries = content.itineraries,
+                ungroupedCount = content.flights.size,
+                loading = content.loading,
                 refreshing = busy,
                 hasStatusKey = hasKey,
                 addError = err,
@@ -283,7 +356,8 @@ class FlightListViewModel @Inject constructor(
                         TrackRequest(designator, date, alias.takeIf { tokens.size == 1 })
                     )
                     added++
-                    launch { repository.refreshStatus(id, force = true) }
+                    statusRefresh.reconcileSchedule()
+                    launch { statusRefresh.refreshFlight(id, force = true) }
                 }
                 if (added > 0) onFirstTrack()
                 onResult(failed == 0 && added > 0)
@@ -309,7 +383,7 @@ class FlightListViewModel @Inject constructor(
             refreshing.value = true
             try {
                 for (flight in repository.activeFlights()) {
-                    repository.refreshStatus(flight.id, force = true)
+                    statusRefresh.refreshFlight(flight.id, force = true)
                 }
             } finally {
                 refreshing.value = false
@@ -328,31 +402,84 @@ class FlightListViewModel @Inject constructor(
     private var lastDeleted: TrackedFlightEntity? = null
     private var deleteJob: Job? = null
 
-    fun archive(id: Long) = viewModelScope.launch {
-        reminders.cancel(id)
-        repository.archive(id)
-    }
-
-    fun unarchive(id: Long) = viewModelScope.launch {
-        repository.unarchive(id)
-        reminders.reconcile(id)
-    }
-
-    fun delete(id: Long) {
-        deleteJob = viewModelScope.launch {
-            lastDeleted = repository.flight(id)
-            reminders.cancel(id)
-            repository.delete(id)
+    fun archive(id: Long, onResult: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        try {
+            lifecycle.archiveFlight(id)
+            onResult(true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            onResult(false)
         }
     }
 
-    fun undoDelete() = viewModelScope.launch {
-        deleteJob?.join()
-        val flight = lastDeleted ?: return@launch
-        lastDeleted = null
-        val id = repository.restore(flight)
-        repository.refreshStatus(id, force = true)
-        reminders.reconcile(id)
+    fun unarchive(id: Long, onResult: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        try {
+            lifecycle.restoreFlight(id)
+            onResult(true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            onResult(false)
+        }
+    }
+
+    fun delete(id: Long, onResult: (Boolean) -> Unit = {}) {
+        deleteJob = viewModelScope.launch {
+            try {
+                lastDeleted = lifecycle.deleteFlight(id)
+                onResult(lastDeleted != null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                lastDeleted = null
+                onResult(false)
+            }
+        }
+    }
+
+    fun undoDelete(onResult: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        try {
+            deleteJob?.join()
+            val flight = lastDeleted ?: return@launch onResult(false)
+            val id = lifecycle.restoreDeletedFlight(flight)
+            lastDeleted = null
+            onResult(true)
+            launch {
+                try {
+                    statusRefresh.refreshFlight(id, force = true)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            onResult(false)
+        }
+    }
+
+    fun archiveItinerary(id: Long, onResult: (Boolean) -> Unit) = viewModelScope.launch {
+        try {
+            lifecycle.archiveItinerary(id)
+            onResult(true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            onResult(false)
+        }
+    }
+
+    fun restoreItinerary(id: Long, onResult: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        try {
+            lifecycle.restoreItinerary(id)
+            onResult(true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            onResult(false)
+        }
     }
 
     fun clearAddError() { addError.value = null }

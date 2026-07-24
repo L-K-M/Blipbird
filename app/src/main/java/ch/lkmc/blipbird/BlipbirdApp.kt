@@ -4,8 +4,10 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import ch.lkmc.blipbird.core.database.ReferenceImporter
+import ch.lkmc.blipbird.core.data.StatusRefreshCoordinator
 import ch.lkmc.blipbird.platform.NotificationEmitter
-import ch.lkmc.blipbird.platform.RefreshWorker
+import ch.lkmc.blipbird.platform.PlatformCleanupWorker
+import ch.lkmc.blipbird.platform.ReminderReconcileWorker
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +21,7 @@ class BlipbirdApp : Application(), Configuration.Provider {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var referenceImporter: ReferenceImporter
     @Inject lateinit var notificationEmitter: NotificationEmitter
+    @Inject lateinit var statusRefreshCoordinator: StatusRefreshCoordinator
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -29,8 +32,12 @@ class BlipbirdApp : Application(), Configuration.Provider {
         super.onCreate()
         installCrashLogger()
         notificationEmitter.createChannels()
-        RefreshWorker.schedule(this)
-        appScope.launch { referenceImporter.ensureImported() }
+        PlatformCleanupWorker.enqueue(this)
+        ReminderReconcileWorker.enqueue(this)
+        appScope.launch {
+            statusRefreshCoordinator.reconcileSchedule()
+            referenceImporter.ensureImported()
+        }
     }
 
     /**

@@ -1,5 +1,5 @@
-# CI: prove every push to main and every PR — unit tests, Android lint, and a
-# debug APK uploaded as a rolling artifact.
+# CI: prove every push to main and every PR — unit + emulator tests, Android
+# lint, and a debug APK uploaded as a rolling artifact.
 #
 # Hardening (family contract):
 #   - least-privilege token (contents: read)
@@ -52,3 +52,43 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  instrumentation:
+    name: Instrumentation (API ${{ matrix.api-level }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 26
+            runner: ubuntu-latest
+          - api-level: 35
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: gradle/actions/wrapper-validation@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Migration and UI instrumentation tests
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.numShards=1 -Pandroid.testInstrumentationRunnerArguments.shardIndex=0

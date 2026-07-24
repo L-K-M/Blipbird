@@ -1,0 +1,334 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "573f637b334308f64fc9c59209edbe25",
+    "entities": [
+      {
+        "tableName": "tracked_flight",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `designatorIata` TEXT, `designatorIcao` TEXT, `flightNumber` TEXT NOT NULL, `suffix` TEXT, `dateLocal` TEXT, `dateIntentSource` TEXT NOT NULL DEFAULT 'NEXT_OCCURRENCE', `alias` TEXT, `createdAt` INTEGER NOT NULL, `archived` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "designatorIata",
+            "columnName": "designatorIata",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "designatorIcao",
+            "columnName": "designatorIcao",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "flightNumber",
+            "columnName": "flightNumber",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "suffix",
+            "columnName": "suffix",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dateLocal",
+            "columnName": "dateLocal",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dateIntentSource",
+            "columnName": "dateIntentSource",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'NEXT_OCCURRENCE'"
+          },
+          {
+            "fieldPath": "alias",
+            "columnName": "alias",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "archived",
+            "columnName": "archived",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "itinerary",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `creationRequestId` TEXT NOT NULL, `name` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creationRequestId",
+            "columnName": "creationRequestId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_itinerary_creationRequestId",
+            "unique": true,
+            "columnNames": [
+              "creationRequestId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_itinerary_creationRequestId` ON `${TABLE_NAME}` (`creationRequestId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "itinerary_leg",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `itineraryId` INTEGER NOT NULL, `trackedFlightId` INTEGER NOT NULL, `ordinal` INTEGER NOT NULL, FOREIGN KEY(`itineraryId`) REFERENCES `itinerary`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`trackedFlightId`) REFERENCES `tracked_flight`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itineraryId",
+            "columnName": "itineraryId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackedFlightId",
+            "columnName": "trackedFlightId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_itinerary_leg_itineraryId_ordinal",
+            "unique": true,
+            "columnNames": [
+              "itineraryId",
+              "ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_itinerary_leg_itineraryId_ordinal` ON `${TABLE_NAME}` (`itineraryId`, `ordinal`)"
+          },
+          {
+            "name": "index_itinerary_leg_itineraryId_id",
+            "unique": true,
+            "columnNames": [
+              "itineraryId",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_itinerary_leg_itineraryId_id` ON `${TABLE_NAME}` (`itineraryId`, `id`)"
+          },
+          {
+            "name": "index_itinerary_leg_trackedFlightId",
+            "unique": true,
+            "columnNames": [
+              "trackedFlightId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_itinerary_leg_trackedFlightId` ON `${TABLE_NAME}` (`trackedFlightId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "itinerary",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "itineraryId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "tracked_flight",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "trackedFlightId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "itinerary_transition",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `itineraryId` INTEGER NOT NULL, `inboundLegId` INTEGER NOT NULL, `outboundLegId` INTEGER NOT NULL, `intent` TEXT NOT NULL, `bookingArrangement` TEXT NOT NULL, `baggagePlan` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, FOREIGN KEY(`itineraryId`, `inboundLegId`) REFERENCES `itinerary_leg`(`itineraryId`, `id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`itineraryId`, `outboundLegId`) REFERENCES `itinerary_leg`(`itineraryId`, `id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itineraryId",
+            "columnName": "itineraryId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inboundLegId",
+            "columnName": "inboundLegId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outboundLegId",
+            "columnName": "outboundLegId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intent",
+            "columnName": "intent",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bookingArrangement",
+            "columnName": "bookingArrangement",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "baggagePlan",
+            "columnName": "baggagePlan",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_itinerary_transition_itineraryId_inboundLegId",
+            "unique": true,
+            "columnNames": [
+              "itineraryId",
+              "inboundLegId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_itinerary_transition_itineraryId_inboundLegId` ON `${TABLE_NAME}` (`itineraryId`, `inboundLegId`)"
+          },
+          {
+            "name": "index_itinerary_transition_itineraryId_outboundLegId",
+            "unique": true,
+            "columnNames": [
+              "itineraryId",
+              "outboundLegId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_itinerary_transition_itineraryId_outboundLegId` ON `${TABLE_NAME}` (`itineraryId`, `outboundLegId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "itinerary_leg",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "itineraryId",
+              "inboundLegId"
+            ],
+            "referencedColumns": [
+              "itineraryId",
+              "id"
+            ]
+          },
+          {
+            "table": "itinerary_leg",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "itineraryId",
+              "outboundLegId"
+            ],
+            "referencedColumns": [
+              "itineraryId",
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '573f637b334308f64fc9c59209edbe25')"
+    ]
+  }
+}

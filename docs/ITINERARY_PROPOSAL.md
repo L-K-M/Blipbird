@@ -1,12 +1,13 @@
 # Multi-flight itineraries and connection guidance
 
-> **Status:** Proposed
+> **Status:** Accepted for Tier 0 local itineraries; live tiers remain gated
 >
 > **Research date:** 2026-07-23
 >
-> **Code baseline:** `main` at `9264059`; reviewed and amended against
-> `7c95802`, which merged the in-app reduce-motion toggle (PR #80) after the
-> research date (noted in section 7.15).
+> **Code baseline:** researched at `9264059`, reviewed through `594cc54`, and
+> implemented from that `main` baseline. Tier 0 follows ADR 0001; live
+> connection windows, official guidance, and alerts remain disabled until their
+> explicit provider-rights and occurrence-identity gates close.
 >
 > **Independent review:** re-verified 2026-07-24; see Appendix A
 >
@@ -1445,7 +1446,7 @@ data class ConnectionRecency(
 )
 
 /**
- * Ordered to match the section 8.8 precedence list; the two binding states
+ * Ordered to match the section 8.9 precedence list; the two binding states
  * described in the prose below slot in before the timing fallbacks.
  */
 enum class ConnectionDisruption {
@@ -1990,7 +1991,7 @@ Migration behavior:
 - Register `UserDatabase.MIGRATION_1_2` in `UserDatabase.build()` — a new
   user-DB migration, distinct from the existing `OpsDatabase.MIGRATION_1_2`.
 - Add Room migration-test/schema assets, an `androidTest` source set, and CI
-  managed-device/emulator execution; current CI does not run instrumentation.
+  emulator execution. The Tier 0 implementation now gates merges on that job.
 
 There is no reason for destructive fallback. Because Room does not support
 downgrade, a botched v2 migration on a production install cannot be rolled back
@@ -2995,10 +2996,9 @@ Deliverables:
   fail; live windows cannot.
 - Add Room migration-test and Compose/instrumentation dependencies, schema
   assets, an `androidTest` tree, and CI managed-device/emulator execution.
-  This is a non-trivial CI addition: the current `.github/workflows/ci.yml`
-  has no emulator job, so an API-level matrix, shard count, startup timeout,
-  and `runs-on` selection must all be added before instrumentation tests can
-  gate merges.
+  This is a non-trivial CI addition: use an API-level matrix with an explicit
+  shard count, startup timeout, and `runs-on` selection before instrumentation
+  tests gate merges.
 - Run a small copy/comprehension prototype before fixing the visual hierarchy.
 
 Exit criteria:

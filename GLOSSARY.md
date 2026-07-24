@@ -74,6 +74,25 @@ exists to lower the contribution barrier, not to be authoritative.
 
 ## Blipbird internals
 
+- **Itinerary** — a user-owned, explicitly ordered collection of at least two
+  tracked flight occurrences. One tracked flight belongs to at most one
+  itinerary in the first version.
+- **Leg** — one itinerary membership pointing to an existing tracked flight.
+- **Transition** — the neutral directed edge between adjacent itinerary legs.
+  The user classifies it as a direct connection, destination stay, surface
+  transfer, or unknown; adjacency alone never implies a connection.
+- **Destination stay** — a break before a later flight that is not treated as a
+  transfer.
+- **Surface transfer** — a user-confirmed move between different airports.
+  Blipbird does not infer its route or travel time.
+- **Connection window** — gate arrival (`IN`) to onward gate departure (`OUT`).
+  It is factual arithmetic, not a guarantee that a connection is feasible.
+- **MCT** — a filed minimum connection time matched from a licensed current
+  rules source. The SSIM manual describes exchange semantics but is not itself
+  the rules dataset.
+- **Self-transfer** — flights whose traveler may need separate check-in,
+  baggage collection/recheck, or other arrival/departure procedures. Blipbird
+  asks about booking and baggage rather than inferring protection.
 - **Ribbon** — the §9.4 horizontal strip showing daylight/weather along the
   whole projected flight.
 - **DaylightEngine** — the pure offline component that computes solar

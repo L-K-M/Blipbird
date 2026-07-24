@@ -3,6 +3,8 @@ package ch.lkmc.blipbird.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ch.lkmc.blipbird.core.data.FlightRepository
+import ch.lkmc.blipbird.core.data.FlightLifecycleCoordinator
+import ch.lkmc.blipbird.core.data.ItineraryRepository
 import ch.lkmc.blipbird.core.data.QuotaLedger
 import ch.lkmc.blipbird.core.datastore.Accent
 import ch.lkmc.blipbird.core.datastore.AppIcon
@@ -14,10 +16,13 @@ import ch.lkmc.blipbird.platform.AppIconSwitcher
 import ch.lkmc.blipbird.platform.NotificationEmitter
 import ch.lkmc.blipbird.platform.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -36,6 +41,7 @@ data class SettingsUiState(
     val notifReminders: Boolean = true,
     val notifInFlight: Boolean = true,
     val reduceMotion: Boolean = false,
+    val itineraryCount: Int = 0,
     val quota: List<QuotaRow> = emptyList(),
 )
 
@@ -48,7 +54,21 @@ class SettingsViewModel @Inject constructor(
     private val appIconSwitcher: AppIconSwitcher,
     private val repository: FlightRepository,
     private val notifications: NotificationEmitter,
+    itineraryRepository: ItineraryRepository,
+    private val lifecycle: FlightLifecycleCoordinator,
 ) : ViewModel() {
+    private val _itineraryError = MutableStateFlow<String?>(null)
+    val itineraryError = _itineraryError.asStateFlow()
+    private val _deletingItineraries = MutableStateFlow(false)
+    val deletingItineraries = _deletingItineraries.asStateFlow()
+
+    private val quotaAndItineraries = combine(
+        quotaLedger.observeAll().map { rows ->
+            rows.filter { it.periodKey == quotaLedger.periodKey() }
+                .map { QuotaRow(it.provider, it.unitsUsed, quotaLedger.allowance(it.provider)) }
+        },
+        itineraryRepository.observeCount(),
+    ) { quota, itineraryCount -> quota to itineraryCount }
 
     val uiState: StateFlow<SettingsUiState> = combine(
         combine(settings.themeSpec, settings.appIcon) { spec, icon -> spec to icon },
@@ -56,12 +76,9 @@ class SettingsViewModel @Inject constructor(
         combine(settings.notifCritical, settings.notifStatus, settings.notifReminders, settings.notifInFlight) { c, s, r, f ->
             listOf(c, s, r, f)
         },
-        quotaLedger.observeAll().map { rows ->
-            rows.filter { it.periodKey == quotaLedger.periodKey() }
-                .map { QuotaRow(it.provider, it.unitsUsed, quotaLedger.allowance(it.provider)) }
-        },
+        quotaAndItineraries,
         settings.reduceMotion,
-    ) { (spec, icon), keys, notifs, quota, reduceMotion ->
+    ) { (spec, icon), keys, notifs, quotaAndCount, reduceMotion ->
         SettingsUiState(
             spec = spec,
             appIcon = icon,
@@ -74,7 +91,8 @@ class SettingsViewModel @Inject constructor(
             notifReminders = notifs[2],
             notifInFlight = notifs[3],
             reduceMotion = reduceMotion,
-            quota = quota,
+            quota = quotaAndCount.first,
+            itineraryCount = quotaAndCount.second,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -101,7 +119,10 @@ class SettingsViewModel @Inject constructor(
         settings.setNotifInFlight(v)
         // Apply immediately: a card the user just disabled must not linger
         // until the next worker pass (re-enabling restores it on that pass).
-        if (!v) repository.activeFlights().forEach { notifications.cancelOngoing(it.id) }
+        repository.activeFlights().forEach { flight ->
+            if (v) repository.reconcileOngoing(flight.id)
+            else notifications.cancelOngoing(flight.id)
+        }
     }
 
     fun setNotifReminders(v: Boolean) = viewModelScope.launch {
@@ -109,5 +130,21 @@ class SettingsViewModel @Inject constructor(
         // Apply immediately: cancels scheduled exact alarms when disabling,
         // re-schedules them when enabling (previously deferred to next refresh).
         reminders.reconcileAll()
+    }
+
+    fun deleteAllItineraries() {
+        if (!_deletingItineraries.compareAndSet(expect = false, update = true)) return
+        viewModelScope.launch {
+            _itineraryError.value = null
+            try {
+                lifecycle.deleteAllItinerariesKeepingFlights()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _itineraryError.value = "Couldn't delete itineraries. Nothing was changed."
+            } finally {
+                _deletingItineraries.value = false
+            }
+        }
     }
 }

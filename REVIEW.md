@@ -28,15 +28,6 @@ deferrals, recorded under **Won't do (for now)** below.
 Fixable, but the cost/benefit doesn't land yet — parked here so they stop
 resurfacing in every review. Each notes what would flip the call.
 
-- **B14n — collision-free notification IDs.** #27's
-  `floorMod(flightId, 500M) * 4 + channelIndex` is provably collision-free vs the
-  landed mixed hash (collisions astronomically unlikely, not impossible).
-  *Not now:* the ongoing in-flight notification would orphan on the update that
-  ships the new scheme — the new id can't cancel a card posted under the
-  old-hash id — for a benefit that only bites if ids ever need to be forensically
-  stable. *Revisit* if ids start mattering forensically, or fold it into a
-  notification rework that can clear the stale cards.
-
 - **DS4-P10 — `planeBitmap` renders on the composition thread** on first use
   (cached after). *Not now:* moving it off-thread would make the live aircraft
   icon appear a frame late — worse than the sub-millisecond one-time draw it
@@ -130,9 +121,9 @@ resurfacing in every review. Each notes what would flip the call.
 - **F5 — "Boarding" as a real status** — ADB `boarding`/`gateClosed` collapse
   into SCHEDULED; `strings.xml` already ships the word. *(M)*
 - **F7 — "Next flight" Glance widget.** *(M)*
-- **F10 — Layover awareness** — chained tracked flights: connection time +
-  buffer warnings. *(M)*
-- **F11 — Trip grouping** (PLAN v2). *(M)*
+- **F10 — Layover awareness remainder** — local user-classified transitions now
+  ship with itineraries; live gate-time windows remain gated on provider rights
+  and confirmed occurrence identity. *(L)*
 - **F12 — Per-flight notification profiles** (PLAN §12.1). *(M)*
 - **F13 — Flight log / Passport stats** (needs summary rows kept past the
   prune). *(L)*

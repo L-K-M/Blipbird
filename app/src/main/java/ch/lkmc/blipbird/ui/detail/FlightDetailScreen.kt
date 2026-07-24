@@ -120,6 +120,8 @@ fun FlightDetailScreen(
         onStopOrDispose { viewModel.setScreenVisible(false) }
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val flightActive by viewModel.flightActive.collectAsStateWithLifecycle()
+    LaunchedEffect(flightActive) { if (flightActive == false) onBack() }
     var isMapInteracting by remember { mutableStateOf(false) }
 
     Scaffold(

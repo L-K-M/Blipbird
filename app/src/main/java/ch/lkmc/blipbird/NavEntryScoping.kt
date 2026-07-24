@@ -2,7 +2,6 @@ package ch.lkmc.blipbird
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.core.os.bundleOf
 import androidx.lifecycle.DEFAULT_ARGS_KEY
 import androidx.lifecycle.HasDefaultViewModelProviderFactory
 import androidx.lifecycle.VIEW_MODEL_STORE_OWNER_KEY
@@ -12,6 +11,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.MutableCreationExtras
+import ch.lkmc.blipbird.ui.itinerary.ItineraryNavArgs
 
 /**
  * Per-entry ViewModel scoping for the hand-rolled back stack (G10, B4 root
@@ -66,7 +66,19 @@ class NavEntryOwner(
         }
 
     private fun defaultArgs(screen: Screen): Bundle? = when (screen) {
-        is Screen.Detail -> bundleOf(MainActivity.EXTRA_FLIGHT_ID to screen.flightId)
+        is Screen.FlightDetail -> Bundle().apply {
+            putLong(MainActivity.EXTRA_FLIGHT_ID, screen.flightId)
+        }
+        is Screen.ItineraryDetail -> Bundle().apply {
+            putLong(ItineraryNavArgs.ITINERARY_ID, screen.itineraryId)
+        }
+        is Screen.ItineraryEditor -> Bundle().apply {
+            putString(ItineraryNavArgs.DRAFT_ID, screen.draftId)
+            putLong(ItineraryNavArgs.ITINERARY_ID, screen.itineraryId ?: -1L)
+        }
+        is Screen.GroupExistingFlights -> Bundle().apply {
+            putString(ItineraryNavArgs.DRAFT_ID, screen.draftId)
+        }
         else -> null
     }
 }

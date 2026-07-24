@@ -20,4 +20,4 @@ contract text) as an ADR and reference it from `PLAN.md` Appendix B.
 
 | # | Title | Status | Date |
 |---|---|---|---|
-| — | _(none yet — pre-M0)_ | — | — |
+| [0001](0001-local-itineraries.md) | Local itineraries use neutral transitions | Accepted | 2026-07-24 |
