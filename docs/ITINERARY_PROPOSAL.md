@@ -4,7 +4,9 @@
 >
 > **Research date:** 2026-07-23
 >
-> **Code baseline:** `main` at `9264059`
+> **Code baseline:** `main` at `9264059`; reviewed and amended against
+> `7c95802`, which merged the in-app reduce-motion toggle (PR #80) after the
+> research date.
 >
 > **Related roadmap items:** `REVIEW.md` F10 (layover awareness), F11
 > (trip grouping), F15 (airport information), F16 (offline projected mode),
@@ -66,11 +68,14 @@ The honest product is therefore a staged one:
 
 | Stage | User value | Data basis |
 |---|---|---|
-| 1. Local itinerary | Grouping, order, designators, dates, transition type, offline shell | User-owned Room data |
-| 2. Live connection window | Latest scheduled/calculated break, delay erosion, arrival and onward terminal/gate | Currently integrated BYO-key provider candidates, after rights and occurrence-identity gates close |
-| 3. Official guidance | Connections guide, terminal map, accessibility, security/wait links | Small reviewed registry of official URLs |
-| 4. Licensed assessment | Filed MCT comparison with exact matched rule and caveat | Contracted MCT provider and approved delivery architecture |
-| 5. Venue routing | Floor-aware, accessible gate-to-gate route and duration | Airport/venue geometry, routing, positioning, and mobile rights |
+| 1. Local itinerary (Tier 0) | Grouping, order, designators, dates, transition type, offline shell | User-owned Room data |
+| 2. Live connection window (Tier 1) | Latest scheduled/calculated break, delay erosion, arrival and onward terminal/gate | Currently integrated BYO-key provider candidates, after rights and occurrence-identity gates close |
+| 3. Official guidance (Tier 2) | Connections guide, terminal map, accessibility, security/wait links | Small reviewed registry of official URLs |
+| 4. Licensed assessment (Tier 3) | Filed MCT comparison with exact matched rule and caveat | Contracted MCT provider and approved delivery architecture |
+| 5. Venue routing (Tier 4) | Floor-aware, accessible gate-to-gate route and duration | Airport/venue geometry, routing, positioning, and mobile rights |
+
+Stage numbers and section 6 tier numbers name the same five capabilities; the
+tier label is the canonical one.
 
 The recommended initial UI is a journey timeline, not a stack of full-size
 flight cards. Completed legs collapse, the current leg and next confirmed
@@ -253,16 +258,18 @@ Blipbird is already capable of tracking many flights at once. It lacks
 relationships between them, not multi-flight refresh capacity.
 
 - `TrackedFlightDao.observeActive()` returns every non-archived flight.
-- `FlightListViewModel` creates one row flow per active flight and sorts rows by
-  next event.
+- `FlightListViewModel` creates one row flow per active flight, sorts active
+  rows by next event, and sinks landed/arrived rows below them (most recently
+  landed first).
 - `RefreshWorker` iterates all active flights under one unique WorkManager job.
 - `ReminderScheduler` and `NotificationEmitter` use stable per-flight identity.
 - `FlightDetailViewModel`, route map, weather, ribbon, and ADS-B track are all
   correctly scoped to one flight leg.
 - Archived flights have a dedicated screen with restore and permanent delete.
-- Flight and archive indexes use a shared `LazyVerticalGrid` with
-  `GridCells.Adaptive(380.dp)`; existing flight detail already has a wide-screen
-  two-pane treatment.
+- Flight and archive indexes use parallel `LazyVerticalGrid`s that share the
+  380 dp `ListGridMinCardWidth` constant via `GridCells.Adaptive`; existing
+  flight detail already pairs its card couples side by side at >= 620 dp inside
+  one scrolling column (not separate panes).
 - The hand-rolled navigation stack now supports saved restoration, animated
   transitions, predictive back, and route-scoped ViewModel stores.
 
@@ -325,6 +332,10 @@ weather, and legal retention leg-scoped.
 | Baggage plan | User assertion: no checked bag, through-checked, collect/recheck, or unknown |
 | MCT | Filed minimum connecting time matched to applicable airport/carrier/terminal rules |
 | Guidance | Facts and verified links; not turn-by-turn navigation unless a routing source exists |
+
+Naming convention: `onward` is the user-facing word for the second flight of a
+transition; `outbound` is the domain/API name for the same leg. Formulas, types,
+and precedence lists use `outbound`; UI copy and copy tables use `onward`.
 
 ### 4.2 Persistence invariants
 
@@ -448,7 +459,8 @@ Conclusions:
 
 - Ask whether the flights were booked together and ask about baggage only after
   the user identifies a transition as a direct connection.
-- Default both answers to `Unknown`.
+- Default both answers to their unknown state (`Not sure` for the booking
+  arrangement, `Unknown` for baggage; both map to the `UNKNOWN` enum values).
 - Phrase them as user assertions: `Booked together, according to you`, followed
   by `This does not establish one ticket, airline protection, or bag transfer.`
 - Do not ask for a PNR or ticket number in this feature.
@@ -550,11 +562,11 @@ Works without a status key:
 - Keep user-authored data eligible for Android backup/device transfer.
 - Show unresolved placeholders honestly.
 
-Without status data, Tier 0 contains only name, ordered designators, per-leg
-departure-local dates, transition intent, and user answers. Airports, arrival
-dates, route, and times are unavailable because the current tracking model does
-not ask for them. The UI should say `Live route and time details need an approved
-status source`, not show a fabricated route summary.
+Without status data, Tier 0 contains only name, ordered designators, per-flight
+aliases, per-leg departure-local dates, transition intent, and user answers.
+Airports, arrival dates, route, and times are unavailable because the current
+tracking model does not ask for them. The UI should say `Live route and time
+details need an approved status source`, not show a fabricated route summary.
 
 ### 6.2 Tier 1: existing status-provider itinerary
 
@@ -616,7 +628,7 @@ Enable per airport only when Blipbird has:
    next user-confirmed transfer; keep destination stays quiet and collapse
    completed/distant detail.
 2. **A journey spine, not nested cards.** Use compact leg rows connected by
-   explicit layover nodes. Full sky-gradient cards remain appropriate for
+   explicit transition nodes. Full sky-gradient cards remain appropriate for
    ungrouped flights and selected/current leg heroes.
 3. **Two windows, not one score.** For a direct connection, keep the latest
    scheduled and latest calculated duration visible together.
@@ -642,10 +654,10 @@ My flights                                      [Settings]
 ITINERARIES
 +----------------------------------------------------+
 | Japan trip                         18-19 September |
-| GVA -> FRA -> HND                         2 flights |
+| GVA -> FRA -> HND                        2 flights |
 |                                                    |
-| NOW  LX 2801  GVA -> FRA        Lands in 42 min   |
-|      FRA connection             1 h 08 min latest |
+| NOW  LX 2801  GVA -> FRA        Lands in 42 min    |
+|      FRA connection              2 h 51 min latest |
 |      NH 204   FRA -> HND        Gate B42           |
 +----------------------------------------------------+
 
@@ -657,13 +669,14 @@ OTHER FLIGHTS
 
 Home behavior:
 
-- Reuse the current adaptive `LazyVerticalGrid` and shared 380 dp minimum card
-  width. Section headers and source CTAs span `maxLineSpan`; itinerary and
-  ungrouped-flight cards occupy normal cells. Do not nest independently scrolling
-  grids.
+- Reuse the current adaptive `LazyVerticalGrid` pattern and the shared 380 dp
+  `ListGridMinCardWidth`. Section headers and source CTAs span `maxLineSpan`;
+  itinerary and ungrouped-flight cards occupy normal cells. Do not nest
+  independently scrolling grids.
 - Sort itinerary cards by their next incomplete leg's next event.
 - Preserve ordinal order inside each card.
-- Keep ungrouped flights in the existing next-event sort.
+- Keep ungrouped flights in the existing two-tier sort (active by next event;
+  landed/arrived rows sink below, most recent first).
 - Collapse completed legs to a one-line summary.
 - Show at most the current leg, next confirmed transfer, and next leg in the
   compact card; `View itinerary` reveals the full journey. Do not elevate a
@@ -699,7 +712,7 @@ FLIGHTS
    Departure-airport date [ Fri 18 Sep ] [Move later]
    Resolves to GVA -> FRA  07:10-08:25
 
-   Transition: [Direct connection v]
+   After this flight: [Connect to the next flight v]
 
 2  [ NH 204        ]
    Departure-airport date [ Fri 18 Sep ] [Move earlier]
@@ -777,7 +790,8 @@ Provide a selection screen over ungrouped active flights:
 - Default the draft order from user-confirmed departure-local dates, then
   creation order. Phase 2 does not read provider snapshots for ordering.
 - Let the user reorder before save.
-- Show continuity warnings, not hard errors.
+- Show continuity warnings, not hard errors, once occurrence bindings exist
+  (Phase 3); the Phase 2 grouping screen shows no provider-derived warnings.
 - Move selected rows into one itinerary without creating duplicate tracked
   flights or network calls.
 - Ask what each selected transition means; do not infer that a later return
@@ -808,19 +822,21 @@ The detail screen is a vertical journey spine:
    GVA -> FRA -> HND                     18-19 Sep
 
    LX 2801                                             1
-   GVA 07:10 -> FRA 08:25                  LANDED 08:19
+   GVA 07:10 -> FRA 08:25                 ARRIVED 08:19
         [Open flight dossier]
           |
           |  DIRECT CONNECTION AT FRA
+          |  2 h 39 min until onward departure
+          |  Boarding or gate closing may be earlier
           |  Latest scheduled   2 h 45 min
           |  Latest calculated  2 h 51 min
-          |  6 min longer than scheduled
+          |  6 min longer than latest scheduled
           |  Actual arrival -> scheduled departure
           |  Inbound fetched 4 min ago
           |  Onward fetched 7 min ago
           |
           |  Booked together: Not sure        [Answer]
-          |  Checked bags: Not sure            [Answer]
+          |  Checked bags: Unknown             [Answer]
           |
           |  Inbound reported: Terminal 1, Gate A18
           |  Next flight reported: Terminal 1, Gate B42
@@ -933,9 +949,10 @@ baggage transfer.`
 - Unknown
 
 These values influence questions and official-link emphasis only in the first
-release. They do not create an unsupported risk score. Keep them `Not sure`
-without interrupting creation; ask only when the connection is imminent, opened,
-or the user elects to add details.
+release. They do not create an unsupported risk score. Keep them at their
+unknown defaults (`Not sure` / `Unknown`) without interrupting creation; ask
+only when the connection is imminent, opened, or the user elects to add
+details.
 
 ### 7.11 Edit and reorder
 
@@ -1041,14 +1058,16 @@ change alert is out of scope until the leg planner owns that event explicitly.
 - TalkBack speaks full airport names, explicit local dates, and `arrives next
   day`; it does not rely on arrows or `+1`.
 - Durations use tabular figures and do not truncate at 200% font scale.
-- Reorder exposes semantic `Move before`/`Move after` or up/down actions; drag is
-  never the only mechanism.
+- Reorder exposes semantic `Move earlier`/`Move later` (or equivalent up/down)
+  actions matching the visible control labels; drag is never the only mechanism.
 - Swipe actions have equivalent menus.
 - Visible `Move earlier`, `Move later`, `Refresh`, `Expand`, archive, and delete
   controls support keyboard focus and at least 48 dp targets.
 - Official-map actions name publisher, destination, format, and `opens browser`.
 - A connection map, when added, has a complete text alternative.
-- Reduced motion disables timeline travel animations without hiding state.
+- Reduced motion — through the existing `rememberReducedMotion()` gate (in-app
+  toggle OR system animator scale) — disables timeline travel animations
+  without hiding state.
 - Large touch targets and switch-access traversal are verified.
 - Automatic connection expansion preserves current focus and announces only a
   material disruption, never every countdown tick.
@@ -1059,7 +1078,9 @@ change alert is out of scope until the leg planner owns that event explicitly.
 
 The first release extends the current adaptive contract instead of regressing it.
 Home and `Past trips and flights` retain the shared
-`GridCells.Adaptive(380.dp)`, 16 dp outer padding, and 12 dp cell gaps; itinerary
+`GridCells.Adaptive(380.dp)` cells, 16 dp start/top/end padding (Home keeps its
+96 dp bottom FAB clearance; the archive grid is uniform 16 dp), and 12 dp cell
+gaps; itinerary
 cards are bounded grid cells while section headings/actions span all columns.
 Editor, grouping, dialogs, link sheets, and the vertical itinerary detail remain
 hinge-safe single panes with maximum content width 840 dp, centered in their
@@ -1075,7 +1096,8 @@ tested on every surface, not only editor/detail.
 
 An itinerary timeline/detail or editor/preview two-pane layout is a later
 enhancement after the single-pane accessibility model is stable, even though
-flight detail already has its own wide-screen treatment. If added, it must define
+flight detail already pairs its cards side by side at >= 620 dp in one
+scrolling column. If added, it must define
 default selection, pane-to-pane focus traversal, resize persistence, hinge
 avoidance, and collapse back to one pane when scaled text leaves insufficient
 width. Do not show every full flight dossier simultaneously.
@@ -1151,15 +1173,19 @@ from runway times, provider status, or clock inference.
 ### 8.3 Latest scheduled window
 
 ```kotlin
-scheduledWindow =
-    outbound.depTimes.scheduled - inbound.arrTimes.scheduled
+latestScheduledWindow =
+    Duration.between(
+        inbound.arrTimes.scheduled,
+        outbound.depTimes.scheduled,
+    )
 ```
 
-Both values are `Instant`. Never subtract local clock strings or fixed UTC
-offsets. Convert to airport-local zones only for display. The existing
-`AirportRef.tz` field carries an IANA zone ID when the provider supplies one;
-when it is null, fall back to UTC for display rather than guessing from
-coordinates.
+Both endpoints are nullable `java.time.Instant`s (`MovementTimes` fields), so
+the window exists only when both are present. Compute it with
+`Duration.between`; never subtract local clock strings or fixed UTC offsets.
+Convert to airport-local zones only for display. The existing `AirportRef.tz`
+field carries an IANA zone ID when the provider supplies one; when it is null,
+fall back to UTC for display rather than guessing from coordinates.
 
 `scheduled` here means the scheduled values in the latest permitted snapshot.
 The current schema does not preserve a distinct first-observed or booked
@@ -1181,9 +1207,11 @@ currentOutboundOut =
         ?: outbound.depTimes.estimated
         ?: outbound.depTimes.scheduled
 
-latestCalculatedWindow = currentOutboundOut - currentInboundIn
+latestCalculatedWindow =
+    Duration.between(currentInboundIn, currentOutboundOut)
 ```
 
+Each fallback chain can still end in null; a missing endpoint yields no window.
 Return endpoint certainty, source, and retrieval age, not just a duration.
 Examples:
 
@@ -1202,7 +1230,7 @@ guaranteed.
 Once actual inbound `IN` is known and onward `OUT` has not occurred, also show:
 
 ```text
-timeUntilOnwardDeparture = currentOutboundOut - now
+remainingUntilOutbound = Duration.between(now, currentOutboundOut)
 ```
 
 Label it `Until onward departure`, not `Time to make connection`. Boarding or
@@ -1269,8 +1297,9 @@ enum class TransitionIntent {
 - Missing airports/times: leave `UNKNOWN`.
 
 The 24-hour value is only a prompt heuristic. It is not persisted as truth, an
-MCT, or a validity rule. `INVALID_OVERLAP`, airport mismatch, stale data, and
-disruption are assessment issues, not transition types.
+MCT, or a validity rule. A zero/negative window
+(`ConnectionDisruption.INVALID_OVERLAP`), airport mismatch, stale data, and
+other disruptions are assessment issues, not transition types.
 
 One known failure mode of the 24-hour heuristic: a same-airport short-haul
 connection with a scheduled gap below 24 hours may be suggested as a direct
@@ -1382,6 +1411,37 @@ data class SelectedGateEndpoint(
     val sourceFingerprint: String,
 )
 
+enum class RetrievalFreshness {
+    RECENTLY_FETCHED, STALE_FETCH, LAST_KNOWN, UNKNOWN,
+}
+
+data class EndpointRetrievalState(
+    val age: Duration?,
+    val freshness: RetrievalFreshness,
+)
+
+data class ConnectionRecency(
+    val inbound: EndpointRetrievalState,
+    val outbound: EndpointRetrievalState,
+)
+
+/**
+ * Ordered to match the section 8.8 precedence list; the two binding states
+ * described in the prose below slot in before the timing fallbacks.
+ */
+enum class ConnectionDisruption {
+    OUTBOUND_CANCELLED,
+    INBOUND_CANCELLED,
+    DIVERTED,
+    OUTBOUND_DEPARTED_WITHOUT_INBOUND_IN,
+    OUTBOUND_BEFORE_INBOUND_IN,
+    PENDING_ROUTE_CONFIRMATION,
+    AIRPORT_PAIR_NO_LONGER_MATCHES,
+    DEPARTURE_PASSED_UNCONFIRMED,
+    STALE_OR_MISSING_TIMES,
+    INVALID_OVERLAP,
+}
+
 data class TransitionInput(
     val transitionId: Long,
     val inboundLegId: Long,
@@ -1473,6 +1533,19 @@ data class MinimumConnectionTime(
     val fetchedAt: Instant,
     val expiresAt: Instant,
 )
+
+data class MctComparison(
+    val mct: MinimumConnectionTime,
+    val scheduledMarginAboveMct: Duration?,
+    val calculatedMarginAboveMct: Duration?,
+)
+
+sealed interface MctResult {
+    data class Matched(val mct: MinimumConnectionTime) : MctResult
+    data object NoApplicableRule : MctResult
+    data object Unknown : MctResult
+    data class Failed(val retryable: Boolean) : MctResult
+}
 
 interface MinimumConnectionTimeProvider {
     suspend fun lookup(request: MctRequest): MctResult
@@ -1819,7 +1892,7 @@ An archive/restore transaction updates every member flag together. Do not add a
 startup "repair" that guesses which contradictory flag represented user intent.
 Prevent bypasses, assert graph/archive invariants in tests, and surface any
 impossible state in local diagnostics. Removing the last transition deletes the
-itinerary and keeps the remaining flight ungrouped after confirmation.
+itinerary and leaves its remaining flight(s) ungrouped after confirmation.
 
 As defense in depth, alarm receivers and refresh/position entry points re-read
 the tracked row and require `!archived`; cancellation can race or fail. An open
@@ -1887,7 +1960,8 @@ Migration behavior:
 - Export and commit `UserDatabase/2.json`.
 - Add an instrumentation migration test starting from the committed version 1
   schema with active and archived rows.
-- Register `MIGRATION_1_2` in `UserDatabase.build()`.
+- Register `UserDatabase.MIGRATION_1_2` in `UserDatabase.build()` — a new
+  user-DB migration, distinct from the existing `OpsDatabase.MIGRATION_1_2`.
 - Add Room migration-test/schema assets, an `androidTest` source set, and CI
   managed-device/emulator execution; current CI does not run instrumentation.
 
@@ -1937,11 +2011,18 @@ one transition cancellation surface. Restore and active-startup reconciliation
 recreate only currently eligible schedules; they do not replay notifications.
 Commit and test `OpsDatabase/3.json` and `MIGRATION_2_3`.
 
+This table also changes the Ops DB's documented contract: like `quota_ledger`,
+the cleanup outbox (and the later notification state/commands and occurrence
+bindings) is not rebuildable from provider data, and unlike ordinary rows it
+carries no `expiresAt`. Update the contract comments in `Databases.kt` and
+`Entities.kt` in the same change; destructive recreate remains forbidden.
+
 ### 10.9 Operational notification state and ledger
 
-When transition notifications ship after occurrence bindings, bump `OpsDatabase`
-from version 4 to version 5 (relative to the then-current schema, not a fixed
-constant) and add state, emitted-event, and ordered delivery-command rows:
+When transition notifications ship after occurrence bindings (section 10.10's
+3 → 4 identity migration), bump `OpsDatabase` from version 4 to version 5
+(relative to the then-current schema, not a fixed constant) and add state,
+emitted-event, and ordered delivery-command rows:
 
 ```kotlin
 @Entity(
@@ -2003,15 +2084,19 @@ data class NotificationCommandEntity(
 Update planner state, dedup rows, and any `POST`/`CANCEL` commands in one Ops DB
 transaction. The first
 assessment after creation, restore, backup restore, Ops prune, intent change,
-binding expiry/replacement, source-equivalence change, or re-entry into
-eligibility starts a new episode and seeds a baseline without alerting. The
+binding expiry/replacement, confirmed-pair change, source-equivalence change,
+or re-entry into eligibility starts a new episode and seeds a baseline without
+alerting. The
 eligibility fingerprint includes transition intent, both binding IDs/generations,
 the confirmed airport pair, and equivalent source/certainty identities. Keep
 state/dedup through archive so restore does not replay; prune on expiry and queue
 slot cancellations when transitions disappear.
 
 A shared `PlatformSurfaceCoordinator` serializes lifecycle and planner operations
-by flight/transition key and drains commands in ID order. Before a `POST`, it
+by flight/transition key and drains commands in ID order. The platform
+`notify()`/`cancel()` calls themselves can live in a small
+`TransitionNotificationEmitter` (or a typed extension of the existing
+`NotificationEmitter`) that the coordinator drains into. Before a `POST`, it
 re-reads User DB active state and requires the exact current eligibility episode/
 fingerprint and latest desired command for that slot. Conditional `CANCEL` uses
 the same check; lifecycle deletion/archive cancellation instead requires the
@@ -2141,9 +2226,16 @@ flight UI may use a different explicitly named projection.
 ### 10.11 Backup and export
 
 The three new user tables are automatically eligible for the current include-
-only backup because the whole `blipbird-user.db` file is included. Android does
-not guarantee that a user's device/provider will perform a backup. Update privacy
-copy and future export allowlists to include:
+only backup because the whole `blipbird-user.db` file is included. Two caveats
+apply. Android does not guarantee that a user's device/provider will perform a
+backup. And the include rules cover only the main `blipbird-user.db` file:
+Room's default journal mode keeps recent commits in `blipbird-user.db-wal`,
+which the rules do not list, so a backup can miss recently committed itinerary
+writes. Before relying on backup for itinerary portability, add the
+`-wal`/`-shm` sidecars to the include rules, move the user DB to `TRUNCATE`
+journal mode, or checkpoint the WAL at backup-eligible idle points.
+
+Update privacy copy and future export allowlists to include:
 
 - Itinerary name.
 - Leg order and tracked-flight references.
@@ -2330,6 +2422,11 @@ sealed interface Screen {
 }
 ```
 
+`FlightDetail` renames the existing `Screen.Detail` for symmetry with
+`ItineraryDetail`. The rename touches every exhaustive `when` over `Screen`:
+`BackStackSaver`, `screenRank`, `BlipbirdNav`'s route dispatch and deep-link
+handling, and `NavEntryOwner.defaultArgs`.
+
 Before adding positive itinerary IDs, replace the untagged `Long` saver with a
 tagged representation. A simple versioned string token is sufficient:
 
@@ -2452,8 +2549,9 @@ Rules:
   the only path.
 - Grouping existing flights causes zero immediate network calls unless the user
   explicitly refreshes or data is absent/due.
-- Run retention pruning from app startup and network-unconstrained maintenance;
-  the current network-constrained refresh worker must not be the only pruner.
+- Run retention pruning from app startup and a network-unconstrained maintenance
+  worker (`RetentionPruneWorker` in the file map); the current network-
+  constrained refresh worker must not be the only pruner.
 - Carry operational `expiresAt` through repository read envelopes and enforce it
   in every UI/notification assessment even if physical cleanup is delayed. A
   one-time maintenance wake at the earliest relevant expiry can trigger cleanup.
@@ -2481,8 +2579,9 @@ dispatch:
   silently seeds state unless equivalence is explicitly tested.
 
 `BlipbirdApp` startup, every lifecycle mutation, and every refresh completion call
-`reconcileSchedule()` rather than the old unconditional `RefreshWorker.schedule()`
-(`BlipbirdApp.onCreate` → `RefreshWorker.schedule(this)`).
+`reconcileSchedule()` rather than the old unconditional scheduling calls — the
+direct `RefreshWorker.schedule()` in `BlipbirdApp.onCreate()` and
+`BackgroundRefreshController.ensureScheduled()` on repository mutations.
 
 ### 12.2 Connection-aware priority
 
@@ -2607,10 +2706,10 @@ Recommended beta policy:
 - No alert on provider/source or certainty regression.
 - No timing alert unless the transfer is imminent/active under a tested phase
   policy; destination stays and unknown transitions never alert.
-- Fingerprints include transition ID, eligibility episode, event type, and new
-  bucket/state.
-- Fingerprints include an episode/generation so recovery followed by renewed
-  erosion into a previously seen bucket can alert again.
+- Emitted-event dedup fingerprints include transition ID, eligibility episode,
+  event type, and new bucket/state; including the episode lets recovery followed
+  by renewed erosion into a previously seen bucket alert again. (These are
+  distinct from the eligibility fingerprint defined in section 10.9.)
 - Planner state records baseline, last observed value, last notified bucket, and
   whether a shortening alert occurred; an emitted-event ledger alone cannot
   implement recovery correctly.
@@ -2645,8 +2744,11 @@ The current `NotificationEmitter` calls `notify(stableId(flightId, channel), …
 — a single Int ID namespace with no tag. Migration to tagged slots is a real
 change, not a renaming.
 
-Use `NotificationManagerCompat.notify(tag, id, ...)` with fixed semantic slots:
-`transition:<id>:window` and `transition:<id>:continuity`, each with a fixed ID.
+Use `NotificationManagerCompat.notify(tag, id, ...)` with fixed semantic slots.
+A semantic slot is the short per-kind name (`window`, `continuity`) stored in
+`NotificationCommandEntity.semanticSlot`; the Android tag is derived as
+`<targetKind>:<targetId>:<slot>` — here `transition:<id>:window` and
+`transition:<id>:continuity`, each with a fixed ID.
 Do not depend on a hash being collision-free across flight and transition
 namespaces, and do not use immutable ledger IDs as notification slots. Recovery
 replaces the window slot. A continuity mismatch cancels/supersedes the timing
@@ -2676,8 +2778,11 @@ receivers still re-read the User DB as defense in depth.
 ### 13.5 Ongoing notification and Live Update
 
 Keep the existing per-flight ongoing card in the first itinerary release. It is
-leg-scoped and avoids a broad notification migration; its `LANDED` state must not
-be reused as evidence of connection-airport occupancy.
+leg-scoped and avoids a broad notification migration. The card itself is
+cancelled at landing (`syncOngoing` posts only while a flight is
+DEPARTED/EN_ROUTE/APPROACHING); neither the one-shot per-flight `LANDED` event
+nor the phase machine's `LANDED` status may be reused as evidence of
+connection-airport occupancy.
 
 A later itinerary-level Live Update can replace it only when:
 
@@ -2878,8 +2983,9 @@ Deliverables:
   startup/lifecycle/create paths; initially it preserves current refresh behavior
   while removing unconditional scheduling call sites.
 - Group-aware active/archive/delete/reminder/ongoing-notification lifecycle.
-- Ops DB 2 -> 3 durable platform-cleanup outbox, startup processing, and one
-  complete `cancelAllForFlight` surface.
+- Ops DB 2 -> 3 durable platform-cleanup outbox, startup processing, one
+  complete `cancelAllForFlight` surface, and updated non-rebuildable Ops-DB
+  contract comments.
 - Versioned reminder and flight-notification content data URIs, immutable flight-
   event invocation tokens, semantic flight notification tags, and legacy hash-
   identity cleanup.
@@ -2910,17 +3016,28 @@ Deliverables:
 - Bounded draft/paste sizes and idempotent create retries keyed by `draftId`.
 - Group existing flights without network calls.
 - One-transaction local save.
+- FAB action sheet (`Add itinerary`, `Track flight(s)`, `Group existing
+  flights`) and the empty-state promotion (section 7.3).
+- Editing persisted itineraries, including `Replace flight` membership swaps
+  with transition resets (section 7.11); binding invalidation becomes real in
+  Phase 3.
 - Home itinerary/ungrouped sections and a basic journey-spine detail that shows
   only user-owned designators, dates, order, and transition intent.
 - `Past trips and flights` grouped archive.
 - Archive Undo and explicit keep/delete-flights confirmation.
+- Local delete-all-itineraries action and README/in-app backup-disclosure
+  updates (sections 10.11 and 14.7).
+- Local-surface accessibility and adaptive layout: 200% reflow, TalkBack
+  semantics, visible keyboard/switch actions, and High Contrast/Cockpit
+  variants for Home sections, editor, grouping, detail shell, and archive.
 
 Exit criteria:
 
 - A two-leg overnight itinerary can be created and displayed end to end without
   a provider.
 - Invalid rows cannot cause a partially persisted itinerary.
-- A week-long destination stay and a direct connection render differently.
+- Direct connection, destination stay, surface transfer, and unknown
+  transitions render distinctly.
 - No local-only screen promises route, arrival date, timing, or terminal facts it
   does not have.
 - Null/legacy dates require explicit user confirmation, and Phase 2 ordering uses
@@ -2974,6 +3091,8 @@ Deliverables:
 
 - Pure `TransitionEngine`, `ItineraryProgressPolicy`, and structured retrieval-
   recency policy.
+- `ItinerarySuggestionPolicy` and the post-binding grouping suggestion card
+  (section 7.5).
 - Compact itinerary card with current leg/next confirmed transfer focus.
 - Direct-connection cards with latest scheduled/calculated windows, endpoint
   basis/source/ages, booking/bag questions, and neutral reported-location copy.
@@ -2982,7 +3101,8 @@ Deliverables:
 - Flight-detail membership context.
 - Existing-style adaptive Home/archive grids, responsive single-pane editor/
   detail, 200% text reflow, TalkBack semantics, visible keyboard/switch actions,
-  and High Contrast/Cockpit variants.
+  and High Contrast/Cockpit variants for the live transition surfaces (the
+  local surfaces land in Phase 2).
 - Provider capability gates: AeroDataBox windows stay disabled until its
   revised/predicted/runway family and actual/estimated mapping is corrected and
   contractually confirmed.
@@ -3005,8 +3125,9 @@ Deliverables:
 
 - Reviewed airport-scoped JSON source and validation script/test.
 - Registry parser and validation tests.
-- Initial small set of major airports with official connection/map/
-  accessibility links.
+- Initial small set of major airports with official links across the section
+  9.2 topics: connections, terminal maps, terminal transfers, accessibility,
+  and security/immigration wait pages where available.
 - A declared coverage list used by live-release copy and screenshots.
 - Broken/stale-link maintenance process.
 
@@ -3080,7 +3201,9 @@ core/data/OperationalFlightCleanup.kt
 core/data/StatusRefreshCoordinator.kt
 core/data/ProviderCapabilityRouter.kt
 core/data/FlightLifecycleCoordinator.kt
-platform/PlatformSurfaceCoordinator.kt
+platform/PlatformSurfaceCoordinator.kt   (coordination-layer component; in
+                                          platform/ because it wraps the
+                                          notification/alarm surfaces)
 core/model/ItineraryModels.kt
 domain/TransitionEngine.kt
 domain/ConnectionRecencyPolicy.kt
@@ -3437,6 +3560,8 @@ below passes with at least one enabled production data path.
   every simulated process-death boundary.
 - Failed local mutations retain the draft or last committed graph, announce the
   error, show no false success, and retry idempotently.
+- A local delete-all-itineraries action exists, and README/in-app backup
+  disclosures are updated.
 
 ### 17.2 Additional live-connection release
 
@@ -3545,7 +3670,7 @@ below passes with at least one enabled production data path.
 | Navigation ID collision/restore ambiguity | High | Tagged versioned routes, legacy decoder, and no duplicate equal routes under current store policy |
 | Notification tap discards an editor draft or suppresses a later same-target event | High | Activity-level draft store, warm-stack preservation, and immutable event token in URI/consumption state |
 | Old/upstream-stale data emits alarming notification | High | Retrieval/source/certainty gate, provider field age when available, persisted planner state and dedup; fetch time is not update time |
-| Provider instance drifts to another occurrence | Existing risk | Stable occurrence binding, bound/capability-filtered snapshots, and candidate picker before live guidance |
+| Provider instance drifts to another occurrence | High (already present today) | Stable occurrence binding, bound/capability-filtered snapshots, and candidate picker before live guidance |
 | Provider-pinned date is mistaken for portable user intent | High/data boundary | Date provenance migration; explicit confirmation; resolved occurrence date stays in Ops |
 | Save retry duplicates a committed itinerary | Medium | Unique creation request ID and idempotent repository create/get operation |
 | Overlapping refreshes assess one new and one old leg | High | Set-based batch generations, pair barrier, and snapshot-version validation in planner transaction |
@@ -3707,5 +3832,8 @@ rights needed by a distributed open-source Android client.
   was found.
 - No verified universal public API was found for baggage transfer, immigration/
   customs steps, airport security waits, or gate-to-gate indoor routes.
+- The IATA Travel Centre URL returns HTTP 403 to non-browser/datacenter
+  clients; re-verify it from a normal browser before shipping it as a
+  user-facing deep link.
 
 These gaps are product constraints, not tasks to paper over with estimates.
