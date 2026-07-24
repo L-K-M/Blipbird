@@ -6,7 +6,9 @@
 >
 > **Code baseline:** `main` at `9264059`; reviewed and amended against
 > `7c95802`, which merged the in-app reduce-motion toggle (PR #80) after the
-> research date.
+> research date (noted in section 7.15).
+>
+> **Independent review:** re-verified 2026-07-24; see Appendix A
 >
 > **Related roadmap items:** `REVIEW.md` F10 (layover awareness), F11
 > (trip grouping), F15 (airport information), F16 (offline projected mode),
@@ -109,6 +111,7 @@ timeline. Each direct-connection card answers four questions in order:
 18. [Risks and mitigations](#18-risks-and-mitigations)
 19. [Decisions and review triggers](#19-decisions-and-review-triggers)
 20. [Research source register](#20-research-source-register)
+21. [Appendix A: independent verification log](#appendix-a-independent-verification-log-2026-07-24)
 
 ## 1. Product decision
 
@@ -506,13 +509,16 @@ airport map and should not be stretched into a flight standard.
 Mappedin and HERE offer commercial indoor mapping capabilities. Mappedin's
 public materials document multi-floor wayfinding, live integrations, Android
 SDK credentials, caching/offline MVF loading, accessible routes, airport demos,
-and public Free/Pro tiers. HERE documents mobile/web libraries and GeoJSON map
-access. Production access to the needed real-airport content, a safe public-
-client credential model, pricing for the intended use, and content retention/
-redistribution rights still require confirmation. Google Maps can expose indoor
-levels for supported buildings but does
-not document a universal airport gate-to-gate routing API. Mapbox offline regions
-do not create missing venue data or indoor routes.
+and public Free/Pro tiers. The Free tier excludes SDK & API access and data
+export — those begin at Pro ($165 per map per month) — and the self-serve
+tiers target venue owners publishing their own maps, not a catalog of licensed
+airport venues a third-party app can simply consume. HERE documents mobile/web
+libraries and GeoJSON map access. Production access to the needed real-airport
+content, a safe public-client credential model, pricing for the intended use,
+and content retention/redistribution rights still require confirmation. Google
+Maps can expose indoor levels for supported buildings but does
+not document a universal airport gate-to-gate routing API. Mapbox offline
+regions do not create missing venue data or indoor routes.
 
 Conclusions:
 
@@ -1165,6 +1171,19 @@ does not establish the gate/runway family needed here. The current adapter's
 actual` mapping is therefore not a safe basis for this feature. Exclude
 predicted-only values and add revised-, predicted-, and runway-only fixtures
 until normalized family/certainty is contractually confirmed.
+
+Verbatim OpenAPI schema text (checked 2026-07-24): `revisedTime` — "Actual
+/estimated time of arrival or departure the flight. If `RunwayTime` is
+specified and not equal to this field, this field stands for the time of
+departure/arrival to the gate. Otherwise, it may either be time at the gate or
+on the runway."; `runwayTime` — "Actual / estimated time on the runway:
+landing time for arriving flight; take-off time for the departing flight, if
+known."; `predictedTime` — "Predicted time based on historical data
+(experimental)." The gate/runway family is therefore partially documented: a
+distinct, unequal `runwayTime` disambiguates `revisedTime` to the gate. But
+actual-versus-estimated certainty is not documented for either field, and the
+current adapter additionally maps `runwayTime` to runway actual only, which
+the schema does not support.
 
 Do not infer gate arrival from `FlightStatus.LANDED`; that can mean runway `ON`.
 Do not infer gate departure from `DEPARTED` or `EN_ROUTE`; those phases can come
@@ -1950,7 +1969,15 @@ Migration behavior:
   keys and indices.
 - Add non-null `tracked_flight.dateIntentSource`; map null dates to
   `NEXT_OCCURRENCE` and non-null dates to `LEGACY_UNKNOWN`. Do not guess whether
-  an existing non-null date was user-entered or provider-pinned.
+  an existing non-null date was user-entered or provider-pinned. SQLite
+  mechanics: `ALTER TABLE tracked_flight ADD COLUMN dateIntentSource TEXT NOT
+  NULL DEFAULT 'NEXT_OCCURRENCE'` followed by `UPDATE tracked_flight SET
+  dateIntentSource = 'LEGACY_UNKNOWN' WHERE dateLocal IS NOT NULL`. Declare the
+  matching `@ColumnInfo(defaultValue = "NEXT_OCCURRENCE")` on the entity so the
+  exported schema's column default equals the migration's `ALTER`; the migration
+  test helper compares defaults. Every insert/update path sets the column
+  explicitly, so the default exists only to make the additive migration
+  possible.
 - Do not auto-group existing flights.
 - Preserve every existing tracked-flight value unchanged apart from the new
   provenance column. Until Phase 3, any current provider pin writes
@@ -2606,6 +2633,13 @@ roughly in proportion to the number of legs. The UI should not hide that:
 - Parse locally; resolve only on an explicit review action, then reuse a permitted
   draft result rather than immediately billing a duplicate post-save lookup.
 - Cache allowed results under existing retention terms.
+- Anchor the spend model on public rate cards (checked 2026-07-24, volatile):
+  FlightAware AeroAPI includes $5 of queries free per month ($10 for ADS-B
+  feeders), then per-result-set fees (for example `GET /flights/{ident}` at
+  $0.005 per 15-record result set), and its Standard tier — the first tier with
+  B2C derivative-work rights — carries a $100/month minimum. A BYO key is
+  therefore a real monthly commitment, not a free-tier gesture; spend stops and
+  visible leg counts are not optional.
 
 ### 12.4 Offline state machine
 
@@ -2756,6 +2790,11 @@ slot; restored continuity cancels its slot and silently reseeds timing. Give eac
 PendingIntent the unique data URI above, including its immutable event token, and
 a stable, update-safe policy.
 
+Register a dedicated Android notification channel for transition events,
+alongside the existing `critical`, `status`, `reminders`, and `ongoing`
+channels, so the OS-level importance control and the in-app itinerary category
+toggle cannot drift apart.
+
 Deleting or reordering an itinerary must collect removed transition IDs before
 foreign-key cascades, prepare durable outbox tasks, cancel posted semantic slots,
 and delete their ordinary operational rows. Loss of eligibility, completion, or
@@ -2886,9 +2925,20 @@ modification/derivatives, third-party display/distribution, and credential
 disclosure unless another agreement permits them. A BYO key does not resolve
 that conflict. Its incorporated distributor/marketplace terms and intended-use
 limits must also be cleared for connection guidance and alerts. Obtain separate
-written permission plus approval of the selected RapidAPI or direct-delivery
-path, or keep the integration and dependent live itinerary features disabled in
-release builds. Apply the same specific review to FlightAware and every fallback.
+written permission plus approval of the actual delivery path used, or keep the
+integration and dependent live itinerary features disabled in release builds.
+Note that the terms (Appendix A, November 4, 2025 revision) name **two**
+authorized distributors — Nokia–RapidAPI and API.Market — each incorporating
+its own marketplace agreements, while the site additionally advertises access
+paths not listed in Appendix A; the approval must cover the specific path
+Blipbird ships. The same terms prohibit safety-critical use (Article 5.2.a,
+including real-world navigation and flight-operations applications), describe
+the service as enthusiast-driven and best-effort (Article 4.2), and state the
+data "must not be used as a substitute for official aviation data sources"
+(Article 4.4) — Blipbird's factual, confirm-on-official-displays posture is
+compatible with that framing, but it is not a substitute for written intended-
+use confirmation. Apply the same specific review to FlightAware and every
+fallback.
 
 ### 14.5 MCT rights
 
@@ -2905,6 +2955,10 @@ minimum matched result for the allowed TTL.
 - The standard `tile.openstreetmap.org` service does not permit offline prefetch;
   that policy does not automatically govern every OSM-derived/self-hosted
   provider.
+- OSM's separate vector tile service (`vector.openstreetmap.org`) has its own
+  usage policy, and it likewise prohibits bulk downloading and offline packs.
+  Offline airport maps require self-hosted tiles or a provider whose terms
+  explicitly permit offline use.
 - Official airport map pages may be linked; copying map images requires separate
   permission.
 - Commercial indoor maps require venue and SDK terms, not just an API key.
@@ -3735,7 +3789,7 @@ rights needed by a distributed open-source Android client.
 
 | Source | What it establishes | Access/fit |
 |---|---|---|
-| [OAG Minimum Connection Times](https://www.oag.com/minimum-connection-times) | Provider advertises 157,000+ MCT standards/exceptions, airport/carrier/terminal/codeshare dimensions, up-to-daily updates, files/Snowflake delivery | Commercial; contract and redistribution/cache review required |
+| [OAG Minimum Connection Times](https://www.oag.com/minimum-connection-times) | Provider advertises 157,000+ MCT standards/exceptions, airport/carrier/terminal/codeshare dimensions, up-to-daily updates, files/Snowflake delivery; OAG also sells a separate Global Flight Connections dataset (200M+ route combinations, schedule-connection search rather than filed rules) | Commercial; contract and redistribution/cache review required |
 | [OAG Flight Info API](https://www.oag.com/flight-info-api) and [developer portal](https://developers.oag.com/) | Commercial schedules/status/connections data products | Commercial; direct-mobile, retention, and derived-use rights require contract |
 | [IATA Standard Schedules Information Manual](https://www.iata.org/en/publications/manuals/standard-schedules-information/) | SSIM standardizes schedule/coordination/MCT exchange; Chapter 8 covers MCT data | Commercial annual manual, not a live dataset or redistribution license |
 | [IATA AIDX](https://www.iata.org/en/publications/info-data-exchange/) | XML messaging standard for operational flight data among airlines, airports, and third parties | Standard/schema, not a public feed |
@@ -3752,9 +3806,9 @@ rights needed by a distributed open-source Android client.
 
 | Source | What it establishes | Access/fit |
 |---|---|---|
-| [AeroDataBox documentation](https://doc.aerodatabox.com/), [OpenAPI schema](https://doc.aerodatabox.com/docs/openapi-rapidapi-v1.json), [coverage](https://aerodatabox.com/data-coverage/), [pricing](https://aerodatabox.com/pricing/), and [terms](https://aerodatabox.com/terms/) | Flight status/schedule/airport/airline interfaces, ambiguous revised/predicted/runway certainty/family semantics, and marketplace access | Public terms restrict permanent storage, modification/derivatives, third-party display/distribution, credential disclosure, and some intended uses while incorporating distributor terms; written approval of the use and delivery path is required or the integration stays disabled |
-| [FlightAware AeroAPI](https://www.flightaware.com/commercial/aeroapi/) | Status, schedule, estimate, position/track, alert, historical product, and public tiered usage plans; current materials describe B2C derivative-work rights on Standard | Raw-data display/retention, public distributed-client credentials, and exact selected-plan rights still require written confirmation |
-| [Cirium FlightStats developer center](https://developer.flightstats.com/api-docs/) and [signup](https://developer.flightstats.com/signup) | Legacy Flex docs plus trial/Developer Studio and reviewed PAYG/commercial application paths | Current production access, SLA, mobile credentials, retention, and derived use require provider review/contract; do not call it simply unavailable |
+| [AeroDataBox documentation](https://doc.aerodatabox.com/), [OpenAPI schema](https://doc.aerodatabox.com/docs/openapi-rapidapi-v1.json), [coverage](https://aerodatabox.com/data-coverage/), [pricing](https://aerodatabox.com/pricing/), and [terms](https://aerodatabox.com/terms/) | Flight status/schedule/airport/airline interfaces, ambiguous revised/predicted/runway certainty/family semantics, and marketplace access through two authorized distributors (Nokia–RapidAPI and API.Market per Terms Appendix A, November 4, 2025 revision), each incorporating its own marketplace agreements | Public terms restrict permanent storage, modification/derivatives, third-party display/distribution, credential disclosure, and safety-critical/intended uses while incorporating distributor terms; written approval of the use and the specific delivery path is required or the integration stays disabled |
+| [FlightAware AeroAPI](https://www.flightaware.com/commercial/aeroapi/) | Status, schedule, estimate, position/track, alert, historical product, and public tiered usage plans; derivative-work storage/distribution rights are tiered (Personal: personal/academic only; Standard: business/B2C; Premium adds B2B); $5 free queries per month ($10 for ADS-B feeders), Standard $100/month minimum, per-result-set fees (checked 2026-07-24, volatile) | Raw-data display/retention, public distributed-client credentials, and exact selected-plan rights still require written confirmation |
+| [Cirium FlightStats developer center](https://developer.flightstats.com/api-docs/) and [signup](https://developer.flightstats.com/signup) | Legacy Flex docs plus trial/Developer Studio and reviewed PAYG/commercial application paths; Flex also exposes a Connections API (v3, connecting-flight search between airports) and Flight Status fields for terminal, gate, and baggage carousel | Current production access, SLA, mobile credentials, retention, and derived use require provider review/contract; do not call it simply unavailable |
 | [Aviationstack product](https://aviationstack.com/product), [pricing](https://aviationstack.com/pricing), and [APILayer legal portal](https://www.ideracorp.com/legal/APILayer#tabs-2) | Keyed real-time/historical aviation APIs and plan limits | Does not solve MCT/booking/wayfinding; identify the applicable SaaS terms and review direct-mobile/retention rights |
 | [AirLabs](https://airlabs.co/) and [API docs](https://airlabs.co/docs/) | Status, schedule, delay, alert, and reference APIs | Does not solve MCT/booking/wayfinding; current pricing/rights require confirmation |
 | [OpenSky REST API](https://openskynetwork.github.io/opensky-api/rest.html) and [terms](https://opensky-network.org/about/terms-of-use) | ADS-B states/tracks and operational-use restrictions | Position source only; terms require agreement for operational integration |
@@ -3776,9 +3830,9 @@ rights needed by a distributed open-source Android client.
 |---|---|---|
 | [MapLibre Native docs](https://maplibre.org/maplibre-native/docs/book/) and [license](https://raw.githubusercontent.com/maplibre/maplibre-native/main/LICENSE.md) | Open-source map renderer | Renderer only; no venue data, routing, or tiles |
 | [OpenStreetMap copyright](https://www.openstreetmap.org/copyright) | OSM data is ODbL with attribution/share-alike conditions | Data-license analysis required for derived/bundled indoor databases |
-| [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/) | Standard `tile.openstreetmap.org` raster service is best effort/no SLA; bulk download, prefetch, and offline use prohibited | Not an offline airport-map backend; other OSM-derived/self-hosted services have their own terms |
+| [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/) | Standard `tile.openstreetmap.org` raster service is best effort/no SLA; bulk download, prefetch, and offline use prohibited; the separate `vector.openstreetmap.org` policy also prohibits bulk download and offline packs | Not an offline airport-map backend; other OSM-derived/self-hosted services have their own terms |
 | [OSM Simple Indoor Tagging](https://wiki.openstreetmap.org/wiki/Simple_Indoor_Tagging) | Community model for levels, rooms, corridors, doors, and indoor features | Coverage/routability vary; not a global airport dataset |
-| [Mappedin airports](https://www.mappedin.com/industries/airports/), [pricing](https://www.mappedin.com/pricing/), [Android SDK](https://developer.mappedin.com/android-sdk/getting-started), [SDK license](https://info.mappedin.com/terms/sdk), and [subscription terms](https://info.mappedin.com/terms) | Public docs cover mobile SDK credentials, multi-floor/accessibility routing, caching/offline MVF, airport demos/deployments, and Free plus `$165/map/month` Pro pricing | Strong pilot candidate; production real-airport content, safe public-client credentials, intended-use pricing, and retention/redistribution rights still require confirmation |
+| [Mappedin airports](https://www.mappedin.com/industries/airports/), [pricing](https://www.mappedin.com/pricing/), [Android SDK](https://developer.mappedin.com/android-sdk/getting-started), [SDK license](https://info.mappedin.com/terms/sdk), and [subscription terms](https://info.mappedin.com/terms) | Public docs cover mobile SDK credentials, multi-floor/accessibility routing, caching/offline MVF loading, airport demos/deployments, and Free plus Pro tiers; Pro is `$165/map/month` and is the first tier with SDK & API access and data export — Free covers the editor/viewer only, and both target venue owners publishing their own maps | Strong pilot candidate; production real-airport content, safe public-client credentials, intended-use pricing, and retention/redistribution rights still require confirmation |
 | [HERE Indoor Map documentation](https://docs.here.com/indoor-map/docs/indoor-map-readme) and [terms](https://legal.here.com/en-gb/terms) | Commercial indoor-map platform with documented mobile/web libraries and GeoJSON map access | Desired real-airport coverage, price, public-client credentials, and content rights require enterprise evaluation |
 | [Google Maps IndoorBuilding reference](https://developers.google.com/android/reference/com/google/android/gms/maps/model/IndoorBuilding), [indoor help](https://support.google.com/maps/answer/2803784), and [billing](https://developers.google.com/maps/documentation/android-sdk/usage-and-billing) | Supported indoor buildings can expose levels in Google Maps | No documented universal airport indoor-routing API; billing/terms and F-Droid fit differ |
 | [Mapbox offline maps](https://docs.mapbox.com/android/maps/guides/offline/), [pricing](https://www.mapbox.com/pricing), and [terms](https://www.mapbox.com/legal/tos) | Android offline map-region support | Does not supply airport floor plans/routes; separate venue rights required |
@@ -3837,3 +3891,77 @@ rights needed by a distributed open-source Android client.
   user-facing deep link.
 
 These gaps are product constraints, not tasks to paper over with estimates.
+
+## Appendix A: independent verification log (2026-07-24)
+
+An independent reviewer re-checked this document on 2026-07-24 against the
+live codebase (code identical between `7c95802` and `63f5042`; only this
+document changed) and by re-fetching the cited sources. "Accurate"
+below means the claim was confirmed and needed no change. Corrections and
+additions made by that review are listed at the end. The review was rebased
+over the merged review edits of PRs #81 and #82; section references above
+follow the post-#82 numbering (their new section 8.1 shifted the original
+8.1–8.11 to 8.2–8.12).
+
+| Claim | Result |
+|---|---|
+| Section 3 baseline: `observeActive()`, per-flight row flows sorted by next event, single unique refresh worker, per-flight reminder/notification identity, leg-scoped detail/map/weather/track, archive screen, shared 380 dp adaptive grid, saved/predictive-back navigation, User DB v1 (`tracked_flight` only), shared batch date/alias behavior, non-atomic batch add, unprovenanced provider date pinning, gate/runway separation in `MovementTimes`, AeroAPI and AeroDataBox adapter mappings, airports/airlines-only reference data, untagged `Long` route saver with negative sentinels, `Screen`-keyed ViewModel stores, hash-folded notification IDs and extra-only deep links, arrival+3-day Ops retention, Ops DB v2, include-only backup rules | Accurate — all confirmed in code |
+| Section 12.1 critiques: uncoalesced refresh entry points, backoff consulted only when no snapshot exists, terminal unarchived flights keeping the periodic worker alive, network-constrained worker as the only pruner, first-`Found` failover plus cross-provider newest-row reads | Accurate |
+| `REVIEW.md` F10/F11/F15/F16 and `PLAN.md` v2 trip-grouping references | Accurate |
+| `PLAN.md` "bundled minimum-connect times" assumption (Delighters) | Accurate; the Phase 0 removal stands |
+| OAG MCT: 157,000+ standards/exceptions, files/Snowflake delivery, up-to-daily updates, no public price or redistribution right | Accurate |
+| IATA SSIM: annual commercial manual; Chapter 8 covers MCT exchange | Accurate (36th edition, 2026) |
+| OSM raster tile policy: best effort, no SLA, bulk/prefetch/offline prohibited | Accurate; vector-service policy now also cited (§14.6, §20.4) |
+| Mappedin: Free/Pro tiers, `$165/map/month`, Android SDK credentials, MVF offline caching, airport deployments | Accurate; Free-tier SDK/export exclusions added (§5.5, §20.4) |
+| Flighty Connection Assistant inputs (MCT, nationality, bags, seat, passport control, security, terminal transfer, predicted gates, live conditions) | Accurate (page published 2026-07-08) |
+| AeroDataBox terms: permanent-copy, derivative, redistribution, credential, and intended-use restrictions | Accurate; second authorized distributor and Articles 4.2/4.4/5.2.a added (§14.4, §20.2) |
+| AeroDataBox `revisedTime`/`predictedTime`/`runwayTime` semantics | Accurate per the OpenAPI schema; verbatim quotes added (§8.1) |
+| FlightAware AeroAPI: tiered derivative-work rights with B2C on Standard | Accurate; public price anchors added (§12.3, §20.2) |
+| Google: virtual-interline/self-transfer separate check-in and baggage recheck | Accurate |
+| Heathrow: security for all connecting passengers; separate bookings treated as arrival plus departure; published MCT inapplicable to them | Accurate |
+| IATA Resolution 753: custody tracking at four handover points; not a passenger API | Accurate |
+| UK transit-visa dependence on traveler, route, documents, and border-control path | Accurate |
+| EU missed-connection rights require a single reservation | Accurate |
+| GTFS Pathways: station circulation/accessibility model only | Accurate |
+| Cirium FlightStats developer center: docs live, free evaluation signup | Accurate; Flex Connections API and terminal/gate/baggage fields noted (§20.2) |
+| OurAirports CSV: no IANA timezone field (Blipbird's `tz` column comes from mwgg/Airports, MIT) | Accurate |
+| Timezone Boundary Builder data (ODbL), GeoNames export (CC BY 4.0) | Accurate |
+| CATSA and DFW official wait-time pages; Frankfurt official transfer guide URL | Accurate |
+| Android Live Updates relevance guidance; `Notification.ProgressStyle` is API 36 | Accurate |
+| Duffel/Travelport: booking platforms, not flight-number import shortcuts | Accurate |
+| Wayfindr mobile functionality guidelines | Accurate |
+| Mappedin/HERE/Mapbox/Google indoor-mapping capability framing | Accurate |
+
+Corrections and additions applied by that review:
+
+- §5.5, §20.4 — Mappedin Free tier excludes SDK & API access and export;
+  self-serve tiers are venue-owner-oriented.
+- §7.15 — unified move-control terminology on `Move earlier`/`Move later`
+  (§7.4 previously conflicted with `Move before`/`Move after`); reduced-motion
+  requirement now names both the system setting and the in-app toggle added by
+  PR #80 after the stated code baseline.
+- §8.2 — verbatim AeroDataBox OpenAPI descriptions for `revisedTime`,
+  `runwayTime`, and `predictedTime`, including the documented gate/runway
+  disambiguation rule.
+- §10.7 — `dateIntentSource` migration mechanics: `ADD COLUMN ... DEFAULT
+  'NEXT_OCCURRENCE'` plus a conditional `UPDATE`, with the matching
+  `@ColumnInfo(defaultValue = ...)` so the exported schema default matches the
+  migration.
+- §12.3, §20.2 — FlightAware public price anchors ($5/$10 free monthly
+  allowance, $100/month Standard minimum, per-result-set fees).
+- §13.4 — dedicated Android notification channel for transition events so the
+  OS-level control and the in-app itinerary category cannot drift apart.
+- §14.4, §20.2 — AeroDataBox has two authorized distributors (Nokia–RapidAPI,
+  API.Market) per Terms Appendix A; approval must name the actual delivery
+  path; safety-critical-use prohibition and best-effort/substitute language
+  cited.
+- §14.6, §20.4 — OSM's vector tile service policy also prohibits bulk
+  download/offline packs.
+- §20.1 — OAG's separate Global Flight Connections dataset noted.
+- §20.2 — Cirium Flex Connections API (v3) and terminal/gate/baggage fields
+  noted.
+- Header — baseline note records that PR #80 merged after the research date.
+
+No factual errors were found in the original research; the changes above are
+precision corrections, newly available specifics, and one terminology
+consistency fix.
