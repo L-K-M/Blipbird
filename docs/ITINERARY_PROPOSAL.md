@@ -3915,7 +3915,7 @@ follow the post-#82 numbering (their new section 8.1 shifted the original
 | Mappedin: Free/Pro tiers, `$165/map/month`, Android SDK credentials, MVF offline caching, airport deployments | Accurate; Free-tier SDK/export exclusions added (§5.5, §20.4) |
 | Flighty Connection Assistant inputs (MCT, nationality, bags, seat, passport control, security, terminal transfer, predicted gates, live conditions) | Accurate (page published 2026-07-08) |
 | AeroDataBox terms: permanent-copy, derivative, redistribution, credential, and intended-use restrictions | Accurate; second authorized distributor and Articles 4.2/4.4/5.2.a added (§14.4, §20.2) |
-| AeroDataBox `revisedTime`/`predictedTime`/`runwayTime` semantics | Accurate per the OpenAPI schema; verbatim quotes added (§8.1) |
+| AeroDataBox `revisedTime`/`predictedTime`/`runwayTime` semantics | Accurate per the OpenAPI schema; verbatim quotes added (§8.2) |
 | FlightAware AeroAPI: tiered derivative-work rights with B2C on Standard | Accurate; public price anchors added (§12.3, §20.2) |
 | Google: virtual-interline/self-transfer separate check-in and baggage recheck | Accurate |
 | Heathrow: security for all connecting passengers; separate bookings treated as arrival plus departure; published MCT inapplicable to them | Accurate |
