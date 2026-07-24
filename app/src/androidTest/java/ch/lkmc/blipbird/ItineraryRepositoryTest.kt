@@ -100,6 +100,39 @@ class ItineraryRepositoryTest {
         assertNotNull(userDb.trackedFlightDao().byId(third))
     }
 
+    @Test
+    fun legCannotKeepAndReplaceAtOnce() = runBlocking {
+        val created = repository.save(
+            SaveItineraryRequest(
+                creationRequestId = "create-2",
+                itineraryId = null,
+                name = "Trip",
+                legs = listOf(newLeg("LX100"), newLeg("LX200")),
+            )
+        )
+        val original = checkNotNull(repository.itinerary(created.itineraryId))
+        val first = original.legs[0].flight.id
+        val second = original.legs[1].flight.id
+
+        try {
+            repository.save(
+                SaveItineraryRequest(
+                    creationRequestId = "edit-combo",
+                    itineraryId = original.id,
+                    name = original.name,
+                    legs = listOf(
+                        existingLeg(first),
+                        existingLeg(second).copy(replacesFlightId = first),
+                    ),
+                )
+            )
+            fail("A leg that keeps and replaces a flight must be rejected")
+        } catch (_: ItineraryValidationException) {
+        }
+        assertNotNull(userDb.trackedFlightDao().byId(first))
+        assertNotNull(userDb.trackedFlightDao().byId(second))
+    }
+
     private fun newLeg(designator: String) = ItineraryDraftLegInput(
         existingFlightId = null,
         designator = designator,

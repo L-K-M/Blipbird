@@ -128,47 +128,63 @@ class FlightLifecycleCoordinator @Inject constructor(
         cleanupDao.all().filter { it.state == STATE_PREPARED }
             .groupBy { it.mutationId }
             .forEach { (mutationId, tasks) ->
-                if (tasks.all { desiredStateCommitted(it) }) {
-                    cleanupDao.markReady(mutationId)
-                } else {
-                    cleanupDao.deleteMutation(mutationId)
+                try {
+                    if (tasks.all { desiredStateCommitted(it) }) {
+                        cleanupDao.markReady(mutationId)
+                    } else {
+                        cleanupDao.deleteMutation(mutationId)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Unevaluated rows stay PREPARED so the next pass retries them;
+                    // one unreadable mutation must not starve the rest of the queue.
+                    android.util.Log.w("FlightLifecycle", "Cleanup mutation $mutationId could not be evaluated", e)
                 }
             }
 
         cleanupDao.all().filter { it.state == STATE_READY }.forEach { task ->
-            when (task.targetKind) {
-                TARGET_FLIGHT -> {
-                    val committed = operationLocks.withFlight(task.targetId) {
-                        if (!desiredStateCommitted(task)) return@withFlight false
-                        reminders.cancel(task.targetId)
-                        notifications.cancelAllForFlight(task.targetId)
-                        true
+            try {
+                when (task.targetKind) {
+                    TARGET_FLIGHT -> {
+                        val committed = operationLocks.withFlight(task.targetId) {
+                            if (!desiredStateCommitted(task)) return@withFlight false
+                            reminders.cancel(task.targetId)
+                            notifications.cancelAllForFlight(task.targetId)
+                            true
+                        }
+                        if (!committed) {
+                            cleanupDao.delete(task.id)
+                            return@forEach
+                        }
+                        if (task.desiredUserState == DESIRED_ABSENT) {
+                            flights.cleanupOperationalData(task.targetId)
+                            // cleanupOperationalData waits for any in-flight refresh;
+                            // cancel again afterward so a just-finished post cannot win.
+                            reminders.cancel(task.targetId)
+                            notifications.cancelAllForFlight(task.targetId)
+                        }
                     }
-                    if (!committed) {
+                    TARGET_TRANSITION -> {
+                        if (!desiredStateCommitted(task)) {
+                            cleanupDao.delete(task.id)
+                            return@forEach
+                        }
+                        // Transition platform slots land with live guidance.
+                    }
+                    else -> {
                         cleanupDao.delete(task.id)
                         return@forEach
                     }
-                    if (task.desiredUserState == DESIRED_ABSENT) {
-                        flights.cleanupOperationalData(task.targetId)
-                        // cleanupOperationalData waits for any in-flight refresh;
-                        // cancel again afterward so a just-finished post cannot win.
-                        reminders.cancel(task.targetId)
-                        notifications.cancelAllForFlight(task.targetId)
-                    }
                 }
-                TARGET_TRANSITION -> {
-                    if (!desiredStateCommitted(task)) {
-                        cleanupDao.delete(task.id)
-                        return@forEach
-                    }
-                    // Transition platform slots land with live guidance.
-                }
-                else -> {
-                    cleanupDao.delete(task.id)
-                    return@forEach
-                }
+                cleanupDao.delete(task.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Leave the row READY: the retry worker re-runs the pass later,
+                // and one poison task must not block every task behind it.
+                android.util.Log.w("FlightLifecycle", "Cleanup task ${task.id} failed; left queued", e)
             }
-            cleanupDao.delete(task.id)
         }
     }
 

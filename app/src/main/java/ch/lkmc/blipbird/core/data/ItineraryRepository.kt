@@ -84,6 +84,14 @@ class ItineraryRepository @Inject constructor(
         if (request.creationRequestId.isBlank()) {
             throw ItineraryValidationException(message = "The itinerary draft has no creation request ID")
         }
+        request.legs.forEachIndexed { index, leg ->
+            if (leg.existingFlightId != null && leg.replacesFlightId != null) {
+                throw ItineraryValidationException(
+                    index,
+                    "Flight ${index + 1} cannot keep and replace a tracked flight at once",
+                )
+            }
+        }
 
         // Identity completion can read the Ops reference DB, so finish it before
         // opening the single User DB transaction that commits the whole graph.
