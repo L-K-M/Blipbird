@@ -23,6 +23,28 @@ deferrals, recorded under **Won't do (for now)** below.
 
 ---
 
+## Tidy-ups from the Tier 0 itinerary landing (#85)
+
+Non-blocking lint findings the itinerary work introduced. All warning-level —
+the build bar (0 lint errors) holds — but worth a cheap sweep. *(S)*
+
+- **`LogNotTimber` ×9** — new lifecycle/platform code logs via `android.util.Log`,
+  matching the existing `RefreshWorker` pattern. Either adopt the wrapper the rule
+  wants or suppress it project-wide; the split is the untidy part.
+- **`PluralsCandidate` ×3** — leg/flight count strings are formatted singular;
+  they want `<plurals>` before any translation pass (relates to G1).
+- **`AutoboxingStateCreation`** — `ItineraryEditorScreen.kt:121` should be
+  `mutableIntStateOf`.
+- **`TypographyEllipsis`** — one literal `...` in `strings.xml` should be `…`.
+- **`UseKtx`** — `ReferenceImporter.kt:78` can use `SharedPreferences.edit {}`.
+
+Fixed during the merge review rather than filed: the non-atomic `getOrPut`
+mutex interning in `FlightOperationLocks` (broke the per-flight serialization
+contract under a first-touch race) and two new `selected`/`not_selected`
+strings that silently overrode private `androidx.compose.ui` resources.
+
+---
+
 ## Won't do (for now)
 
 Fixable, but the cost/benefit doesn't land yet — parked here so they stop
