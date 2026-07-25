@@ -7,8 +7,10 @@
     <string name="add">Add</string>
     <string name="continue_label">Continue</string>
     <string name="more_actions">More actions</string>
-    <string name="selected">selected</string>
-    <string name="not_selected">Not selected</string>
+    <!-- Namespaced: bare "selected"/"not_selected" collide with (and silently
+         override) private strings in androidx.compose.ui. -->
+    <string name="a11y_selected">selected</string>
+    <string name="a11y_not_selected">Not selected</string>
 
     <!-- List / add flight -->
     <string name="my_flights">My flights</string>

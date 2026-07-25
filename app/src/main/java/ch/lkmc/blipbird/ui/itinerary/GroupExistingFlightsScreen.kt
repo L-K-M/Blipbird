@@ -151,7 +151,7 @@ fun GroupExistingFlightsScreen(
                     val checked = flight.id in selected
                     val enabled = checked || selected.size < ItineraryRepository.MAX_LEGS
                     val stateLabel = stringResource(
-                        if (checked) R.string.selected else R.string.not_selected
+                        if (checked) R.string.a11y_selected else R.string.a11y_not_selected
                     )
                     Card(
                         modifier = Modifier

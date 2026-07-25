@@ -450,7 +450,7 @@ private fun <T> ChoiceDialog(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     ) {
                         Text(
-                            if (value == selected) "$label (${stringResource(R.string.selected)})" else label,
+                            if (value == selected) "$label (${stringResource(R.string.a11y_selected)})" else label,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
