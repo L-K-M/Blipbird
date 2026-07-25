@@ -34,6 +34,11 @@ be selected into an itinerary without duplication or a network lookup. The
 organizer works offline; live connection windows and transfer guidance are not
 claimed while their provider-rights and occurrence-identity gates remain open.
 
+Not every card earns its place for every traveler: **Settings → Flight dossier** hides
+the map, ribbon, body clock, weather, or airline card. Hiding the weather or ribbon also
+skips their third-party requests, so it saves lookups rather than just tidying up. The
+countdown, key facts, and timeline always stay.
+
 Open-source and ad-free, with no Blipbird account, backend, or analytics.
 
 ## Data sources (bring your own keys)

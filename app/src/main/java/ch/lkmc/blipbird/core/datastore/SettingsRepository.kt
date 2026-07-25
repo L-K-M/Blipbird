@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import java.util.Locale
 import javax.inject.Inject
@@ -68,6 +70,37 @@ internal fun legacyThemeSpec(name: String?): ThemeSpec? = when (name) {
     else -> null
 }
 
+/**
+ * An optional card on the flight dossier (PLAN.md §9.6). The hero, key-facts
+ * grid, and event timeline are deliberately absent from this list: they *are*
+ * the departure board (§9.2), and a dossier that can be emptied has no opinion
+ * left. Only cards that add context — or cost a third-party request — are here.
+ */
+enum class DossierSection {
+    MAP,
+    RIBBON,
+    BODY_CLOCK,
+    WEATHER,
+    AIRLINE,
+    ;
+
+    companion object {
+        fun decode(value: String): DossierSection? = entries.firstOrNull { it.name == value }
+    }
+}
+
+/**
+ * Which dossier cards to draw. Persisted as the set of *hidden* sections rather
+ * than the visible ones, so a card introduced by a later version shows up by
+ * default and a stored name this build no longer knows simply does nothing.
+ */
+data class DossierSections(val hidden: Set<DossierSection> = emptySet()) {
+    fun shows(section: DossierSection): Boolean = section !in hidden
+
+    fun with(section: DossierSection, visible: Boolean): DossierSections =
+        DossierSections(if (visible) hidden - section else hidden + section)
+}
+
 private val Context.settingsStore by preferencesDataStore(name = "settings")
 
 @Singleton
@@ -85,6 +118,7 @@ class SettingsRepository @Inject constructor(
         val NOTIF_STATUS = booleanPreferencesKey("notif_status")
         val NOTIF_REMINDERS = booleanPreferencesKey("notif_reminders")
         val NOTIF_IN_FLIGHT = booleanPreferencesKey("notif_in_flight")
+        val DOSSIER_HIDDEN = stringSetPreferencesKey("dossier_hidden_sections")
     }
 
     val themeSpec: Flow<ThemeSpec> = context.settingsStore.data.map { p ->
@@ -109,6 +143,18 @@ class SettingsRepository @Inject constructor(
     val notifReminders: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_REMINDERS] ?: true }
     val notifInFlight: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_IN_FLIGHT] ?: true }
 
+    /**
+     * Unlike its siblings here, this one is folded into `FlightDetailViewModel`'s
+     * uiState combine, where a DataStore read failure would take down the whole
+     * flight dossier rather than one settings row. Fall back to all-visible, the
+     * same way [ProviderKeyStore.keys] falls back to empty credentials.
+     */
+    val dossierSections: Flow<DossierSections> = context.settingsStore.data
+        .map { p ->
+            DossierSections(p[Keys.DOSSIER_HIDDEN].orEmpty().mapNotNull(DossierSection::decode).toSet())
+        }
+        .catch { emit(DossierSections()) }
+
     suspend fun setThemeMode(mode: ThemeMode) = context.settingsStore.edit { it[Keys.THEME_MODE] = mode.name }
     suspend fun setAccent(accent: Accent) = context.settingsStore.edit { it[Keys.ACCENT] = accent.serialize() }
     suspend fun setHighContrast(v: Boolean) = context.settingsStore.edit { it[Keys.HIGH_CONTRAST] = v }
@@ -118,4 +164,10 @@ class SettingsRepository @Inject constructor(
     suspend fun setNotifStatus(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_STATUS] = v }
     suspend fun setNotifReminders(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_REMINDERS] = v }
     suspend fun setNotifInFlight(v: Boolean) = context.settingsStore.edit { it[Keys.NOTIF_IN_FLIGHT] = v }
+
+    suspend fun setDossierSection(section: DossierSection, visible: Boolean) =
+        context.settingsStore.edit { p ->
+            val hidden = p[Keys.DOSSIER_HIDDEN].orEmpty()
+            p[Keys.DOSSIER_HIDDEN] = if (visible) hidden - section.name else hidden + section.name
+        }
 }

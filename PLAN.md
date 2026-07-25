@@ -847,6 +847,9 @@ Blipbird usability testing:
    use case for non-flyers; long-press the hero countdown to enter it, and it survives screen
    timeout via a wakelock while foregrounded.
 
+Any of the map, ribbon, body clock, weather, and airline cards can be switched off in
+Settings (§9.6); the hero, key facts, and timeline cannot.
+
 **Loading states are skeletons, never spinners.** Every async surface (list first paint,
 detail sections, timeline) renders content-shaped placeholder skeletons, not a centered
 `CircularProgressIndicator`. Skeletons read as "premium and fast"; a spinner over an empty
@@ -1042,6 +1045,42 @@ whether the last leg lands back on the starting clock — so a round trip doesn'
 misleading net zero. Legs whose route hasn't resolved are skipped and the chain says so.
 This makes no connection, transfer, or minimum-connection-time claim, so it stays clear of
 the §4.6 gates that keep live connection guidance closed.
+
+### 9.6 Choosing which dossier cards appear
+
+As the dossier grows, some cards stop earning their place for some travelers. Settings →
+**Flight dossier** hides any of five: **live map · flight ribbon · body clock · weather ·
+airline**. Defaults are all-on, so nothing changes for anyone who never opens Settings.
+
+**The hero, key-facts grid, and event timeline are deliberately not on that list.** They
+*are* the departure board §9.1/§9.2 is built around — the timeline is called "the
+centerpiece" — and a dossier that can be emptied has no opinion left. This is the boundary
+that keeps the feature from becoming the wall of checkboxes §1's "calm by default" exists
+to avoid. The answer to *"too much on screen"* stays phase-adaptive prominence first;
+this is for the cards a given traveler genuinely never reads.
+
+**Hiding a card suppresses its fetch, not just its rendering.** That is the real argument
+for the setting existing at all — decluttering alone would not justify the surface:
+
+| Hidden card | What is no longer requested |
+|---|---|
+| Weather | the batched METAR call to aviationweather.gov |
+| Flight ribbon | the Open-Meteo multi-coordinate en-route call, plus the `DaylightEngine` sampling that feeds it |
+| Live map | nothing — position polling still drives the hero countdown and the phase machine |
+| Body clock, airline | nothing; both are offline derivations |
+
+The map row says so in its own subtext rather than letting the switch imply that tracking
+stopped. Being a lighter guest on free, non-commercial, attribution-bound APIs (§4.4, §16)
+is the point; a user who never opens the weather card should not be spending its quota.
+
+Visibility is **global, not per-flight**. Per-flight notification profiles (§12) earn their
+complexity because disruption is per-trip; which cards you like is a taste that does not
+vary by flight. Storage keeps the *hidden* set rather than the visible one, so a card added
+by a later version appears by default instead of being silently absent for everyone who had
+already opened Settings.
+
+*Naming note:* these are **dossier cards**, never "widgets" — §13's Glance home-screen
+widgets are a different, unrelated surface and the collision would be permanent.
 
 ---
 

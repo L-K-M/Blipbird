@@ -276,6 +276,11 @@
     <string name="settings_opensky_client_secret">OpenSky API client secret</string>
     <string name="settings_granted">Granted</string>
     <string name="settings_allow_precise">Allow precise alerts</string>
+    <string name="settings_dossier">Flight dossier</string>
+    <string name="settings_dossier_desc">Choose which cards appear when you open a flight. The countdown, key facts, and timeline always stay.</string>
+    <string name="settings_dossier_map_desc">Hiding the map only hides it — live positions are still collected for the countdown and progress.</string>
+    <string name="settings_dossier_ribbon_desc">Hiding this also skips the en-route forecast request.</string>
+    <string name="settings_dossier_weather_desc">Hiding this also skips the airport weather request.</string>
     <string name="settings_notifications">Notifications</string>
     <string name="settings_precise_alerts">Precise alerts</string>
     <string name="settings_precise_alerts_desc">Uses exact alarms for boarding and landing reminders. Requires special access.</string>
