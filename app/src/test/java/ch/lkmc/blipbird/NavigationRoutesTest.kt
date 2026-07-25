@@ -85,16 +85,20 @@ class NavigationRoutesTest {
             Screen.Archived,
         )
         samples.forEach { screen ->
-            val covered = when (screen) {
-                is Screen.List -> true
-                is Screen.FlightDetail -> true
-                is Screen.ItineraryDetail -> true
-                is Screen.ItineraryEditor -> true
-                is Screen.GroupExistingFlights -> true
-                is Screen.Settings -> true
-                is Screen.Archived -> true
+            // Deliberately assertion-free: nothing here can fail at runtime, and a
+            // `when` of `-> true` plus assertTrue(true) would only dress that up as
+            // verification. The guard is the compiler refusing a non-exhaustive
+            // `when` — if this stops compiling, add the new subtype to
+            // distinctScreensGetDistinctStateKeys and equalScreensProduceTheSameStateKey.
+            when (screen) {
+                is Screen.List -> Unit
+                is Screen.FlightDetail -> Unit
+                is Screen.ItineraryDetail -> Unit
+                is Screen.ItineraryEditor -> Unit
+                is Screen.GroupExistingFlights -> Unit
+                is Screen.Settings -> Unit
+                is Screen.Archived -> Unit
             }
-            assertTrue(covered, "$screen needs a case in the state-key tests")
         }
     }
 

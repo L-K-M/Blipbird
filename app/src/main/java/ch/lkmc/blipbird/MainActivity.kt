@@ -310,6 +310,9 @@ fun BlipbirdNav(
             .collect { (from, to, stack) ->
                 if (from != to) return@collect
                 storesVm.retainOnly(stack.toSet())
+                // Safe against the SideEffect above not having run yet: an
+                // unrecorded route simply isn't reclaimed this pass, and the next
+                // settle catches it. Nothing live is ever removed.
                 val alive = stack.mapTo(mutableSetOf()) { it.encodeRoute() }
                 (savedRoutes - alive).forEach { screenState.removeState(it) }
                 savedRoutes.clear()
@@ -336,6 +339,11 @@ fun BlipbirdNav(
         },
     ) { screen ->
         val route = screen.encodeRoute()
+        // SideEffect, not LaunchedEffect: this runs synchronously with the apply
+        // phase, so the key is recorded before the cleanup collector below can
+        // observe a settled transition, and before a configuration change could
+        // strand it. Re-running on every recomposition is intended and free — the
+        // set dedupes, and once-per-route would trade that for a later write.
         SideEffect { savedRoutes += route }
         val owner = remember(screen) {
             NavEntryOwner(activity, storesVm.storeFor(screen), screen)
