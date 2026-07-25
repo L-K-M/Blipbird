@@ -36,8 +36,13 @@ class NavigationRoutesTest {
             Screen.FlightDetail(43),
             Screen.ItineraryDetail(42),
             Screen.ItineraryEditor("draft-123", null),
+            // Same itinerary id, different draft: pins draftId as a discriminator
+            // in its own right, so a refactor that dropped it from the key would
+            // fail here and not only in the round-trip test.
+            Screen.ItineraryEditor("draft-456", null),
             Screen.ItineraryEditor("draft-123", 7),
             Screen.GroupExistingFlights("draft-123"),
+            Screen.GroupExistingFlights("draft-456"),
             Screen.Settings,
             Screen.Archived,
         )
