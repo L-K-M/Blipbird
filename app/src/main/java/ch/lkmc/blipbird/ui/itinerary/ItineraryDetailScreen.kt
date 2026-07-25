@@ -83,6 +83,7 @@ fun ItineraryDetailScreen(
     val itinerary = (loadState as? ItineraryDetailLoadState.Found)?.itinerary
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val bodyClock by viewModel.bodyClock.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
     var deleteOpen by remember { mutableStateOf(false) }
@@ -184,6 +185,9 @@ fun ItineraryDetailScreen(
                                 )
                             }
                         }
+                    }
+                    bodyClock?.let { trip ->
+                        item("body-clock") { ItineraryBodyClockCard(trip) }
                     }
                     item("local-boundary") {
                         Card(

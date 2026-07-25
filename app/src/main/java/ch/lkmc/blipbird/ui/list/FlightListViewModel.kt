@@ -5,15 +5,14 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ch.lkmc.blipbird.R
+import ch.lkmc.blipbird.core.data.AirportEnricher
 import ch.lkmc.blipbird.core.data.FlightRepository
 import ch.lkmc.blipbird.core.data.FlightLifecycleCoordinator
 import ch.lkmc.blipbird.core.data.IdentityResolver
 import ch.lkmc.blipbird.core.data.ItineraryRepository
 import ch.lkmc.blipbird.core.data.StatusRefreshCoordinator
-import ch.lkmc.blipbird.core.database.ReferenceDao
 import ch.lkmc.blipbird.core.database.TrackedFlightEntity
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
-import ch.lkmc.blipbird.core.model.AirportRef
 import ch.lkmc.blipbird.core.model.Designator
 import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.core.model.StatusSnapshot
@@ -50,7 +49,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 /**
@@ -150,7 +148,7 @@ class FlightListViewModel @Inject constructor(
     private val lifecycle: FlightLifecycleCoordinator,
     private val statusRefresh: StatusRefreshCoordinator,
     private val identity: IdentityResolver,
-    private val referenceDao: ReferenceDao,
+    private val airports: AirportEnricher,
     keyStore: ProviderKeyStore,
 ) : ViewModel() {
 
@@ -176,9 +174,6 @@ class FlightListViewModel @Inject constructor(
     private val clock: SharedFlow<Instant> = flow {
         while (true) { emit(Instant.now()); delay(30_000) }
     }.distinctUntilChanged().shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
-
-    /** Reference-airport hits keyed by IATA/ICAO; misses are rare and just re-query. */
-    private val airportCache = ConcurrentHashMap<String, ch.lkmc.blipbird.core.database.AirportEntity>()
 
     private val rowsState: StateFlow<RowsState> = repository.observeFlights()
         .flatMapLatest { flights ->
@@ -267,8 +262,8 @@ class FlightListViewModel @Inject constructor(
         ) { snapshot: StatusSnapshot?, attempt: FlightRepository.LookupAttempt?, now: Instant ->
             val view = FlightPhaseMachine.derive(snapshot, null, now)
             val designator = Designator(flight.designatorIata, flight.designatorIcao, flight.flightNumber, flight.suffix)
-            val dep = resolve(snapshot?.departure)
-            val arr = resolve(snapshot?.arrival)
+            val dep = airports.enrich(snapshot?.departure)
+            val arr = airports.enrich(snapshot?.arrival)
             val depTime = snapshot?.depTimes?.best
             val arrTime = snapshot?.arrTimes?.best
             FlightRow(
@@ -296,23 +291,6 @@ class FlightListViewModel @Inject constructor(
                 lookupProblem = attempt?.outcome?.takeIf { it != LookupOutcome.SUCCESS },
             )
         }
-
-    /** Fill lat/lon/tz/city gaps from the bundled reference DB (AeroAPI omits coordinates). */
-    private suspend fun resolve(ref: AirportRef?): AirportRef? {
-        if (ref == null) return null
-        if (ref.lat != null && ref.lon != null && ref.tz != null && ref.city != null) return ref
-        val key = ref.iata ?: ref.icao ?: return ref
-        val entity = airportCache[key]
-            ?: (ref.iata?.let { referenceDao.airportByIata(it) } ?: ref.icao?.let { referenceDao.airportByIcao(it) })
-                ?.also { airportCache[key] = it }
-            ?: return ref
-        return ref.copy(
-            city = ref.city ?: entity.city,
-            lat = ref.lat ?: entity.lat,
-            lon = ref.lon ?: entity.lon,
-            tz = ref.tz ?: entity.tz,
-        )
-    }
 
     /**
      * Batch add: "CA861, LX1612" or "CCA861/CA861"; each token resolves to one row.

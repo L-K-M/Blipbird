@@ -3,12 +3,11 @@ package ch.lkmc.blipbird.ui.detail
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import ch.lkmc.blipbird.core.data.AirportEnricher
 import ch.lkmc.blipbird.core.data.FlightRepository
 import ch.lkmc.blipbird.core.data.IdentityResolver
 import ch.lkmc.blipbird.core.data.StatusRefreshCoordinator
 import ch.lkmc.blipbird.core.data.WeatherRepository
-import ch.lkmc.blipbird.core.database.AirportEntity
-import ch.lkmc.blipbird.core.database.ReferenceDao
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
 import ch.lkmc.blipbird.core.model.AirportRef
 import ch.lkmc.blipbird.core.model.AirportWeather
@@ -20,6 +19,7 @@ import ch.lkmc.blipbird.core.model.WeatherSample
 import ch.lkmc.blipbird.domain.DaylightEngine
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.domain.GreatCircle
+import ch.lkmc.blipbird.domain.JetlagEngine
 import ch.lkmc.blipbird.domain.LookupOutcome
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -58,6 +58,8 @@ data class DetailUiState(
     val lastFix: PositionFix? = null,
     val track: List<PositionFix> = emptyList(),
     val daylight: DaylightEngine.Result? = null,
+    /** Derived body-clock card (§9.5); null until both airport zones resolve. */
+    val bodyClock: JetlagEngine.BodyClock? = null,
     val routeWeather: List<WeatherSample> = emptyList(),
     val airportWeather: List<AirportWeather> = emptyList(),
     val refreshing: Boolean = false,
@@ -73,7 +75,7 @@ class FlightDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: FlightRepository,
     private val statusRefresh: StatusRefreshCoordinator,
-    private val referenceDao: ReferenceDao,
+    private val airports: AirportEnricher,
     private val weatherRepository: WeatherRepository,
     private val identity: IdentityResolver,
     keyStore: ProviderKeyStore,
@@ -185,6 +187,8 @@ class FlightDetailViewModel @Inject constructor(
 
         val d = flight?.let { Designator(it.designatorIata, it.designatorIcao, it.flightNumber, it.suffix) }
         val designator = d?.display ?: ""
+        val depAirport = dep ?: snap?.departure
+        val arrAirport = arr ?: snap?.arrival
         DetailUiState(
             flightId = id,
             title = flight?.alias ?: designator,
@@ -195,11 +199,16 @@ class FlightDetailViewModel @Inject constructor(
             airlineIcao = d?.airlineIcao,
             snapshot = snap,
             view = FlightPhaseMachine.derive(snap, fix, now),
-            depAirport = dep ?: snap?.departure,
-            arrAirport = arr ?: snap?.arrival,
+            depAirport = depAirport,
+            arrAirport = arrAirport,
             lastFix = fix,
             track = trk,
             daylight = day,
+            // Pure offset arithmetic — cheap enough to re-derive in the combine
+            // rather than carry a fifteenth upstream flow.
+            bodyClock = snap?.arrTimes?.best?.let {
+                JetlagEngine.compute(it, depAirport?.tz, arrAirport?.tz)
+            },
             routeWeather = rw,
             airportWeather = aw,
             refreshing = busy,
@@ -226,8 +235,8 @@ class FlightDetailViewModel @Inject constructor(
 
     private suspend fun onSnapshot(snap: StatusSnapshot) {
         // Enrich airports from the bundled reference table (coords + tz + names).
-        val dep = enrich(snap.departure)
-        val arr = enrich(snap.arrival)
+        val dep = airports.enrich(snap.departure)
+        val arr = airports.enrich(snap.arrival)
         enriched.value = dep to arr
 
         // Recompute ribbon inputs only when the snapshot actually changed.
@@ -236,23 +245,6 @@ class FlightDetailViewModel @Inject constructor(
 
         computeDaylight(snap, dep, arr)
         fetchWeather(snap, dep, arr)
-    }
-
-    private suspend fun enrich(ref: AirportRef?): AirportRef? {
-        if (ref == null) return null
-        if (ref.lat != null && ref.tz != null) return ref
-        val row: AirportEntity? = ref.iata?.let { referenceDao.airportByIata(it) }
-            ?: ref.icao?.let { referenceDao.airportByIcao(it) }
-        return if (row == null) ref else AirportRef(
-            icao = ref.icao ?: row.icao,
-            iata = ref.iata ?: row.iata,
-            name = ref.name ?: row.name,
-            city = ref.city ?: row.city,
-            country = ref.country ?: row.country,
-            lat = ref.lat ?: row.lat,
-            lon = ref.lon ?: row.lon,
-            tz = ref.tz ?: row.tz,
-        )
     }
 
     private suspend fun computeDaylight(snap: StatusSnapshot, dep: AirportRef?, arr: AirportRef?) {

@@ -482,6 +482,8 @@ v2 and must never silently retarget an already tracked instance.
 │  BuildProjectedRouteProfile (milestones + user input + fixes)      │
 │  DaylightEngine (pure: projected profile → solar elevation,       │
 │                  light bands, sunrise/sunset events, terminator)  │
+│  JetlagEngine (pure: zone offsets → body-clock shift + rule of    │
+│                thumb adaptation; no provider input)               │
 ├───────────────────────────── Data ───────────────────────────────┤
 │  FlightRepository (UserDb | no-backup OperationalDb | ReferenceDb)│
 │  PositionSession (foreground hot flow; batched/downsampled writes)│
@@ -824,6 +826,9 @@ Blipbird usability testing:
    access must not be assumed. A high-confidence late inbound may feed a clearly derived
    delay heads-up.
 5. **Flight ribbon:** projected daylight and source-labeled weather along the route (§9.4).
+5b. **Body clock:** the time-zone shift, the arrival time on the clock your body is still
+   keeping, and a clearly hedged adaptation rule of thumb (§9.5). Derived entirely from
+   bundled time zones — no provider, key, or quota of its own.
 6. **Weather:** decoded, timestamped METAR at both airports; TAF prevailing conditions plus
    every `TEMPO`/`PROB` overlay valid at ETA; time/altitude-aware route samples when the M0
    provider gate closes; and applicable worldwide SIGMETs from §4.4. Never summarize absent
@@ -987,6 +992,56 @@ to the daylight gradient behind list/widget progress. The same projected light b
 the route guide on the map (§11). The ribbon is inherently visual; it must ship with a text
 alternative (ordered, TalkBack-readable summary of the bands and events) per the §18
 accessibility requirement — never the only representation of its data.
+
+### 9.5 The body-clock card — what the time-zone change costs you
+
+A delighter-scale derived card (`JetlagEngine`, detail item 5b and the itinerary summary)
+answering the question every long-haul traveler actually has: *"what time is it going to
+feel like, and how long until I'm normal again?"* It needs **no new provider, key, quota,
+or permission** — the bundled airport time zones (§4.3) and the arrival instant the status
+layer already holds are the entire input. That is unusual on this roadmap and is most of
+the reason it earns a place.
+
+**Two tiers, visually separated, because they have different epistemic status.** This is
+§1's "never fakes precision" applied to a feature whose interesting half is a model:
+
+| Tier | Content | Treatment |
+|---|---|---|
+| Fact | Signed clock shift; arrival rendered on the departure zone's clock ("lands 09:25 in NRT — 02:25 on your ZRH clock") | Headline weight. Exact `java.time` offset arithmetic. |
+| Rule of thumb | Direction of adaptation, days to adjust, first-day light windows | Below a divider, small, hedged, labeled "a rule of thumb, not a measurement". |
+
+Both zone offsets are evaluated **at the arrival instant**, so a home-zone DST transition
+during a long flight is already accounted for and the same route reports +7 h in July and
++8 h in January. Missing either zone produces no card rather than a guessed one — the same
+degradation rule the rest of §4.5 follows, which also means the card is absent in zero-key
+mode along with every other route-derived surface.
+
+**The model.** Unassisted, the circadian clock advances about 1 h/day and delays about
+1.5 h/day (Eastman & Burgess, *Sleep Medicine Clinics* 4(2), 2009). Because a 24-hour clock
+closes either way round, the engine picks whichever direction costs fewer **days**, not
+fewer hours. The crossover falls between a 9 h and a 10 h eastward shift, which reproduces
+the standard advice that very long eastward trips are easier handled as delays — the card
+flags that case explicitly ("the clock jumped forward, but moving your body clock later is
+the shorter way round") so the recommendation doesn't read as a bug. A shift under three
+hours produces no plan at all; it is not a real body-clock problem and saying so is more
+useful than a fabricated one-day estimate.
+
+**Light windows.** Bright light after the core-body-temperature minimum advances the clock;
+light before it delays. CBTmin is estimated as two hours before habitual wake, and Blipbird
+deliberately asks for **no sleep or health data**, so an assumed 07:00 wake is used and
+*stated on the card* rather than hidden. The output is often counter-intuitive and correct:
+a 7 h eastward shift tells you to skip the destination's early-morning sun on day one and
+get light around midday. An optional user-entered habitual wake time is the obvious
+follow-up; a full personalized shifting protocol (chronotype, pre-trip schedule, melatonin
+timing) is an explicit **non-goal** — it needs health-adjacent inputs and would pull the app
+toward the wellness category §1 designs against.
+
+**Itinerary summary.** The same core reports each leg's cumulative shift from the zone the
+plan started in ("ZRH · NRT +7 h · SIN +6 h · ZRH ±0"), the biggest shift reached, and
+whether the last leg lands back on the starting clock — so a round trip doesn't report a
+misleading net zero. Legs whose route hasn't resolved are skipped and the chain says so.
+This makes no connection, transfer, or minimum-connection-time claim, so it stays clear of
+the §4.6 gates that keep live connection guidance closed.
 
 ---
 
@@ -1334,7 +1389,8 @@ follow-up.
 Projected sunrise-side callouts only when the route/heading confidence margin passes ·
 landing confetti · route on-time forecast only from retention-cleared local snapshots · AR
 "point at the sky" long-shot · **"Will I see the sunrise/sunset?" headline** distilled from
-the ribbon · **Pickup Mode** full-screen always-on arrivals-hall display · **route-diagram
+the ribbon · **body-clock card** (§9.5; shipped) with an optional user-entered habitual
+wake time as the follow-up · **Pickup Mode** full-screen always-on arrivals-hall display · **route-diagram
 hero** replacing the too-small map snippet · **time-travel ribbon scrubber** · **cabin
 sunrise/sunset alarm** · **tap-to-reverse-geocode** "what is that down there?" · **fading
 contrail** on the plane marker · **engine-start haptic** when ADS-B ground speed crosses
@@ -1362,7 +1418,10 @@ presented as a safety guarantee ·
   true-vs-apparent altitude, exact USNO band edges, conventional-vs-cruise-visible thresholds,
   all crossing directions, tangent contacts, polar day/night, antimeridian, coincident/near-
   antipodal routes, bounded sampling, and low-confidence window-side suppression against
-  independently checked fixtures.
+  independently checked fixtures. Test `JetlagEngine` offset arithmetic across DST and the
+  date line, half-hour zones, the negligible-shift threshold, the advance/delay crossover
+  between 9 h and 10 h east, light windows either side of the estimated CBTmin including
+  midnight wrap, and itinerary chains that return to (or never leave) the starting zone.
 - **Provider contract tests:** synthetic or provider-approved redacted fixtures cover happy
   path, missing fields, cancellation/diversion, codeshare/multi-leg, polymorphic ADS-B
   values, empty results, 401/403/429/5xx, and pagination. Do not commit captured payloads

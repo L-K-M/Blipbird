@@ -191,6 +191,47 @@
     <string name="ribbon_summary">Route from %1$s to %2$s, %3$d%% complete, %4$d%% in daylight</string>
     <string name="ribbon_summary_with_events">Route from %1$s to %2$s, %3$d%% complete, %4$d%% in daylight. %5$s</string>
 
+    <!-- Body clock (jet lag). Exact clock facts first, hedged rule of thumb after. -->
+    <string name="body_clock">Body clock</string>
+    <string name="body_clock_hours">%1$d h</string>
+    <string name="body_clock_hours_minutes">%1$d h %2$d min</string>
+    <string name="body_clock_later">%1$s later</string>
+    <string name="body_clock_earlier">%1$s earlier</string>
+    <string name="body_clock_no_change">No time-zone change</string>
+    <string name="body_clock_arrival">Lands %1$s in %2$s — %3$s on your %4$s clock.</string>
+    <string name="body_clock_unchanged">Same clock at both ends — nothing for your body clock to do.</string>
+    <string name="body_clock_move_earlier">Your body clock has to move %1$s earlier — sleep and wake before it wants to.</string>
+    <string name="body_clock_move_later">Your body clock has to move %1$s later — stay up past when it wants to sleep.</string>
+    <string name="body_clock_counter_advance">The clock went back, but moving your body clock earlier is the shorter way round.</string>
+    <string name="body_clock_counter_delay">The clock jumped forward, but moving your body clock later is the shorter way round.</string>
+    <string name="body_clock_light">First full day in %1$s: bright light around %2$s, keep it dim around %3$s.</string>
+    <string name="body_clock_window">%1$s–%2$s</string>
+    <string name="body_clock_caveat">Assumes you arrive still on %1$s time and normally wake around %2$s. Light timing follows the usual circadian model; people vary a lot.</string>
+    <string name="body_clock_shift_none">±0</string>
+    <string name="body_clock_shift_plus">+%1$s</string>
+    <string name="body_clock_shift_minus">−%1$s</string>
+    <string name="itinerary_body_clock_peak_later">Biggest shift: %1$s later, at %2$s</string>
+    <string name="itinerary_body_clock_peak_earlier">Biggest shift: %1$s earlier, at %2$s</string>
+    <string name="itinerary_body_clock_negligible">No leg of this plan shifts your body clock enough to matter.</string>
+    <string name="itinerary_body_clock_returns">Your last flight lands back on %1$s time.</string>
+    <string name="itinerary_body_clock_incomplete">Some legs have no resolved route yet and are left out of this chain.</string>
+    <plurals name="body_clock_negligible">
+        <item quantity="one">Under %1$d hour of shift — not enough to be a real body-clock problem.</item>
+        <item quantity="other">Under %1$d hours of shift — not enough to be a real body-clock problem.</item>
+    </plurals>
+    <plurals name="body_clock_days">
+        <item quantity="one">About %1$d day to catch up on its own — a rule of thumb, not a measurement.</item>
+        <item quantity="other">About %1$d days to catch up on its own — a rule of thumb, not a measurement.</item>
+    </plurals>
+    <plurals name="itinerary_body_clock_plan_earlier">
+        <item quantity="one">Body clock moves %1$s earlier · about %2$d day on its own (rule of thumb)</item>
+        <item quantity="other">Body clock moves %1$s earlier · about %2$d days on its own (rule of thumb)</item>
+    </plurals>
+    <plurals name="itinerary_body_clock_plan_later">
+        <item quantity="one">Body clock moves %1$s later · about %2$d day on its own (rule of thumb)</item>
+        <item quantity="other">Body clock moves %1$s later · about %2$d days on its own (rule of thumb)</item>
+    </plurals>
+
     <!-- Settings -->
     <string name="settings">Settings</string>
     <string name="settings_appearance">Appearance</string>

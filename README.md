@@ -19,6 +19,13 @@ visualizing daylight/darkness and weather along the whole route, and sends
 notifications for the moments that matter — delays, gate changes, departure,
 landing, cancellation.
 
+A **body clock** card turns the time-zone change into something you can act on: the
+exact shift, what time you land on the clock your body is still keeping, and — clearly
+labeled as a rule of thumb rather than a measurement — which way and how long the
+adjustment runs, plus when to seek and avoid bright light on the first day. It is
+computed entirely on-device from the bundled airport time zones; no extra key, quota,
+or permission, and no sleep or health data is collected.
+
 You can also create a local **itinerary**: name a travel plan, add two or more
 flights with an independently confirmed departure-airport date for each, set
 their explicit order, and describe each break as a direct connection,

@@ -207,6 +207,17 @@ fun FlightDetailScreen(
                             }
                         }
                     }
+                    state.bodyClock?.let { bodyClock ->
+                        item {
+                            SectionCard(stringResource(R.string.body_clock)) {
+                                BodyClockBody(
+                                    bodyClock = bodyClock,
+                                    originCode = state.depAirport?.code ?: "",
+                                    destinationCode = state.arrAirport?.code ?: "",
+                                )
+                            }
+                        }
+                    }
                     if (wide && hasWeather && hasAirline) {
                         item {
                             Row(verticalAlignment = Alignment.Top) {
