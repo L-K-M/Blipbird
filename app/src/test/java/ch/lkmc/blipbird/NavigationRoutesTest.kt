@@ -2,7 +2,9 @@ package ch.lkmc.blipbird
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class NavigationRoutesTest {
     @Test
@@ -38,6 +40,61 @@ class NavigationRoutesTest {
             "v1:itinerary-editor:bad:id:new",
             Any(),
         ).forEach { assertEquals(Screen.List, decodeRoute(it)) }
+    }
+
+    @Test
+    fun popIfTopRemovesOnlyTheRequestingTopEntry() {
+        val editor = Screen.ItineraryEditor("draft-1", 7)
+        val stack = mutableListOf(Screen.List, Screen.ItineraryDetail(7), editor)
+
+        assertTrue(stack.popIfTop(editor))
+        assertEquals(listOf<Screen>(Screen.List, Screen.ItineraryDetail(7)), stack)
+
+        // The editor already left the stack; its late callback must be inert
+        // rather than pop the itinerary detail underneath it.
+        assertFalse(stack.popIfTop(editor))
+        assertEquals(listOf<Screen>(Screen.List, Screen.ItineraryDetail(7)), stack)
+    }
+
+    /** A pop that empties the stack would crash the `backStack.last()` read. */
+    @Test
+    fun popIfTopNeverRemovesTheRoot() {
+        val stack = mutableListOf<Screen>(Screen.List)
+
+        assertFalse(stack.popIfTop(Screen.List))
+        assertEquals(listOf<Screen>(Screen.List), stack)
+    }
+
+    @Test
+    fun popToRootKeepsExactlyTheRoot() {
+        val stack = mutableListOf(
+            Screen.List,
+            Screen.ItineraryDetail(7),
+            Screen.ItineraryEditor("draft-1", 7),
+        )
+
+        stack.popToRoot()
+        assertEquals(listOf<Screen>(Screen.List), stack)
+
+        stack.popToRoot()
+        assertEquals(listOf<Screen>(Screen.List), stack)
+    }
+
+    /**
+     * The dissolving-save sequence that used to empty the stack: the editor pops
+     * itself and unwinds to the root, then its still-composed entry replays the
+     * same callback once Room reports the itinerary gone.
+     */
+    @Test
+    fun replayedEditorSaveAfterDissolveLeavesTheRootIntact() {
+        val editor = Screen.ItineraryEditor("draft-1", 7)
+        val stack = mutableListOf(Screen.List, Screen.ItineraryDetail(7), editor)
+
+        repeat(2) {
+            if (stack.popIfTop(editor)) stack.popToRoot()
+        }
+
+        assertEquals(listOf<Screen>(Screen.List), stack)
     }
 
     @Test

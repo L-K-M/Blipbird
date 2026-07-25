@@ -18,8 +18,28 @@ genuinely still open.
 
 ## Open bugs
 
-None currently prioritized — the remaining known findings are deliberate
-deferrals, recorded under **Won't do (for now)** below.
+- **IT-1 — the per-flight lock is held across provider network I/O.**
+  `FlightRepository.refreshStatus`/`pollPosition`/`backfillTrack` wrap the whole
+  provider chain in `operationLocks.withFlight`, and itinerary mutations acquire
+  every member flight's lock while already holding `processorMutex` and the
+  *global* `itineraryMutationLock` (`FlightLifecycleCoordinator` →
+  `withItinerary` → `withFlights`). One in-flight refresh against a slow
+  provider therefore stalls save/archive/delete for its own itinerary and — via
+  the global lock — for every other itinerary too. This is a latency bug, not a
+  deadlock: the acquisition order (`processorMutex` < `itineraryMutationLock` <
+  per-itinerary/creation lock < flight locks) is consistent on every path, and
+  the UI keeps the action disabled while it waits. *Fix:* narrow the flight lock
+  to the DB read/write phases and leave the provider call outside it. *(M)*
+
+- **IT-2 — `platform_cleanup_task` is the one Ops table with no pruner.**
+  Every other Ops row carries `expiresAt` and is swept by
+  `FlightRepository.prune()`. Cleanup rows are removed only when their task
+  resolves, and `processPendingLocked` deliberately swallows per-task failures
+  so one poison row can't starve the queue — but `PlatformCleanupWorker` then
+  returns `Result.success()`, so nothing reschedules the pass. A row whose
+  evaluation throws on every attempt stays `READY` indefinitely. *Fix:* age out
+  rows past a generous TTL, or return `Result.retry()` when a pass left work
+  behind. *(S)*
 
 ---
 
@@ -42,6 +62,40 @@ Fixed during the merge review rather than filed: the non-atomic `getOrPut`
 mutex interning in `FlightOperationLocks` (broke the per-flight serialization
 contract under a first-touch race) and two new `selected`/`not_selected`
 strings that silently overrode private `androidx.compose.ui` resources.
+
+---
+
+## Smaller itinerary-review findings
+
+Correctness/robustness notes from the post-landing review pass. Each is real but
+below the bar for the **Open bugs** list.
+
+- **IT-3 — a member removed mid-edit can't be re-added in the same session.**
+  "Add tracked flight" lists `observeUngroupedFlights()`, and a flight whose leg
+  the draft dropped is still grouped in the DB until the save commits, so it
+  isn't offered back. The only undo is discarding the whole draft. *Fix:* union
+  the picker with the persisted members the draft no longer references. *(S)*
+
+- **IT-4 — the saved-draft budget is per draft, not total.**
+  `ItineraryDraftStoreViewModel.put` rejects a single draft over
+  `MAX_SAVED_DRAFT_BYTES`, but `persist()` writes *every* draft into one
+  `SavedStateHandle` list. Drafts are removed on save/back/discard so the count
+  stays small in practice; the bound is still on the wrong quantity. *(S)*
+
+- **IT-5 — the ongoing card mints a fresh PendingIntent identity per refresh.**
+  `NotificationEmitter.contentIntent` puts `snapshot.fetchedAt` in the deep-link
+  URI, so `syncOngoing` no longer updates one PendingIntent (it was stable per
+  flight+channel before #85) but registers a new record every pass. The
+  event-token distinctness is deliberate — it's what makes a tap always read as
+  a fresh invocation past `MainActivity.consumedDeepLink` — so this wants
+  measuring on device before changing anything. *(S)*
+
+- **IT-6 — `canonicalOccurrences` keys on IATA-or-ICAO, not both.**
+  `ItineraryRepository.save`'s duplicate-occurrence check builds
+  `designatorIata ?: designatorIcao`, so the same flight held once with an IATA
+  code and once with only an ICAO code hashes to two different occurrences.
+  `IdentityResolver.resolveToken` completes both codes from the reference tables,
+  so this only bites airlines missing from bundled reference data. *(S)*
 
 ---
 

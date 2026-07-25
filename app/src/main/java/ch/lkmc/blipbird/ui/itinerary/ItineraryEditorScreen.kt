@@ -119,6 +119,11 @@ fun ItineraryEditorScreen(
     var replaceLegRowId by remember { mutableStateOf<String?>(null) }
     var focusRequest by remember { mutableStateOf<EditorFocusRequest?>(null) }
     var focusRequestSequence by remember { mutableStateOf(0) }
+    // True once this entry handed navigation off after its own commit. The
+    // outgoing entry stays composed for the exit transition, so Room reporting
+    // the target gone — which is exactly what a dissolving save does — must not
+    // fire the "deleted elsewhere" bail-out on top of that.
+    var navigated by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val nameFocusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
@@ -134,19 +139,22 @@ fun ItineraryEditorScreen(
     LaunchedEffect(viewModel, draftId) {
         viewModel.saved.collectLatest { event ->
             draftStore.remove(draftId)
+            navigated = true
             if (event.trackedNewFlights) onFirstTrack()
             onSaved(event.itineraryId.takeUnless { event.dissolved })
         }
     }
-    LaunchedEffect(creationCheckComplete, committedItineraryId) {
-        if (creationCheckComplete && committedItineraryId != null) {
+    LaunchedEffect(creationCheckComplete, committedItineraryId, navigated) {
+        if (creationCheckComplete && committedItineraryId != null && !navigated) {
             draftStore.remove(draftId)
+            navigated = true
             onSaved(checkNotNull(committedItineraryId))
         }
     }
-    LaunchedEffect(missing) {
-        if (missing) {
+    LaunchedEffect(missing, navigated) {
+        if (missing && !navigated) {
             draftStore.remove(draftId)
+            navigated = true
             onBack()
         }
     }
@@ -275,7 +283,7 @@ fun ItineraryEditorScreen(
                             validationError = if (validationAttempted) legValidationError(leg) else null,
                             onChange = { replacement ->
                                 update { current ->
-                                    current.copy(legs = current.legs.toMutableList().also { it[index] = replacement })
+                                    current.copy(legs = current.legs.replacedAt(index, replacement))
                                 }
                             },
                             onIdentityChange = { replacement ->
@@ -401,7 +409,7 @@ fun ItineraryEditorScreen(
                                 legs = if (identityChanged) {
                                     current.legs.replacedIdentity(index, replacement)
                                 } else {
-                                    current.legs.toMutableList().also { it[index] = replacement }
+                                    current.legs.replacedAt(index, replacement)
                                 }
                             )
                         }
@@ -913,6 +921,19 @@ private fun ItineraryDraftLeg.withoutDepartureDateIdentity(): ItineraryDraftLeg 
         dateLocal = "",
         dateConfirmed = false,
     )
+}
+
+/**
+ * Replaces one leg in place. Every list mutator here tolerates a stale index:
+ * `update` re-reads the draft from the store, so the index a row composed with
+ * can outlive a removal that shrank the list.
+ */
+internal fun List<ItineraryDraftLeg>.replacedAt(
+    index: Int,
+    replacement: ItineraryDraftLeg,
+): List<ItineraryDraftLeg> {
+    if (index !in indices) return this
+    return toMutableList().also { it[index] = replacement }
 }
 
 internal fun List<ItineraryDraftLeg>.replacedIdentity(
