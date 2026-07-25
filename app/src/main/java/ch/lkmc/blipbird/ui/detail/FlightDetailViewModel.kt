@@ -300,9 +300,11 @@ class FlightDetailViewModel @Inject constructor(
             airportWeather.value = emptyList()
         } else {
             val stations = listOfNotNull(dep?.icao, arr?.icao)
-            if (stations.isNotEmpty()) {
-                airportWeather.value = weatherRepository.airportWeather(stations)
-            }
+            // Clear only when there is nothing to ask for. Clearing before the call
+            // instead would blank the card for the duration of every re-derivation —
+            // including one triggered by toggling an unrelated card.
+            if (stations.isEmpty()) airportWeather.value = emptyList()
+            else airportWeather.value = weatherRepository.airportWeather(stations)
         }
         // En-route samples at overflight hours (one multi-point call). These are the
         // ribbon's weather half, and daylight is null whenever the ribbon is hidden —

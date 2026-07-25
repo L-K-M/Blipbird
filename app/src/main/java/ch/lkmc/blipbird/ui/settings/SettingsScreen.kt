@@ -625,6 +625,10 @@ private fun DossierSectionRow(
     descRes?.let {
         Text(
             stringResource(it),
+            // Bottom, not top: the description already sits close under its own
+            // switch, and what it needs is separation from the *next* toggle row
+            // so it doesn't read as a caption for the wrong one.
+            modifier = Modifier.padding(bottom = 8.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
