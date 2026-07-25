@@ -48,12 +48,12 @@ class NavigationRoutesTest {
         val stack = mutableListOf(Screen.List, Screen.ItineraryDetail(7), editor)
 
         assertTrue(stack.popIfTop(editor))
-        assertEquals(listOf(Screen.List, Screen.ItineraryDetail(7)), stack)
+        assertEquals(listOf<Screen>(Screen.List, Screen.ItineraryDetail(7)), stack)
 
         // The editor already left the stack; its late callback must be inert
         // rather than pop the itinerary detail underneath it.
         assertFalse(stack.popIfTop(editor))
-        assertEquals(listOf(Screen.List, Screen.ItineraryDetail(7)), stack)
+        assertEquals(listOf<Screen>(Screen.List, Screen.ItineraryDetail(7)), stack)
     }
 
     /** A pop that empties the stack would crash the `backStack.last()` read. */
@@ -62,7 +62,7 @@ class NavigationRoutesTest {
         val stack = mutableListOf<Screen>(Screen.List)
 
         assertFalse(stack.popIfTop(Screen.List))
-        assertEquals(listOf(Screen.List), stack)
+        assertEquals(listOf<Screen>(Screen.List), stack)
     }
 
     @Test
@@ -74,10 +74,10 @@ class NavigationRoutesTest {
         )
 
         stack.popToRoot()
-        assertEquals(listOf(Screen.List), stack)
+        assertEquals(listOf<Screen>(Screen.List), stack)
 
         stack.popToRoot()
-        assertEquals(listOf(Screen.List), stack)
+        assertEquals(listOf<Screen>(Screen.List), stack)
     }
 
     /**
@@ -94,7 +94,7 @@ class NavigationRoutesTest {
             if (stack.popIfTop(editor)) stack.popToRoot()
         }
 
-        assertEquals(listOf(Screen.List), stack)
+        assertEquals(listOf<Screen>(Screen.List), stack)
     }
 
     @Test
