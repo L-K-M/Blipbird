@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import java.util.Locale
 import javax.inject.Inject
@@ -142,9 +143,17 @@ class SettingsRepository @Inject constructor(
     val notifReminders: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_REMINDERS] ?: true }
     val notifInFlight: Flow<Boolean> = context.settingsStore.data.map { it[Keys.NOTIF_IN_FLIGHT] ?: true }
 
-    val dossierSections: Flow<DossierSections> = context.settingsStore.data.map { p ->
-        DossierSections(p[Keys.DOSSIER_HIDDEN].orEmpty().mapNotNull(DossierSection::decode).toSet())
-    }
+    /**
+     * Unlike its siblings here, this one is folded into `FlightDetailViewModel`'s
+     * uiState combine, where a DataStore read failure would take down the whole
+     * flight dossier rather than one settings row. Fall back to all-visible, the
+     * same way [ProviderKeyStore.keys] falls back to empty credentials.
+     */
+    val dossierSections: Flow<DossierSections> = context.settingsStore.data
+        .map { p ->
+            DossierSections(p[Keys.DOSSIER_HIDDEN].orEmpty().mapNotNull(DossierSection::decode).toSet())
+        }
+        .catch { emit(DossierSections()) }
 
     suspend fun setThemeMode(mode: ThemeMode) = context.settingsStore.edit { it[Keys.THEME_MODE] = mode.name }
     suspend fun setAccent(accent: Accent) = context.settingsStore.edit { it[Keys.ACCENT] = accent.serialize() }
