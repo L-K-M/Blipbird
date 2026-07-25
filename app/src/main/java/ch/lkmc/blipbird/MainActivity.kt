@@ -187,6 +187,12 @@ data class FlightInvocation(val flightId: Long, val slot: String, val eventToken
     val key: String get() = "$flightId:$slot:$eventToken"
 }
 
+/** Route keys whose per-entry UI state the nav's SaveableStateHolder is holding. */
+private val SavedRoutesSaver = listSaver<MutableSet<String>, String>(
+    save = { it.toList() },
+    restore = { it.toMutableSet() },
+)
+
 /** Tagged routes avoid collisions between positive flight and itinerary IDs. */
 private val BackStackSaver = listSaver<SnapshotStateList<Screen>, Any>(
     save = { stack -> stack.map { it.encodeRoute() } },
@@ -289,7 +295,10 @@ fun BlipbirdNav(
     // Routes whose saveable state this holder is currently keeping. Diffing against
     // it means we only ever drop keys we actually provided, and a popped screen's
     // scroll/collapse state is released rather than retained for the session.
-    val savedRoutes = remember { mutableSetOf<String>() }
+    // Saved, not merely remembered: the holder restores its map across a
+    // configuration change, so an empty set here would strand any key that was
+    // popped-but-still-transitioning when the rotation landed.
+    val savedRoutes = rememberSaveable(saver = SavedRoutesSaver) { mutableSetOf<String>() }
     LaunchedEffect(seekable, storesVm) {
         snapshotFlow { Triple(seekable.currentState, seekable.targetState, backStack.toList()) }
             .collect { (from, to, stack) ->
