@@ -52,6 +52,52 @@ class NavigationRoutesTest {
         assertNotEquals(Screen.FlightDetail(42).encodeRoute(), Screen.ItineraryDetail(42).encodeRoute())
     }
 
+    /**
+     * The key must depend only on a screen's identifying *values*. An encoder that
+     * reached for `hashCode()` or identity would still round-trip and still look
+     * unique, but two equal screens rebuilt across a process restart would land on
+     * different keys and silently lose their state.
+     */
+    @Test
+    fun equalScreensProduceTheSameStateKey() {
+        assertEquals(Screen.FlightDetail(42).encodeRoute(), Screen.FlightDetail(42).encodeRoute())
+        assertEquals(
+            Screen.ItineraryEditor("draft-123", 7).encodeRoute(),
+            Screen.ItineraryEditor("draft-123", 7).encodeRoute(),
+        )
+        assertEquals(Screen.Settings.encodeRoute(), Screen.Settings.encodeRoute())
+    }
+
+    /**
+     * Compile-time guard, not a runtime one: adding a [Screen] subtype makes this
+     * `when` non-exhaustive and breaks the build right here, so a new destination
+     * cannot quietly inherit an untested state key.
+     */
+    @Test
+    fun everyScreenTypeIsAccountedForInTheKeyTests() {
+        val samples = listOf(
+            Screen.List,
+            Screen.FlightDetail(1),
+            Screen.ItineraryDetail(1),
+            Screen.ItineraryEditor("draft-1", null),
+            Screen.GroupExistingFlights("draft-1"),
+            Screen.Settings,
+            Screen.Archived,
+        )
+        samples.forEach { screen ->
+            val covered = when (screen) {
+                is Screen.List -> true
+                is Screen.FlightDetail -> true
+                is Screen.ItineraryDetail -> true
+                is Screen.ItineraryEditor -> true
+                is Screen.GroupExistingFlights -> true
+                is Screen.Settings -> true
+                is Screen.Archived -> true
+            }
+            assertTrue(covered, "$screen needs a case in the state-key tests")
+        }
+    }
+
     @Test
     fun legacyLongsStillDecode() {
         assertEquals(Screen.List, decodeRoute(-1L))
