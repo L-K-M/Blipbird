@@ -8,6 +8,7 @@ import ch.lkmc.blipbird.core.database.StatusLookupAttemptEntity
 import ch.lkmc.blipbird.core.database.TrackedFlightEntity
 import ch.lkmc.blipbird.core.database.UserDatabase
 import ch.lkmc.blipbird.core.model.AirportRef
+import ch.lkmc.blipbird.core.model.DateIntentSource
 import ch.lkmc.blipbird.core.model.Designator
 import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.core.model.MovementTimes
@@ -45,12 +46,17 @@ interface NotificationSink {
 }
 
 /**
- * Lets the data layer (re)start background refreshes without depending on
- * WorkManager directly; implemented by the platform layer. The worker cancels
- * itself when no active flights remain, so tracking a flight must re-arm it.
+ * Lets the scheduling coordinator reconcile background refreshes without
+ * depending on WorkManager directly; implemented by the platform layer.
  */
 interface BackgroundRefreshController {
-    fun ensureScheduled()
+    suspend fun schedule()
+    suspend fun cancel()
+}
+
+/** Enqueues durable retries for cross-database platform cleanup tasks. */
+interface PlatformCleanupController {
+    fun enqueue()
 }
 
 @Singleton
@@ -64,9 +70,10 @@ class FlightRepository @Inject constructor(
     private val identity: IdentityResolver,
     private val referenceDao: ReferenceDao,
     private val notificationSink: NotificationSink,
-    private val backgroundRefresh: BackgroundRefreshController,
+    private val operationLocks: FlightOperationLocks,
 ) {
     private val trackedDao get() = userDb.trackedFlightDao()
+    private val itineraryDao get() = userDb.itineraryDao()
     private val snapshotDao get() = opsDb.statusSnapshotDao()
     private val fixDao get() = opsDb.positionFixDao()
     private val emittedDao get() = opsDb.emittedEventDao()
@@ -94,22 +101,28 @@ class FlightRepository @Inject constructor(
                 flightNumber = d.number,
                 suffix = d.suffix,
                 dateLocal = request.date?.toString(),
+                dateIntentSource = if (request.date == null) {
+                    DateIntentSource.NEXT_OCCURRENCE.name
+                } else {
+                    DateIntentSource.USER_CONFIRMED.name
+                },
                 alias = request.alias,
                 createdAt = Instant.now().toEpochMilli(),
             )
         )
-        // The periodic worker cancels itself when the list empties; re-arm it.
-        backgroundRefresh.ensureScheduled()
         return id
     }
 
-    fun observeFlights(): Flow<List<TrackedFlightEntity>> = trackedDao.observeActive()
+    fun observeFlights(): Flow<List<TrackedFlightEntity>> = trackedDao.observeUngroupedActive()
     fun observeFlight(id: Long): Flow<TrackedFlightEntity?> = trackedDao.observeById(id)
     suspend fun flight(id: Long): TrackedFlightEntity? = trackedDao.byId(id)
     suspend fun activeFlights(): List<TrackedFlightEntity> = trackedDao.activeList()
-    fun observeArchivedFlights(): Flow<List<TrackedFlightEntity>> = trackedDao.observeArchived()
+    fun observeArchivedFlights(): Flow<List<TrackedFlightEntity>> = trackedDao.observeUngroupedArchived()
 
-    suspend fun archive(id: Long) {
+    suspend fun archive(id: Long) = operationLocks.withFlight(id) {
+        check(itineraryDao.itineraryIdForFlight(id) == null) {
+            "Remove the flight from its itinerary before archiving it"
+        }
         trackedDao.archive(id)
         // An archived flight must not keep a live progress card up (F6).
         syncOngoingQuietly(id, "", null)
@@ -117,10 +130,11 @@ class FlightRepository @Inject constructor(
 
     suspend fun setAlias(id: Long, alias: String?) = trackedDao.setAlias(id, alias?.trim()?.takeIf { it.isNotEmpty() })
 
-    suspend fun unarchive(id: Long) {
+    suspend fun unarchive(id: Long) = operationLocks.withFlight(id) {
+        check(itineraryDao.itineraryIdForFlight(id) == null) {
+            "Restore the itinerary instead of one member"
+        }
         trackedDao.unarchive(id)
-        // Insert paths that bypass track() must also re-arm the self-cancelling worker.
-        backgroundRefresh.ensureScheduled()
         // Restore the ongoing card right away if the flight is mid-air (F6).
         trackedDao.byId(id)?.let { flight ->
             syncOngoingQuietly(id, flight.displayDesignator(), snapshotDao.latest(id)?.toModel())
@@ -148,11 +162,19 @@ class FlightRepository @Inject constructor(
      */
     suspend fun restore(flight: TrackedFlightEntity): Long {
         val id = trackedDao.insert(flight.copy(id = 0))
-        backgroundRefresh.ensureScheduled()
         return id
     }
 
-    suspend fun delete(id: Long) {
+    /** Rebuild an eligible ongoing card after aggregate restore/startup. */
+    suspend fun reconcileOngoing(flightId: Long) = operationLocks.withFlight(flightId) {
+        val flight = trackedDao.byId(flightId)?.takeUnless { it.archived } ?: return@withFlight
+        syncOngoingQuietly(flightId, flight.displayDesignator(), snapshotDao.latest(flightId)?.toModel())
+    }
+
+    suspend fun delete(id: Long) = operationLocks.withFlight(id) {
+        check(itineraryDao.itineraryIdForFlight(id) == null) {
+            "Remove the flight from its itinerary before deleting it"
+        }
         // Ops rows go first and atomically (glm 1.11): a crash between the two
         // databases then leaves the flight tracked with no derived data (a
         // benign re-fetch) instead of permanently orphaning ops rows — the
@@ -201,8 +223,11 @@ class FlightRepository @Inject constructor(
      * Fetch fresh status via the provider chain, persist, diff, notify.
      * Returns the new snapshot or null (no key / not found / quota / error).
      */
-    suspend fun refreshStatus(flightId: Long, force: Boolean = false): StatusSnapshot? {
-        val flight = trackedDao.byId(flightId) ?: return null
+    suspend fun refreshStatus(flightId: Long, force: Boolean = false): StatusSnapshot? =
+        operationLocks.withFlight(flightId) { refreshStatusLocked(flightId, force) }
+
+    private suspend fun refreshStatusLocked(flightId: Long, force: Boolean): StatusSnapshot? {
+        val flight = trackedDao.byId(flightId)?.takeUnless { it.archived } ?: return null
         val previous = snapshotDao.latest(flightId)
         if (!force && previous != null) {
             val age = Duration.between(Instant.ofEpochMilli(previous.fetchedAt), Instant.now())
@@ -271,9 +296,16 @@ class FlightRepository @Inject constructor(
                     FlightDates.zoneOf(row?.tz)
                 }
             if (schedDep != null && zone != null) {
-                trackedDao.pinDate(flightId, schedDep.atZone(zone).toLocalDate().toString())
+                trackedDao.pinProviderDateIfUnchanged(
+                    id = flightId,
+                    date = schedDep.atZone(zone).toLocalDate().toString(),
+                )
             }
         }
+
+        // Archive/delete and identity replacement share this flight lock. This
+        // final read is defense in depth before writing Ops rows or posting.
+        if (trackedDao.byId(flightId)?.archived != false) return null
 
         val entity = snapshot.toEntity(flightId)
         snapshotDao.insert(entity)
@@ -315,8 +347,11 @@ class FlightRepository @Inject constructor(
         fixDao.observeTrack(flightId).map { list -> list.map { it.toModel() } }
 
     /** Persists the first validated fix from the current aircraft identity. */
-    suspend fun pollPosition(flightId: Long): PositionFix? {
-        val flight = trackedDao.byId(flightId) ?: return null
+    suspend fun pollPosition(flightId: Long): PositionFix? =
+        operationLocks.withFlight(flightId) { pollPositionLocked(flightId) }
+
+    private suspend fun pollPositionLocked(flightId: Long): PositionFix? {
+        val flight = trackedDao.byId(flightId)?.takeUnless { it.archived } ?: return null
         val snapshot = snapshotDao.latest(flightId)
 
         val queries = positionQueries(
@@ -377,7 +412,11 @@ class FlightRepository @Inject constructor(
      * Returns the number of stored waypoints; 0 covers unconfigured, throttled,
      * not-yet-flown, and failed cases alike.
      */
-    suspend fun backfillTrack(flightId: Long, force: Boolean = false): Int {
+    suspend fun backfillTrack(flightId: Long, force: Boolean = false): Int =
+        operationLocks.withFlight(flightId) { backfillTrackLocked(flightId, force) }
+
+    private suspend fun backfillTrackLocked(flightId: Long, force: Boolean): Int {
+        if (trackedDao.byId(flightId)?.archived != false) return 0
         if (!openSkyTracks.isConfigured()) return 0
         val snapshot = snapshotDao.latest(flightId)?.toModel()
         val hex = (snapshot?.icao24 ?: fixDao.latest(flightId)?.icao24)
@@ -409,6 +448,18 @@ class FlightRepository @Inject constructor(
         snapshotDao.pruneExpired(now)
         fixDao.pruneExpired(now)
         emittedDao.pruneExpired(now)
+    }
+
+    /** Remove all non-user data for a flight after its User DB row is gone. */
+    suspend fun cleanupOperationalData(flightId: Long) = operationLocks.withFlight(flightId) {
+        opsDb.withTransaction {
+            snapshotDao.deleteForFlight(flightId)
+            fixDao.deleteForFlight(flightId)
+            emittedDao.deleteForFlight(flightId)
+            lookupAttemptDao.deleteForFlight(flightId)
+        }
+        trackBackfillAt.remove(flightId)
+        syncOngoingQuietly(flightId, "", null)
     }
 
     private fun expiryFor(snapshot: StatusSnapshot?): Long {

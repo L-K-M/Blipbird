@@ -16,11 +16,27 @@ interface TrackedFlightDao {
     @Query("SELECT * FROM tracked_flight WHERE archived = 0 ORDER BY createdAt DESC")
     fun observeActive(): Flow<List<TrackedFlightEntity>>
 
+    @Query(
+        "SELECT tracked_flight.* FROM tracked_flight " +
+            "LEFT JOIN itinerary_leg ON itinerary_leg.trackedFlightId = tracked_flight.id " +
+            "WHERE tracked_flight.archived = 0 AND itinerary_leg.id IS NULL " +
+            "ORDER BY tracked_flight.createdAt DESC"
+    )
+    fun observeUngroupedActive(): Flow<List<TrackedFlightEntity>>
+
     @Query("SELECT * FROM tracked_flight WHERE archived = 0")
     suspend fun activeList(): List<TrackedFlightEntity>
 
     @Query("SELECT * FROM tracked_flight WHERE archived = 1 ORDER BY createdAt DESC")
     fun observeArchived(): Flow<List<TrackedFlightEntity>>
+
+    @Query(
+        "SELECT tracked_flight.* FROM tracked_flight " +
+            "LEFT JOIN itinerary_leg ON itinerary_leg.trackedFlightId = tracked_flight.id " +
+            "WHERE tracked_flight.archived = 1 AND itinerary_leg.id IS NULL " +
+            "ORDER BY tracked_flight.createdAt DESC"
+    )
+    fun observeUngroupedArchived(): Flow<List<TrackedFlightEntity>>
 
     @Query("SELECT * FROM tracked_flight WHERE id = :id")
     suspend fun byId(id: Long): TrackedFlightEntity?
@@ -40,8 +56,17 @@ interface TrackedFlightDao {
     @Query("UPDATE tracked_flight SET alias = :alias WHERE id = :id")
     suspend fun setAlias(id: Long, alias: String?)
 
-    @Query("UPDATE tracked_flight SET dateLocal = :date WHERE id = :id")
-    suspend fun pinDate(id: Long, date: String)
+    @Query("UPDATE tracked_flight SET dateLocal = :date, dateIntentSource = :source WHERE id = :id")
+    suspend fun setDateIntent(id: Long, date: String, source: String)
+
+    @Query(
+        "UPDATE tracked_flight SET dateLocal = :date, dateIntentSource = 'PROVIDER_RESOLVED_LEGACY' " +
+            "WHERE id = :id AND dateLocal IS NULL AND dateIntentSource = 'NEXT_OCCURRENCE'"
+    )
+    suspend fun pinProviderDateIfUnchanged(id: Long, date: String): Int
+
+    @Query("SELECT * FROM tracked_flight WHERE id IN (:ids)")
+    suspend fun byIds(ids: List<Long>): List<TrackedFlightEntity>
 
 }
 
@@ -140,6 +165,24 @@ interface StatusLookupAttemptDao {
 
     @Query("DELETE FROM status_lookup_attempt WHERE trackedFlightId = :flightId")
     suspend fun deleteForFlight(flightId: Long)
+}
+
+@Dao
+interface PlatformCleanupTaskDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(tasks: List<PlatformCleanupTaskEntity>)
+
+    @Query("SELECT * FROM platform_cleanup_task ORDER BY id")
+    suspend fun all(): List<PlatformCleanupTaskEntity>
+
+    @Query("UPDATE platform_cleanup_task SET state = 'READY' WHERE mutationId = :mutationId")
+    suspend fun markReady(mutationId: String)
+
+    @Query("DELETE FROM platform_cleanup_task WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM platform_cleanup_task WHERE mutationId = :mutationId")
+    suspend fun deleteMutation(mutationId: String)
 }
 
 @Dao

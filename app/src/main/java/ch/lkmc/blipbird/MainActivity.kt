@@ -40,6 +40,11 @@ import ch.lkmc.blipbird.platform.AppIconSwitcher
 import ch.lkmc.blipbird.ui.components.LocalReduceMotionPref
 import ch.lkmc.blipbird.ui.components.rememberReducedMotion
 import ch.lkmc.blipbird.ui.detail.FlightDetailScreen
+import ch.lkmc.blipbird.ui.itinerary.GroupExistingFlightsScreen
+import ch.lkmc.blipbird.ui.itinerary.ItineraryDetailScreen
+import ch.lkmc.blipbird.ui.itinerary.ItineraryDraft
+import ch.lkmc.blipbird.ui.itinerary.ItineraryDraftStoreViewModel
+import ch.lkmc.blipbird.ui.itinerary.ItineraryEditorScreen
 import ch.lkmc.blipbird.ui.list.ArchivedFlightsScreen
 import ch.lkmc.blipbird.ui.list.FlightListScreen
 import ch.lkmc.blipbird.ui.settings.SettingsScreen
@@ -51,19 +56,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import java.util.UUID
 
 /**
  * Minimal explicit back stack (documented deviation from PLAN.md's Nav3 pick),
  * since G10 with per-entry ViewModel scoping (NavEntryScoping.kt) and
  * gesture-scrubbed predictive back — the two Nav3 features we actually needed.
  */
-sealed interface Screen {
-    data object List : Screen
-    data class Detail(val flightId: Long) : Screen
-    data object Settings : Screen
-    data object Archived : Screen
-}
-
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -71,7 +70,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var appIconSwitcher: AppIconSwitcher
 
     /** Pending notification deep link; consumed by BlipbirdNav. */
-    private val deepLinkFlights = MutableStateFlow<Long?>(null)
+    private val deepLinkFlights = MutableStateFlow<FlightInvocation?>(null)
 
     /**
      * Last deep link already handed to navigation. Saved across process death:
@@ -79,7 +78,7 @@ class MainActivity : ComponentActivity() {
      * system re-delivers the original intent), so this guard stops a stale
      * notification link from re-firing after the user backed out of it.
      */
-    private var consumedDeepLink: Long = -1L
+    private var consumedDeepLink: String? = null
 
     private val notifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -93,7 +92,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        consumedDeepLink = savedInstanceState?.getLong(KEY_CONSUMED_DEEP_LINK, -1L) ?: -1L
+        consumedDeepLink = savedInstanceState?.getString(KEY_CONSUMED_DEEP_LINK)
         // Re-sync the launcher alias with the stored choice: component enabled
         // state doesn't ride Auto Backup, so a restored device would otherwise
         // show the default icon while Settings claims the other. No-op normally.
@@ -136,87 +135,98 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // A genuinely new notification tap may target the same flight again.
-        consumedDeepLink = -1L
-        handleDeepLink(intent)
+        // A new tap is a new user invocation even when the notification's
+        // immutable event token has not changed since the previous tap.
+        handleDeepLink(intent, allowRepeat = true)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putLong(KEY_CONSUMED_DEEP_LINK, consumedDeepLink)
+        outState.putString(KEY_CONSUMED_DEEP_LINK, consumedDeepLink)
     }
 
-    private fun handleDeepLink(intent: Intent?) {
-        intent.deepLinkFlightId()?.let { id ->
-            if (id != consumedDeepLink) {
-                deepLinkFlights.value = id
-                consumedDeepLink = id
+    private fun handleDeepLink(intent: Intent?, allowRepeat: Boolean = false) {
+        intent.flightInvocation()?.let { invocation ->
+            if (allowRepeat || invocation.key != consumedDeepLink) {
+                deepLinkFlights.value = invocation
+                consumedDeepLink = invocation.key
             }
             intent?.removeExtra(EXTRA_FLIGHT_ID)
+            intent?.removeExtra(EXTRA_EVENT_TOKEN)
+            intent?.removeExtra(EXTRA_NOTIFICATION_SLOT)
         }
     }
 
-    private fun Intent?.deepLinkFlightId(): Long? =
-        this?.getLongExtra(EXTRA_FLIGHT_ID, -1L)?.takeIf { it > 0 }
+    private fun Intent?.flightInvocation(): FlightInvocation? {
+        val intent = this ?: return null
+        val uri = intent.data
+        val segments = uri?.takeIf { it.scheme == "blipbird" && it.host == "flight" }?.pathSegments.orEmpty()
+        val versioned = segments.firstOrNull() == "v1"
+        val uriId = segments.getOrNull(if (versioned) 1 else 0)?.toLongOrNull()?.takeIf { it > 0 }
+        val id = uriId ?: intent.getLongExtra(EXTRA_FLIGHT_ID, -1L).takeIf { it > 0 } ?: return null
+        val slot = segments.getOrNull(if (versioned) 2 else 1)
+            ?: intent.getStringExtra(EXTRA_NOTIFICATION_SLOT)
+            ?: "legacy"
+        val token = uri?.getQueryParameter("event")
+            ?: intent.getStringExtra(EXTRA_EVENT_TOKEN)
+            ?: "legacy-$id"
+        return FlightInvocation(id, slot, token)
+    }
 
     companion object {
         /** Must match the extra set by NotificationEmitter. */
         const val EXTRA_FLIGHT_ID = "flightId"
+        const val EXTRA_EVENT_TOKEN = "eventToken"
+        const val EXTRA_NOTIFICATION_SLOT = "notificationSlot"
         private const val KEY_CONSUMED_DEEP_LINK = "consumedDeepLink"
     }
 }
 
-/** Survives configuration change and process death: screens encode to plain longs. */
-private val BackStackSaver = listSaver<SnapshotStateList<Screen>, Long>(
-    save = { stack ->
-        stack.map { screen ->
-            when (screen) {
-                is Screen.List -> SAVED_LIST
-                is Screen.Settings -> SAVED_SETTINGS
-                is Screen.Archived -> SAVED_ARCHIVED
-                is Screen.Detail -> screen.flightId
-            }
-        }
-    },
+data class FlightInvocation(val flightId: Long, val slot: String, val eventToken: String) {
+    val key: String get() = "$flightId:$slot:$eventToken"
+}
+
+/** Tagged routes avoid collisions between positive flight and itinerary IDs. */
+private val BackStackSaver = listSaver<SnapshotStateList<Screen>, Any>(
+    save = { stack -> stack.map { it.encodeRoute() } },
     restore = { saved ->
         mutableStateListOf<Screen>().apply {
-            saved.forEach { id ->
-                add(
-                    when (id) {
-                        SAVED_LIST -> Screen.List
-                        SAVED_SETTINGS -> Screen.Settings
-                        SAVED_ARCHIVED -> Screen.Archived
-                        else -> Screen.Detail(id)
-                    }
-                )
-            }
+            saved.map(::decodeRoute).forEach { screen -> if (lastOrNull() != screen) add(screen) }
             if (isEmpty()) add(Screen.List)
         }
     },
 )
-private const val SAVED_LIST = -1L
-private const val SAVED_SETTINGS = -2L
-private const val SAVED_ARCHIVED = -3L
 
 @Composable
 fun BlipbirdNav(
-    deepLinkFlights: StateFlow<Long?>,
+    deepLinkFlights: StateFlow<FlightInvocation?>,
     onDeepLinkConsumed: () -> Unit,
     onFirstTrack: () -> Unit,
 ) {
     val backStack = rememberSaveable(saver = BackStackSaver) {
         mutableStateListOf<Screen>(Screen.List)
     }
+    val draftStore: ItineraryDraftStoreViewModel = viewModel()
+    val drafts by draftStore.drafts.collectAsStateWithLifecycle()
+
+    fun navigate(target: Screen) {
+        val existing = backStack.indexOf(target)
+        if (existing >= 0) {
+            while (backStack.lastIndex > existing) backStack.removeAt(backStack.lastIndex)
+        } else {
+            backStack.add(target)
+        }
+    }
 
     // Notification taps: navigate to the flight (both cold start and while running).
     LaunchedEffect(Unit) {
-        deepLinkFlights.collect { flightId ->
-            if (flightId != null) {
-                val target = Screen.Detail(flightId)
+        deepLinkFlights.collect { invocation ->
+            if (invocation != null) {
+                val target = Screen.FlightDetail(invocation.flightId)
                 if (backStack.last() != target) {
                     // Replace any details on top so back from a notification tap
                     // returns to the list, not a trail of earlier deep links.
-                    while (backStack.size > 1 && backStack.last() is Screen.Detail) {
+                    while (backStack.size > 1 && backStack.last() is Screen.FlightDetail) {
                         backStack.removeAt(backStack.lastIndex)
                     }
                     backStack.add(target)
@@ -233,11 +243,15 @@ fun BlipbirdNav(
     // commits the pop, cancelling springs the current screen back.
     val seekable = remember { SeekableTransitionState(current) }
     var predictiveBackInProgress by remember { mutableStateOf(false) }
-    PredictiveBackHandler(enabled = backStack.size > 1) { progress ->
+    val dirtyEditor = (current as? Screen.ItineraryEditor)
+        ?.let { drafts[it.draftId]?.dirty } == true
+    PredictiveBackHandler(enabled = backStack.size > 1 && !dirtyEditor) { progress ->
         val previous = backStack[backStack.size - 2]
         predictiveBackInProgress = true
         try {
             progress.collect { event -> seekable.seekTo(event.progress, targetState = previous) }
+            (current as? Screen.ItineraryEditor)?.let { draftStore.remove(it.draftId) }
+            (current as? Screen.GroupExistingFlights)?.let { draftStore.remove(it.draftId) }
             backStack.removeAt(backStack.lastIndex)
         } catch (_: CancellationException) {
             // Gesture cancelled: settle back onto the current screen.
@@ -291,14 +305,65 @@ fun BlipbirdNav(
         CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
             when (screen) {
                 is Screen.List -> FlightListScreen(
-                    onOpenFlight = { backStack.add(Screen.Detail(it)) },
-                    onOpenSettings = { backStack.add(Screen.Settings) },
-                    onOpenArchived = { backStack.add(Screen.Archived) },
+                    onOpenFlight = { navigate(Screen.FlightDetail(it)) },
+                    onOpenItinerary = { navigate(Screen.ItineraryDetail(it)) },
+                    onAddItinerary = {
+                        val draftId = UUID.randomUUID().toString()
+                        draftStore.put(ItineraryDraft(draftId = draftId))
+                        navigate(Screen.ItineraryEditor(draftId, null))
+                    },
+                    onGroupFlights = {
+                        navigate(Screen.GroupExistingFlights(UUID.randomUUID().toString()))
+                    },
+                    onOpenSettings = { navigate(Screen.Settings) },
+                    onOpenArchived = { navigate(Screen.Archived) },
                     onFirstTrack = onFirstTrack,
                 )
-                is Screen.Detail -> FlightDetailScreen(
+                is Screen.FlightDetail -> FlightDetailScreen(
                     flightId = screen.flightId,
                     onBack = { backStack.removeAt(backStack.lastIndex) },
+                )
+                is Screen.ItineraryDetail -> ItineraryDetailScreen(
+                    itineraryId = screen.itineraryId,
+                    onBack = { backStack.removeAt(backStack.lastIndex) },
+                    onEdit = {
+                        navigate(
+                            Screen.ItineraryEditor(
+                                draftId = UUID.randomUUID().toString(),
+                                itineraryId = screen.itineraryId,
+                            )
+                        )
+                    },
+                    onOpenFlight = { navigate(Screen.FlightDetail(it)) },
+                )
+                is Screen.ItineraryEditor -> ItineraryEditorScreen(
+                    draftId = screen.draftId,
+                    itineraryId = screen.itineraryId,
+                    draftStore = draftStore,
+                    onBack = { backStack.removeAt(backStack.lastIndex) },
+                    onSaved = { itineraryId ->
+                        if (backStack.lastOrNull() == screen) backStack.removeAt(backStack.lastIndex)
+                        if (itineraryId == null) {
+                            while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
+                        } else {
+                            navigate(Screen.ItineraryDetail(itineraryId))
+                        }
+                    },
+                    onFirstTrack = onFirstTrack,
+                )
+                is Screen.GroupExistingFlights -> GroupExistingFlightsScreen(
+                    draftId = screen.draftId,
+                    draftStore = draftStore,
+                    onBack = {
+                        draftStore.remove(screen.draftId)
+                        backStack.removeAt(backStack.lastIndex)
+                    },
+                    onContinue = { draft ->
+                        if (draftStore.put(draft)) {
+                            backStack.removeAt(backStack.lastIndex)
+                            navigate(Screen.ItineraryEditor(draft.draftId, null))
+                        }
+                    },
                 )
                 is Screen.Settings -> SettingsScreen(
                     onBack = { backStack.removeAt(backStack.lastIndex) },
@@ -320,5 +385,8 @@ private fun screenRank(screen: Screen): Int = when (screen) {
     is Screen.List -> 0
     is Screen.Settings -> 1
     is Screen.Archived -> 1
-    is Screen.Detail -> 2
+    is Screen.GroupExistingFlights -> 2
+    is Screen.ItineraryEditor -> 2
+    is Screen.FlightDetail -> 2
+    is Screen.ItineraryDetail -> 2
 }

@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.net.Uri
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -41,6 +42,7 @@ class NotificationEmitter @Inject constructor(
         const val CHANNEL_STATUS = "status"
         const val CHANNEL_REMINDERS = "reminders"
         const val CHANNEL_ONGOING = "ongoing"
+        private const val SLOT_ID = 1
 
         /** Progress positions are expressed on this scale. */
         private const val PROGRESS_MAX = 1000
@@ -123,12 +125,19 @@ class NotificationEmitter @Inject constructor(
             NotificationPlanner.EventType.DEPARTED -> context.getString(R.string.notif_departed, timeString(event.newValue))
             NotificationPlanner.EventType.LANDED -> context.getString(R.string.notif_landed, timeString(event.newValue))
         }
-        notify(flightId, channel, designator, text)
+        notify(
+            flightId = flightId,
+            channel = channel,
+            slot = event.type.name.lowercase(java.util.Locale.ROOT),
+            eventToken = event.fingerprint,
+            title = designator,
+            text = text,
+        )
     }
 
-    fun postReminder(flightId: Long, designator: String, text: String) {
+    fun postReminder(flightId: Long, designator: String, kind: String, eventToken: String, text: String) {
         if (!canPost()) return
-        notify(flightId, CHANNEL_REMINDERS, designator, text)
+        notify(flightId, CHANNEL_REMINDERS, "reminder-$kind", eventToken, designator, text)
     }
 
     // ------------------------------------------------------------ F6: ongoing
@@ -167,20 +176,48 @@ class NotificationEmitter @Inject constructor(
                 .setContentText(text)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 .setProgress(PROGRESS_MAX, progress, false)
-                .setContentIntent(contentIntent(flightId, CHANNEL_ONGOING))
+                .setContentIntent(
+                    contentIntent(
+                        flightId,
+                        CHANNEL_ONGOING,
+                        snapshot.fetchedAt.toEpochMilli().toString(),
+                    )
+                )
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .build()
         }
         try {
-            NotificationManagerCompat.from(context).notify(stableId(flightId, CHANNEL_ONGOING), notification)
+            NotificationManagerCompat.from(context).apply {
+                cancel(stableId(flightId, CHANNEL_ONGOING))
+                notify(notificationTag(flightId, CHANNEL_ONGOING), SLOT_ID, notification)
+            }
         } catch (_: SecurityException) {
             // Permission revoked between the check above and the call.
         }
     }
 
     fun cancelOngoing(flightId: Long) =
-        NotificationManagerCompat.from(context).cancel(stableId(flightId, CHANNEL_ONGOING))
+        NotificationManagerCompat.from(context).apply {
+            cancel(notificationTag(flightId, CHANNEL_ONGOING), SLOT_ID)
+            cancel(stableId(flightId, CHANNEL_ONGOING))
+        }
+
+    /** Cancel every currently defined notification slot for one tracked flight. */
+    fun cancelAllForFlight(flightId: Long) {
+        val manager = NotificationManagerCompat.from(context)
+        val slots = NotificationPlanner.EventType.entries.map { it.name.lowercase(java.util.Locale.ROOT) } +
+            listOf(CHANNEL_ONGOING, "reminder-${ReminderScheduler.KIND_BOARDING}", "reminder-${ReminderScheduler.KIND_LANDING_SOON}")
+        slots.forEach { slot -> manager.cancel(notificationTag(flightId, slot), SLOT_ID) }
+        cancelLegacyForFlight(flightId)
+    }
+
+    /** Remove integer-ID notifications posted by releases before semantic tags. */
+    fun cancelLegacyForFlight(flightId: Long) {
+        val manager = NotificationManagerCompat.from(context)
+        listOf(CHANNEL_CRITICAL, CHANNEL_STATUS, CHANNEL_REMINDERS, CHANNEL_ONGOING)
+            .forEach { channel -> manager.cancel(stableId(flightId, channel)) }
+    }
 
     /**
      * API 36 `Notification.ProgressStyle`: when the actual runway times are
@@ -239,7 +276,9 @@ class NotificationEmitter @Inject constructor(
             .setContentTitle(designator)
             .setContentText(text)
             .setStyle(style)
-            .setContentIntent(contentIntent(flightId, CHANNEL_ONGOING))
+            .setContentIntent(
+                contentIntent(flightId, CHANNEL_ONGOING, snapshot.fetchedAt.toEpochMilli().toString())
+            )
             .setOngoing(true)
             .setOnlyAlertOnce(true)
         if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
@@ -248,25 +287,43 @@ class NotificationEmitter @Inject constructor(
         return builder.build()
     }
 
-    /** Deep link into the flight's detail screen, stable per (flight, channel). */
-    private fun contentIntent(flightId: Long, channel: String): PendingIntent {
+    /** Deep link identity includes destination, semantic slot, and immutable event. */
+    private fun contentIntent(flightId: Long, slot: String, eventToken: String): PendingIntent {
+        val data = Uri.Builder()
+            .scheme("blipbird")
+            .authority("flight")
+            .appendPath("v1")
+            .appendPath(flightId.toString())
+            .appendPath(slot)
+            .appendQueryParameter("event", eventToken)
+            .build()
         val intent = Intent(context, MainActivity::class.java).apply {
-            putExtra("flightId", flightId)
+            this.data = data
+            putExtra(MainActivity.EXTRA_FLIGHT_ID, flightId)
+            putExtra(MainActivity.EXTRA_EVENT_TOKEN, eventToken)
+            putExtra(MainActivity.EXTRA_NOTIFICATION_SLOT, slot)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         return PendingIntent.getActivity(
-            context, stableId(flightId, channel), intent,
+            context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 
-    private fun notify(flightId: Long, channel: String, title: String, text: String) {
+    private fun notify(
+        flightId: Long,
+        channel: String,
+        slot: String,
+        eventToken: String,
+        title: String,
+        text: String,
+    ) {
         // Re-checked here (not only in callers) so the permission contract is
         // local to the notify() call — the user can revoke it at any moment.
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
         ) return
-        val pending = contentIntent(flightId, channel)
+        val pending = contentIntent(flightId, slot, eventToken)
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_bird_silhouette)
             .setContentTitle(title)
@@ -276,8 +333,10 @@ class NotificationEmitter @Inject constructor(
             .setAutoCancel(true)
             .build()
         try {
-            NotificationManagerCompat.from(context)
-                .notify(stableId(flightId, channel), notification)
+            NotificationManagerCompat.from(context).apply {
+                cancel(stableId(flightId, channel))
+                notify(notificationTag(flightId, slot), SLOT_ID, notification)
+            }
         } catch (_: SecurityException) {
             // Permission revoked between the check above and the call.
         }
@@ -295,4 +354,7 @@ class NotificationEmitter @Inject constructor(
         h = h xor (h ushr 32)
         return h.toInt() and 0x7FFFFFFF
     }
+
+    private fun notificationTag(flightId: Long, slot: String): String = "flight:$flightId:$slot"
+
 }

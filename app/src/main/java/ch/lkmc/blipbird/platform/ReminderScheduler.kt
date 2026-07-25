@@ -5,17 +5,27 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import androidx.core.content.ContextCompat
+import android.net.Uri
+import androidx.hilt.work.HiltWorker
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import ch.lkmc.blipbird.R
+import ch.lkmc.blipbird.core.data.FlightOperationLocks
 import ch.lkmc.blipbird.core.data.FlightRepository
 import ch.lkmc.blipbird.core.data.displayDesignator
 import ch.lkmc.blipbird.core.datastore.SettingsRepository
+import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
-import dagger.hilt.EntryPoint
-import dagger.hilt.InstallIn
-import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.qualifiers.ApplicationContext
-import dagger.hilt.components.SingletonComponent
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,6 +35,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -32,14 +43,16 @@ import javax.inject.Singleton
  * Time-anchored reminders (boarding, landing-soon) on exact alarms when the user
  * granted SCHEDULE_EXACT_ALARM (PLAN.md §12.2): one stable PendingIntent identity
  * per flight/event, reconciled whenever the source milestone changes, and rebuilt
- * on boot / permission-state change by [BootCompletedReceiver]. Degrades silently
- * to the WorkManager cadence when not granted.
+ * on boot / permission-state change by [BootCompletedReceiver]. Degrades to a
+ * best-effort delayed WorkManager delivery when exact access is unavailable.
  */
 @Singleton
 class ReminderScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: FlightRepository,
     private val settings: SettingsRepository,
+    private val operationLocks: FlightOperationLocks,
+    private val notifications: NotificationEmitter,
 ) {
     private val alarmManager get() = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
@@ -56,30 +69,52 @@ class ReminderScheduler @Inject constructor(
         android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S ||
             alarmManager.canScheduleExactAlarms()
 
-    suspend fun reconcile(flightId: Long) {
-        if (!settings.notifReminders.first()) { cancel(flightId); return }
-        if (!canUseExactAlarms()) return
-        val snapshot = repository.latestSnapshot(flightId) ?: return
+    suspend fun reconcile(flightId: Long) = operationLocks.withFlight(flightId) {
+        val active = repository.flight(flightId)?.archived == false
+        if (!active || !settings.notifReminders.first()) {
+            cancel(flightId)
+            return@withFlight
+        }
+        val snapshot = repository.latestSnapshot(flightId)
+        if (snapshot == null) {
+            cancel(flightId)
+            return@withFlight
+        }
         val now = Instant.now()
+        val terminal = snapshot.status in setOf(
+            FlightStatus.CANCELLED,
+            FlightStatus.DIVERTED,
+            FlightStatus.LANDED,
+            FlightStatus.ARRIVED,
+        )
 
         val boardingAt = snapshot.depTimes.best?.minus(FlightPhaseMachine.DEFAULT_BOARDING_LEAD)
         // "Up" = gate-actual OR runway-actual (wheels-off). AeroDataBox only fills
         // runwayActual, so checking depTimes.actual alone would keep a boarding
         // alarm armed after the flight is already airborne.
         val up = snapshot.depTimes.actual ?: snapshot.depTimes.runwayActual
-        if (boardingAt != null && boardingAt.isAfter(now) && up == null) {
-            setExact(flightId, KIND_BOARDING, boardingAt)
-        } else {
-            cancelKind(flightId, KIND_BOARDING)
-        }
+        val airborne = snapshot.status in setOf(
+            FlightStatus.DEPARTED,
+            FlightStatus.EN_ROUTE,
+            FlightStatus.APPROACHING,
+        )
+        reconcileKind(
+            flightId,
+            KIND_BOARDING,
+            boardingAt,
+            boardingAt != null && up == null && !airborne && !terminal,
+            now,
+        )
 
         val landingSoonAt = snapshot.arrTimes.best?.minus(LANDING_LEAD)
         val down = snapshot.arrTimes.actual ?: snapshot.arrTimes.runwayActual
-        if (landingSoonAt != null && landingSoonAt.isAfter(now) && down == null) {
-            setExact(flightId, KIND_LANDING_SOON, landingSoonAt)
-        } else {
-            cancelKind(flightId, KIND_LANDING_SOON)
-        }
+        reconcileKind(
+            flightId,
+            KIND_LANDING_SOON,
+            landingSoonAt,
+            landingSoonAt != null && down == null && !terminal,
+            now,
+        )
     }
 
     suspend fun reconcileAll() {
@@ -91,23 +126,64 @@ class ReminderScheduler @Inject constructor(
         cancelKind(flightId, KIND_LANDING_SOON)
     }
 
-    private fun setExact(flightId: Long, kind: String, at: Instant) {
-        try {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP, at.toEpochMilli(), pendingIntent(flightId, kind),
-            )
-        } catch (_: SecurityException) {
-            // Permission revoked between check and call — WorkManager cadence covers it.
+    private fun reconcileKind(
+        flightId: Long,
+        kind: String,
+        at: Instant?,
+        eligible: Boolean,
+        now: Instant,
+    ) {
+        if (!eligible || at == null) {
+            cancelKind(flightId, kind)
+            return
+        }
+        // Once due, the alarm/fallback handoff owns delivery and revalidates all
+        // current state. Reconciliation must not cancel that in-flight work.
+        if (!at.isAfter(now)) {
+            cancelAlarmKind(flightId, kind)
+            return
+        }
+        if (canUseExactAlarms() && setExact(flightId, kind, at)) {
+            ReminderDeliveryWorker.cancelScheduled(context, flightId, kind)
+        } else {
+            cancelAlarmKind(flightId, kind)
+            ReminderDeliveryWorker.schedule(context, flightId, kind, at)
         }
     }
 
-    private fun cancelKind(flightId: Long, kind: String) =
+    private fun setExact(flightId: Long, kind: String, at: Instant): Boolean {
+        return try {
+            // Releases before semantic data URIs had no Intent data and remain a
+            // distinct PendingIntent until explicitly removed during migration.
+            alarmManager.cancel(legacyPendingIntent(flightId, kind))
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP, at.toEpochMilli(), pendingIntent(flightId, kind),
+            )
+            true
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
+    private fun cancelKind(flightId: Long, kind: String) {
+        cancelAlarmKind(flightId, kind)
+        ReminderDeliveryWorker.cancelScheduled(context, flightId, kind)
+    }
+
+    private fun cancelAlarmKind(flightId: Long, kind: String) {
         alarmManager.cancel(pendingIntent(flightId, kind))
+        alarmManager.cancel(legacyPendingIntent(flightId, kind))
+    }
 
     private fun pendingIntent(flightId: Long, kind: String): PendingIntent {
         val intent = Intent(context, ReminderAlarmReceiver::class.java)
             .putExtra(EXTRA_FLIGHT_ID, flightId)
             .putExtra(EXTRA_KIND, kind)
+            .setData(
+                Uri.Builder().scheme("blipbird").authority("alarm")
+                    .appendPath("v1").appendPath("flight")
+                    .appendPath(flightId.toString()).appendPath(kind).build()
+            )
         // Stable, non-negative request code. The old `(flightId * 10 + n).toInt()`
         // truncated Long ids and overflowed Int once flightId exceeded ~214M.
         var h = flightId xor kind.hashCode().toLong()
@@ -118,14 +194,81 @@ class ReminderScheduler @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
+
+    private fun legacyPendingIntent(flightId: Long, kind: String): PendingIntent {
+        val intent = Intent(context, ReminderAlarmReceiver::class.java)
+            .putExtra(EXTRA_FLIGHT_ID, flightId)
+            .putExtra(EXTRA_KIND, kind)
+        var h = flightId xor kind.hashCode().toLong()
+        h = h xor (h ushr 32)
+        return PendingIntent.getBroadcast(
+            context,
+            h.toInt() and 0x7FFFFFFF,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    /** Revalidate a fired exact alarm or delayed-work fallback before posting. */
+    suspend fun deliverIfEligible(flightId: Long, kind: String, requiresExactAlarm: Boolean): Boolean =
+        operationLocks.withFlight(flightId) {
+            if (!settings.notifReminders.first()) return@withFlight false
+            val exactAvailable = canUseExactAlarms()
+            if (requiresExactAlarm != exactAvailable) return@withFlight false
+            val flight = repository.flight(flightId)?.takeUnless { it.archived } ?: return@withFlight false
+            val snapshot = repository.latestSnapshot(flightId) ?: return@withFlight false
+            if (
+                snapshot.status == FlightStatus.CANCELLED ||
+                snapshot.status == FlightStatus.DIVERTED ||
+                snapshot.status == FlightStatus.LANDED ||
+                snapshot.status == FlightStatus.ARRIVED
+            ) return@withFlight false
+            val now = Instant.now()
+            val trigger: Instant
+            val milestone: Instant
+            val actual: Instant?
+            val text: String
+            val fmt = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
+            when (kind) {
+                KIND_BOARDING -> {
+                    if (
+                        snapshot.status == FlightStatus.DEPARTED ||
+                        snapshot.status == FlightStatus.EN_ROUTE ||
+                        snapshot.status == FlightStatus.APPROACHING
+                    ) return@withFlight false
+                    actual = snapshot.depTimes.actual ?: snapshot.depTimes.runwayActual
+                    milestone = snapshot.depTimes.best ?: return@withFlight false
+                    trigger = milestone.minus(FlightPhaseMachine.DEFAULT_BOARDING_LEAD)
+                    text = context.getString(R.string.notif_boarding_soon, fmt.format(trigger))
+                }
+                KIND_LANDING_SOON -> {
+                    actual = snapshot.arrTimes.actual ?: snapshot.arrTimes.runwayActual
+                    milestone = snapshot.arrTimes.best ?: return@withFlight false
+                    trigger = milestone.minus(LANDING_LEAD)
+                    text = context.getString(R.string.notif_landing_soon, LANDING_LEAD.toMinutes())
+                }
+                else -> return@withFlight false
+            }
+            if (!reminderDeliveryEligible(trigger, milestone, actual, now)) return@withFlight false
+            val stale = Duration.between(snapshot.fetchedAt, now) > Duration.ofMinutes(30)
+            val suffix = if (stale) " (${context.getString(R.string.notif_projected_suffix)})" else ""
+            notifications.postReminder(
+                flightId = flightId,
+                designator = flight.displayDesignator(),
+                kind = kind,
+                eventToken = "$kind:${trigger.toEpochMilli()}",
+                text = text + suffix,
+            )
+            true
+        }
 }
 
-@EntryPoint
-@InstallIn(SingletonComponent::class)
-interface PlatformEntryPoint {
-    fun repository(): FlightRepository
-    fun emitter(): NotificationEmitter
-}
+internal fun reminderDeliveryEligible(
+    trigger: Instant,
+    milestone: Instant,
+    actual: Instant?,
+    now: Instant,
+): Boolean = actual == null && !trigger.isAfter(now) && milestone.isAfter(now)
 
 /**
  * Fires a reminder. Rechecks the latest local state before posting so a stale
@@ -136,35 +279,127 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val flightId = intent.getLongExtra(ReminderScheduler.EXTRA_FLIGHT_ID, -1)
         val kind = intent.getStringExtra(ReminderScheduler.EXTRA_KIND) ?: return
-        if (flightId < 0) return
+        if (flightId <= 0) return
         val pending = goAsync()
-        val entryPoint = EntryPointAccessors.fromApplication(context, PlatformEntryPoint::class.java)
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val repo = entryPoint.repository()
-                val emitter = entryPoint.emitter()
-                val flight = repo.flight(flightId) ?: return@launch
-                val snapshot = repo.latestSnapshot(flightId) ?: return@launch
-                val designator = flight.displayDesignator()
-                val stale = Duration.between(snapshot.fetchedAt, Instant.now()) > Duration.ofMinutes(30)
-                val fmt = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
-                val text = when (kind) {
-                    ReminderScheduler.KIND_BOARDING -> {
-                        val at = snapshot.depTimes.best?.minus(FlightPhaseMachine.DEFAULT_BOARDING_LEAD) ?: return@launch
-                        context.getString(R.string.notif_boarding_soon, fmt.format(at))
-                    }
-                    ReminderScheduler.KIND_LANDING_SOON ->
-                        context.getString(R.string.notif_landing_soon, 45)
-                    else -> return@launch
-                }
-                val suffix = if (stale) " (${context.getString(R.string.notif_projected_suffix)})" else ""
-                emitter.postReminder(flightId, designator, text + suffix)
+                // Await only WorkManager's durable enqueue, never network or a
+                // flight lock, before releasing the receiver's short budget.
+                ReminderDeliveryWorker.enqueueFiredAlarm(context, flightId, kind).result.get()
             } finally {
                 pending.finish()
             }
         }
     }
 }
+
+@HiltWorker
+class ReminderDeliveryWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val scheduler: ReminderScheduler,
+    private val repository: FlightRepository,
+) : CoroutineWorker(appContext, params) {
+    override suspend fun doWork(): Result = try {
+        val flightId = inputData.getLong(ReminderScheduler.EXTRA_FLIGHT_ID, -1)
+        val kind = inputData.getString(ReminderScheduler.EXTRA_KIND) ?: return Result.failure()
+        if (flightId <= 0) return Result.failure()
+        val requiresExact = inputData.getBoolean(KEY_REQUIRES_EXACT, false)
+        if (!requiresExact) {
+            val snapshot = repository.latestSnapshot(flightId)
+            if (snapshot == null || Duration.between(snapshot.fetchedAt, Instant.now()) > Duration.ofMinutes(10)) {
+                try {
+                    repository.refreshStatus(flightId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // The local projected branch below remains available offline.
+                }
+            }
+        }
+        val posted = scheduler.deliverIfEligible(
+            flightId,
+            kind,
+            requiresExact,
+        )
+        if (!posted) scheduler.reconcile(flightId)
+        Result.success()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("ReminderDelivery", "Reminder delivery failed", e)
+        Result.retry()
+    }
+
+    companion object {
+        private const val KEY_REQUIRES_EXACT = "requiresExactAlarm"
+
+        fun schedule(context: Context, flightId: Long, kind: String, at: Instant) {
+            enqueue(
+                context = context,
+                flightId = flightId,
+                kind = kind,
+                requiresExact = false,
+                delayMillis = Duration.between(Instant.now(), at).toMillis().coerceAtLeast(0),
+                workName = reminderScheduleWorkName(flightId, kind),
+                policy = ExistingWorkPolicy.REPLACE,
+                expedited = false,
+            )
+        }
+
+        fun enqueueFiredAlarm(context: Context, flightId: Long, kind: String): Operation = enqueue(
+            context = context,
+            flightId = flightId,
+            kind = kind,
+            requiresExact = true,
+            delayMillis = 0,
+            workName = reminderDeliveryWorkName(flightId, kind),
+            policy = ExistingWorkPolicy.KEEP,
+            expedited = true,
+        )
+
+        fun cancelScheduled(context: Context, flightId: Long, kind: String) {
+            WorkManager.getInstance(context).cancelUniqueWork(reminderScheduleWorkName(flightId, kind))
+        }
+
+        private fun enqueue(
+            context: Context,
+            flightId: Long,
+            kind: String,
+            requiresExact: Boolean,
+            delayMillis: Long,
+            workName: String,
+            policy: ExistingWorkPolicy,
+            expedited: Boolean,
+        ): Operation {
+            val builder = OneTimeWorkRequestBuilder<ReminderDeliveryWorker>()
+                .setInputData(
+                    workDataOf(
+                        ReminderScheduler.EXTRA_FLIGHT_ID to flightId,
+                        ReminderScheduler.EXTRA_KIND to kind,
+                        KEY_REQUIRES_EXACT to requiresExact,
+                    )
+                )
+            if (delayMillis > 0) {
+                builder.setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
+            }
+            if (expedited) {
+                builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            }
+            return WorkManager.getInstance(context).enqueueUniqueWork(
+                workName,
+                policy,
+                builder.build(),
+            )
+        }
+    }
+}
+
+internal fun reminderScheduleWorkName(flightId: Long, kind: String) =
+    "blipbird-reminder-schedule:$flightId:$kind"
+
+internal fun reminderDeliveryWorkName(flightId: Long, kind: String) =
+    "blipbird-reminder-delivery:$flightId:$kind"
 
 /** Rebuilds reminders after reboot or exact-alarm permission changes. */
 class BootCompletedReceiver : BroadcastReceiver() {

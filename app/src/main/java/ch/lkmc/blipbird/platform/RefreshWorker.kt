@@ -3,16 +3,22 @@ package ch.lkmc.blipbird.platform
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.BackoffPolicy
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.Constraints
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import ch.lkmc.blipbird.core.data.BackgroundRefreshController
+import ch.lkmc.blipbird.core.data.FlightLifecycleCoordinator
+import ch.lkmc.blipbird.core.data.FlightOperationLocks
 import ch.lkmc.blipbird.core.data.FlightRepository
+import ch.lkmc.blipbird.core.data.PlatformCleanupController
+import ch.lkmc.blipbird.core.data.StatusRefreshCoordinator
 import ch.lkmc.blipbird.core.data.displayDesignator
 import ch.lkmc.blipbird.domain.CadencePolicy
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
@@ -20,6 +26,8 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.TimeUnit
@@ -37,8 +45,9 @@ class RefreshWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val repository: FlightRepository,
-    private val reminders: ReminderScheduler,
+    private val statusRefresh: StatusRefreshCoordinator,
     private val notifications: NotificationEmitter,
+    private val operationLocks: FlightOperationLocks,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -47,17 +56,8 @@ class RefreshWorker @AssistedInject constructor(
 
         val flights = repository.activeFlights()
         if (flights.isEmpty()) {
-            // Nothing to watch: stop waking the device every 15 minutes.
-            // FlightRepository.track() re-arms via BackgroundRefreshController.
-            // Re-check right before cancelling to narrow the race with a
-            // concurrent track() whose KEEP enqueue no-ops against this
-            // still-running work. (The re-check must precede the cancel: the
-            // cancel also cancels this worker's own coroutine, so nothing
-            // after it is guaranteed to run.) A track() landing after the
-            // cancel schedules fresh work, so that side has no race.
-            if (repository.activeFlights().isEmpty()) {
-                WorkManager.getInstance(applicationContext).cancelUniqueWork(UNIQUE_NAME)
-            }
+            // Lifecycle mutations and startup reconcile the unique schedule.
+            // Do not synchronously cancel this worker from inside itself.
             return Result.success()
         }
 
@@ -83,9 +83,11 @@ class RefreshWorker @AssistedInject constructor(
             }
             var refreshed = false
             if (due) {
-                val fresh = repository.refreshStatus(flight.id)
+                val fresh = statusRefresh.refreshFlight(
+                    flight.id,
+                    reconcileBackgroundSchedule = false,
+                )
                 if (fresh != null) {
-                    reminders.reconcile(flight.id)
                     refreshed = true  // refreshStatus reconciled the ongoing card
                 }
             }
@@ -93,32 +95,90 @@ class RefreshWorker @AssistedInject constructor(
                 // Keep the ongoing in-flight card's time-derived progress moving
                 // between provider refreshes (F6) — a worker pass is exactly the
                 // "legitimate update" cadence PLAN.md §13 allows for reposting.
-                notifications.syncOngoing(flight.id, flight.displayDesignator(), snapshot)
+                operationLocks.withFlight(flight.id) {
+                    val active = repository.flight(flight.id)?.takeUnless { it.archived }
+                        ?: return@withFlight
+                    notifications.syncOngoing(
+                        flight.id,
+                        active.displayDesignator(),
+                        repository.latestSnapshot(flight.id),
+                    )
+                }
             }
         }
+        // Never synchronously cancel the unique work from inside its own worker.
+        statusRefresh.reconcileSchedule(allowCancel = false)
         return Result.success()
     }
 
     companion object {
         private const val UNIQUE_NAME = "blipbird-refresh"
 
-        fun schedule(context: Context) {
+        fun schedule(context: Context): Operation {
             val request = PeriodicWorkRequestBuilder<RefreshWorker>(15, TimeUnit.MINUTES)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            return WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 UNIQUE_NAME, ExistingPeriodicWorkPolicy.KEEP, request,
+            )
+        }
+
+        fun cancel(context: Context): Operation =
+            WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_NAME)
+    }
+}
+
+/** Platform bridge used only by the centralized schedule reconciler. */
+@Singleton
+class WorkManagerRefreshController @Inject constructor(
+    @ApplicationContext private val context: Context,
+) : BackgroundRefreshController {
+    override suspend fun schedule() = await(RefreshWorker.schedule(context))
+    override suspend fun cancel() = await(RefreshWorker.cancel(context))
+
+    private suspend fun await(operation: Operation) {
+        withContext(Dispatchers.IO) { operation.result.get() }
+    }
+}
+
+/** Durable runner for READY/PREPARED platform-cleanup outbox rows. */
+@HiltWorker
+class PlatformCleanupWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val lifecycle: FlightLifecycleCoordinator,
+) : CoroutineWorker(appContext, params) {
+    override suspend fun doWork(): Result = try {
+        lifecycle.processPending()
+        Result.success()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("PlatformCleanup", "Cleanup retry failed", e)
+        Result.retry()
+    }
+
+    companion object {
+        private const val UNIQUE_NAME = "blipbird-platform-cleanup"
+
+        fun enqueue(context: Context) {
+            val request = OneTimeWorkRequestBuilder<PlatformCleanupWorker>()
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                UNIQUE_NAME,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                request,
             )
         }
     }
 }
 
-/** Data-layer hook so tracking a flight re-arms the (self-cancelling) worker. */
 @Singleton
-class WorkManagerRefreshController @Inject constructor(
+class WorkManagerPlatformCleanupController @Inject constructor(
     @ApplicationContext private val context: Context,
-) : BackgroundRefreshController {
-    override fun ensureScheduled() = RefreshWorker.schedule(context)
+) : PlatformCleanupController {
+    override fun enqueue() = PlatformCleanupWorker.enqueue(context)
 }
 
 /**
@@ -133,10 +193,16 @@ class ReminderReconcileWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val reminders: ReminderScheduler,
+    private val repository: FlightRepository,
+    private val notifications: NotificationEmitter,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = try {
         reminders.reconcileAll()
+        repository.activeFlights().forEach {
+            notifications.cancelLegacyForFlight(it.id)
+            repository.reconcileOngoing(it.id)
+        }
         Result.success()
     } catch (e: CancellationException) {
         throw e   // let WorkManager's stop/cancel propagate, don't swallow it

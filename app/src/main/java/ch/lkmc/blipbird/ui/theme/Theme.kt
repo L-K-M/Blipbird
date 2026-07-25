@@ -63,6 +63,8 @@ val LocalExtendedColors = staticCompositionLocalOf {
     )
 }
 
+val LocalHighContrast = staticCompositionLocalOf { false }
+
 private val DaylightLight = lightColorScheme(
     primary = Color(0xFF1667D9),
     onPrimary = Color.White,
@@ -179,7 +181,10 @@ fun BlipbirdTheme(
         )
     }
 
-    CompositionLocalProvider(LocalExtendedColors provides extended) {
+    CompositionLocalProvider(
+        LocalExtendedColors provides extended,
+        LocalHighContrast provides spec.highContrast,
+    ) {
         MaterialTheme(colorScheme = colorScheme, typography = BlipbirdTypography, content = content)
     }
 }

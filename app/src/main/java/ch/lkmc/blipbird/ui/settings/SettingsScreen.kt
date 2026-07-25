@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -62,8 +63,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -86,7 +89,10 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val itineraryError by viewModel.itineraryError.collectAsStateWithLifecycle()
+    val deletingItineraries by viewModel.deletingItineraries.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var confirmDeleteItineraries by remember { mutableStateOf(false) }
 
     // Large title that collapses as the settings list scrolls under it (V10).
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -231,6 +237,32 @@ fun SettingsScreen(
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
 
+            // ---- Local travel-plan data --------------------------------
+            SectionTitle(stringResource(R.string.settings_travel_plans))
+            Text(
+                stringResource(R.string.settings_travel_plans_desc, state.itineraryCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                enabled = state.itineraryCount > 0 && !deletingItineraries,
+                onClick = { confirmDeleteItineraries = true },
+            ) {
+                Text(stringResource(R.string.settings_delete_itineraries))
+            }
+            itineraryError?.let { error ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+                )
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 16.dp))
+
             // ---- Diagnostics -------------------------------------------
             val crashFile = java.io.File(context.filesDir, "last_crash.txt")
             if (crashFile.exists()) {
@@ -257,6 +289,27 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    if (confirmDeleteItineraries) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteItineraries = false },
+            title = { Text(stringResource(R.string.settings_delete_itineraries_title)) },
+            text = { Text(stringResource(R.string.settings_delete_itineraries_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDeleteItineraries = false
+                    viewModel.deleteAllItineraries()
+                }) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteItineraries = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 }
 
@@ -609,7 +662,7 @@ private const val ATTRIBUTION_TEXT = """Data sources & licenses:
 • Solar math: commons-suncalc (Apache-2.0); great-circle formulas after Chris Veness (MIT); terminator math after Leaflet.Terminator (MIT)
 • Font: Inter (Rasmus Andersson), SIL Open Font License 1.1
 
-Privacy: No Blipbird account, backend, or analytics. User-authored flights and settings may be included in Android OS backup or device transfer; operational provider data and API keys are excluded. Configured status providers receive flight identifiers, dates, and credentials as needed; a configured OpenSky client sends OpenSky the aircraft address and your credentials. ADS-B, weather, and map hosts receive their respective queries and ordinary request metadata.
+Privacy: No Blipbird account, backend, or analytics. User-authored flights, itinerary names, leg order, transition intent, booking/baggage answers, and settings may be included in Android OS backup or device transfer; operational provider data and API keys are excluded. Configured status providers receive flight identifiers, dates, and credentials as needed; a configured OpenSky client sends OpenSky the aircraft address and your credentials. ADS-B, weather, and map hosts receive their respective queries and ordinary request metadata.
 
 Airline names/codes are trademarks of their respective owners, used for identification only.
 All flight data is informational and not for navigation or operational use."""

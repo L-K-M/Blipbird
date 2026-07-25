@@ -1,6 +1,7 @@
 package ch.lkmc.blipbird.core.database
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -17,6 +18,9 @@ data class TrackedFlightEntity(
     val suffix: String?,
     /** Departure-airport local date, ISO yyyy-MM-dd; null = next occurrence. */
     val dateLocal: String?,
+    /** Whether [dateLocal] is portable user intent or an operational legacy pin. */
+    @ColumnInfo(defaultValue = "NEXT_OCCURRENCE")
+    val dateIntentSource: String = "NEXT_OCCURRENCE",
     val alias: String?,
     val createdAt: Long,
     val archived: Boolean = false,
@@ -24,7 +28,8 @@ data class TrackedFlightEntity(
 
 // ---------------------------------------------------------------------------
 // OPS DB (blipbird-ops.db) — provider-derived + reference data; excluded from
-// backup, rebuildable. Rows carry expiresAt for the retention pruner.
+// backup. Most rows are rebuildable and expire; quota accounting and durable
+// platform-cleanup tasks are intentionally non-rebuildable operational state.
 // ---------------------------------------------------------------------------
 
 @Entity(
@@ -100,6 +105,22 @@ data class StatusLookupAttemptEntity(
     val outcome: String,
     val consecutiveFailures: Int,
     val nextEligibleAt: Long,
+)
+
+/** Crash-safe tombstone for cross-database/platform lifecycle cleanup. */
+@Entity(
+    tableName = "platform_cleanup_task",
+    indices = [Index(value = ["mutationId", "targetKind", "targetId"], unique = true)],
+)
+data class PlatformCleanupTaskEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val mutationId: String,
+    val targetKind: String,
+    val targetId: Long,
+    val expectedTargetGeneration: String,
+    val desiredUserState: String,
+    val state: String,
+    val createdAt: Long,
 )
 
 // Reference tables (imported from bundled assets; rebuildable, never backed up).

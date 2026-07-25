@@ -7,6 +7,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flight
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material3.AlertDialog
@@ -77,6 +80,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,6 +90,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.FlightStatus
+import ch.lkmc.blipbird.core.model.TransitionIntent
 import ch.lkmc.blipbird.ui.components.BirdRefreshIndicator
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
@@ -97,6 +103,8 @@ import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.monogramColor
 import ch.lkmc.blipbird.ui.components.monogramContentColor
 import ch.lkmc.blipbird.ui.components.rememberReducedMotion
+import ch.lkmc.blipbird.ui.itinerary.contrastAware
+import ch.lkmc.blipbird.ui.itinerary.itineraryBorder
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 import ch.lkmc.blipbird.ui.theme.SkyPalette
 import kotlinx.coroutines.launch
@@ -116,6 +124,9 @@ val ListGridMinCardWidth = 380.dp
 @Composable
 fun FlightListScreen(
     onOpenFlight: (Long) -> Unit,
+    onOpenItinerary: (Long) -> Unit,
+    onAddItinerary: () -> Unit,
+    onGroupFlights: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenArchived: () -> Unit,
     onFirstTrack: () -> Unit,
@@ -124,31 +135,78 @@ fun FlightListScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val adding by viewModel.adding.collectAsStateWithLifecycle()
     var showAddSheet by remember { mutableStateOf(false) }
+    var showAddActions by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val reducedMotion = rememberReducedMotion()
 
     val archivedMsg = stringResource(R.string.flight_archived)
+    val archiveFailedMsg = stringResource(R.string.flight_archive_failed)
+    val itineraryArchivedMsg = stringResource(R.string.itinerary_archived)
+    val itineraryArchiveFailedMsg = stringResource(R.string.itinerary_archive_failed)
+    val itineraryRestoreFailedMsg = stringResource(R.string.itinerary_restore_failed)
     val deletedMsg = stringResource(R.string.flight_deleted)
+    val deleteFailedMsg = stringResource(R.string.flight_delete_failed)
+    val flightRestoreFailedMsg = stringResource(R.string.flight_restore_failed)
     val undoLabel = stringResource(R.string.undo)
 
     // Undoable actions, shared by swipes and the long-press menu.
     fun archiveWithUndo(id: Long) {
-        viewModel.archive(id)
-        scope.launch {
-            val result = snackbarHostState.showSnackbar(
-                message = archivedMsg, actionLabel = undoLabel, duration = SnackbarDuration.Short,
-            )
-            if (result == SnackbarResult.ActionPerformed) viewModel.unarchive(id)
+        viewModel.archive(id) { archived ->
+            scope.launch {
+                if (!archived) {
+                    snackbarHostState.showSnackbar(archiveFailedMsg)
+                    return@launch
+                }
+                val result = snackbarHostState.showSnackbar(
+                    message = archivedMsg, actionLabel = undoLabel, duration = SnackbarDuration.Short,
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    viewModel.unarchive(id) { restored ->
+                        if (!restored) scope.launch { snackbarHostState.showSnackbar(flightRestoreFailedMsg) }
+                    }
+                }
+            }
         }
     }
 
     fun deleteWithUndo(id: Long) {
-        viewModel.delete(id)
-        scope.launch {
-            val result = snackbarHostState.showSnackbar(
-                message = deletedMsg, actionLabel = undoLabel, duration = SnackbarDuration.Short,
-            )
-            if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete()
+        viewModel.delete(id) { deleted ->
+            scope.launch {
+                if (!deleted) {
+                    snackbarHostState.showSnackbar(deleteFailedMsg)
+                    return@launch
+                }
+                val result = snackbarHostState.showSnackbar(
+                    message = deletedMsg, actionLabel = undoLabel, duration = SnackbarDuration.Short,
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    viewModel.undoDelete { restored ->
+                        if (!restored) scope.launch { snackbarHostState.showSnackbar(flightRestoreFailedMsg) }
+                    }
+                }
+            }
+        }
+    }
+
+    fun archiveItineraryWithUndo(id: Long) {
+        viewModel.archiveItinerary(id) { committed ->
+            scope.launch {
+                if (!committed) {
+                    snackbarHostState.showSnackbar(itineraryArchiveFailedMsg)
+                    return@launch
+                }
+                val result = snackbarHostState.showSnackbar(
+                    message = itineraryArchivedMsg,
+                    actionLabel = undoLabel,
+                    duration = SnackbarDuration.Short,
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    viewModel.restoreItinerary(id) { restored ->
+                        if (!restored) scope.launch { snackbarHostState.showSnackbar(itineraryRestoreFailedMsg) }
+                    }
+                }
+            }
         }
     }
 
@@ -179,8 +237,8 @@ fun FlightListScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddSheet = true }) {
-                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_flight))
+            FloatingActionButton(onClick = { showAddActions = true }) {
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add))
             }
         },
     ) { padding ->
@@ -205,7 +263,7 @@ fun FlightListScreen(
                 state.loading -> {
                     FlightListSkeleton(Modifier.fillMaxSize())
                 }
-                state.rows.isEmpty() -> {
+                state.rows.isEmpty() && state.itineraries.isEmpty() -> {
                     Column(Modifier.fillMaxSize()) {
                         if (!state.hasStatusKey) {
                             DataSourceCta(
@@ -215,7 +273,8 @@ fun FlightListScreen(
                         }
                         EmptyState(
                             modifier = Modifier.weight(1f).fillMaxWidth(),
-                            onAdd = { showAddSheet = true },
+                            onAddItinerary = onAddItinerary,
+                            onTrackFlight = { showAddSheet = true },
                         )
                         if (state.archivedCount > 0) {
                             ArchivedFlightsLink(
@@ -242,6 +301,31 @@ fun FlightListScreen(
                         if (!state.hasStatusKey) {
                             item(key = "data-source-cta", span = { GridItemSpan(maxLineSpan) }) {
                                 DataSourceCta(onOpenSettings)
+                            }
+                        }
+                        if (state.itineraries.isNotEmpty()) {
+                            item(key = "itineraries-heading", span = { GridItemSpan(maxLineSpan) }) {
+                                ListSectionHeading(stringResource(R.string.itinerary_section))
+                            }
+                            items(
+                                state.itineraries,
+                                key = { "itinerary-${it.id}" },
+                                contentType = { "itinerary-row" },
+                            ) { row ->
+                                ItineraryHomeCard(
+                                    row = row,
+                                    onClick = { onOpenItinerary(row.id) },
+                                    onArchive = { archiveItineraryWithUndo(row.id) },
+                                    modifier = if (reducedMotion) Modifier else Modifier.animateItem(),
+                                )
+                            }
+                        }
+                        if (state.rows.isNotEmpty()) {
+                            item(key = "flights-heading", span = { GridItemSpan(maxLineSpan) }) {
+                                ListSectionHeading(
+                                    if (state.itineraries.isEmpty()) stringResource(R.string.flights_section)
+                                    else stringResource(R.string.other_flights_section)
+                                )
                             }
                         }
                         // A distinct contentType keeps the flight rows in their own
@@ -290,7 +374,121 @@ fun FlightListScreen(
             },
         )
     }
+
+    if (showAddActions) {
+        AddActionSheet(
+            canGroupExisting = state.ungroupedCount >= 2,
+            onDismiss = { showAddActions = false },
+            onAddItinerary = onAddItinerary,
+            onTrackFlights = { showAddSheet = true },
+            onGroupExisting = onGroupFlights,
+        )
+    }
 }
+
+@Composable
+private fun ListSectionHeading(text: String) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp).semantics { heading() },
+    )
+}
+
+@Composable
+private fun ItineraryHomeCard(
+    row: ItineraryHomeRow,
+    onClick: () -> Unit,
+    onArchive: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Card(
+        modifier = modifier.fillMaxWidth().itineraryBorder(26.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(26.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        row.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    row.dateSpan?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.75f),
+                        )
+                    }
+                }
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.more_actions))
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.archive)) },
+                            leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
+                            onClick = { menuOpen = false; onArchive() },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Route,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    row.designators,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.itinerary_flight_count, row.flightCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.78f),
+            )
+            if (row.transitions.isNotEmpty()) {
+                val labels = mutableListOf<String>()
+                for (intent in row.transitions.take(3)) labels += transitionLabel(intent)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    labels.joinToString("  |  "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.78f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun transitionLabel(intent: TransitionIntent): String = stringResource(
+    when (intent) {
+        TransitionIntent.DIRECT_CONNECTION -> R.string.transition_direct_short
+        TransitionIntent.DESTINATION_STAY -> R.string.transition_stay_short
+        TransitionIntent.SURFACE_TRANSFER -> R.string.transition_surface_short
+        TransitionIntent.UNKNOWN -> R.string.transition_unknown_short
+    }
+)
 
 /**
  * Swipe right → archive (green, undoable), swipe left → delete (red, undoable);
@@ -670,7 +868,11 @@ private fun ArchivedFlightsLink(onClick: () -> Unit, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier, onAdd: () -> Unit) {
+private fun EmptyState(
+    modifier: Modifier = Modifier,
+    onAddItinerary: () -> Unit,
+    onTrackFlight: () -> Unit,
+) {
     Column(modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Icon(Icons.Filled.Flight, contentDescription = null, modifier = Modifier.size(56.dp),
             tint = MaterialTheme.colorScheme.primary)
@@ -684,7 +886,9 @@ private fun EmptyState(modifier: Modifier = Modifier, onAdd: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(20.dp))
-        Button(onClick = onAdd) { Text(stringResource(R.string.add_flight)) }
+        Button(onClick = onAddItinerary) { Text(stringResource(R.string.itinerary_add)) }
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onTrackFlight) { Text(stringResource(R.string.track_flights)) }
     }
 }
 

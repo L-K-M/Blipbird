@@ -1321,9 +1321,14 @@ secrets.
 **Solari split-flap theme + flip-animation engine · Skyfade theme** · API 36 ProgressStyle
 and API 36.1 promoted Live Updates · "In flight" Glance widget · inbound-aircraft section + late
 warning · full offline pre-computed in-flight mode · recurring alias date rules · flight
-log + Passport stats (flights, km, hours, airports, airlines, aircraft-type badges,
-shareable year card — all on-device) · airport-health chip · pickup/share mode ·
-multi-flight trip grouping (absorbs multi-leg tracking).
+ log + Passport stats (flights, km, hours, airports, airlines, aircraft-type badges,
+ shareable year card — all on-device) · airport-health chip · pickup/share mode.
+
+Multi-flight grouping now ships as the local itinerary aggregate described in
+`docs/ITINERARY_PROPOSAL.md` and ADR 0001: explicit user order, independently
+confirmed departure-local dates, and neutral user-classified transitions over
+existing tracked flights. Live connection guidance remains a separately gated
+follow-up.
 
 ### Delighters (ongoing)
 Projected sunrise-side callouts only when the route/heading confidence margin passes ·
@@ -1333,8 +1338,10 @@ the ribbon · **Pickup Mode** full-screen always-on arrivals-hall display · **r
 hero** replacing the too-small map snippet · **time-travel ribbon scrubber** · **cabin
 sunrise/sunset alarm** · **tap-to-reverse-geocode** "what is that down there?" · **fading
 contrail** on the plane marker · **engine-start haptic** when ADS-B ground speed crosses
-takeoff roll · **copy-ETA / share-ETA** long-press on the hero · **connection-risk
-indicator** derived from same-day tracked flights vs bundled minimum-connect times ·
+takeoff roll · **copy-ETA / share-ETA** long-press on the hero · **connection-window
+context** only after occurrence confirmation and a rights-approved gate-time provider;
+any MCT comparison requires a separately licensed current rules source and must not be
+presented as a safety guarantee ·
 **theme schedule** (auto Cockpit at sunset) · **constellation overlay** on night segments
 (offline star math, v2) · **lifetime/year stats card** (on-device Passport, v2).
 

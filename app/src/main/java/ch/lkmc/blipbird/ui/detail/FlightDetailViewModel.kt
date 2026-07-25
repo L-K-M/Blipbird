@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ch.lkmc.blipbird.core.data.FlightRepository
 import ch.lkmc.blipbird.core.data.IdentityResolver
+import ch.lkmc.blipbird.core.data.StatusRefreshCoordinator
 import ch.lkmc.blipbird.core.data.WeatherRepository
 import ch.lkmc.blipbird.core.database.AirportEntity
 import ch.lkmc.blipbird.core.database.ReferenceDao
@@ -71,6 +72,7 @@ data class DetailUiState(
 class FlightDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: FlightRepository,
+    private val statusRefresh: StatusRefreshCoordinator,
     private val referenceDao: ReferenceDao,
     private val weatherRepository: WeatherRepository,
     private val identity: IdentityResolver,
@@ -89,6 +91,8 @@ class FlightDetailViewModel @Inject constructor(
     private val enriched = MutableStateFlow<Pair<AirportRef?, AirportRef?>>(null to null)
     private val airlineName = MutableStateFlow<String?>(null)
     private val flightEntity = MutableStateFlow<ch.lkmc.blipbird.core.database.TrackedFlightEntity?>(null)
+    private val _flightActive = MutableStateFlow<Boolean?>(null)
+    val flightActive: StateFlow<Boolean?> = _flightActive
 
     private var pollJob: Job? = null
     private var lastComputedSnapshotAt: Instant? = null
@@ -137,11 +141,14 @@ class FlightDetailViewModel @Inject constructor(
         if (boundId == id) return
         boundId = id
         viewModelScope.launch {
-            flightEntity.value = repository.flight(id)
-            flightEntity.value?.let { f ->
-                airlineName.value = identity.airlineName(
-                    Designator(f.designatorIata, f.designatorIcao, f.flightNumber, f.suffix)
-                )
+            repository.observeFlight(id).collect { flight ->
+                flightEntity.value = flight
+                _flightActive.value = flight?.archived == false
+                airlineName.value = flight?.let { f ->
+                    identity.airlineName(
+                        Designator(f.designatorIata, f.designatorIcao, f.flightNumber, f.suffix)
+                    )
+                }
             }
         }
         viewModelScope.launch {
@@ -153,7 +160,7 @@ class FlightDetailViewModel @Inject constructor(
         viewModelScope.launch { repository.observeLatestFix(id).collect { lastFix.value = it } }
         viewModelScope.launch { repository.observeTrack(id).collect { track.value = it } }
         viewModelScope.launch { repository.observeLookupAttempt(id).collect { lookupAttempt.value = it } }
-        viewModelScope.launch { repository.refreshStatus(id) }
+        viewModelScope.launch { statusRefresh.refreshFlight(id) }
         startPolling(id)
     }
 
@@ -206,7 +213,7 @@ class FlightDetailViewModel @Inject constructor(
         viewModelScope.launch {
             refreshing.value = true
             try {
-                repository.refreshStatus(flightId.value, force = true)
+                statusRefresh.refreshFlight(flightId.value, force = true)
                 repository.pollPosition(flightId.value)
                 repository.backfillTrack(flightId.value, force = true)
             } finally {

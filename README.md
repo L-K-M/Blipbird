@@ -19,6 +19,14 @@ visualizing daylight/darkness and weather along the whole route, and sends
 notifications for the moments that matter — delays, gate changes, departure,
 landing, cancellation.
 
+You can also create a local **itinerary**: name a travel plan, add two or more
+flights with an independently confirmed departure-airport date for each, set
+their explicit order, and describe each break as a direct connection,
+destination stay, surface transfer, or unknown. Existing ungrouped flights can
+be selected into an itinerary without duplication or a network lookup. The
+organizer works offline; live connection windows and transfer guidance are not
+claimed while their provider-rights and occurrence-identity gates remain open.
+
 Open-source and ad-free, with no Blipbird account, backend, or analytics.
 
 ## Data sources (bring your own keys)
@@ -71,8 +79,9 @@ are not guaranteed in zero-key mode. Paste keys in **Settings → Data sources**
 ## Privacy & network access
 
 Blipbird has no account system, Blipbird-operated backend, or analytics. Tracked
-flight numbers, optional dates/aliases, and settings are stored locally, but may be
-included in Android OS cloud backup or device transfer.
+flight numbers, optional dates/aliases, itinerary names and order, transition
+intent, optional booking/baggage answers, and settings are stored locally, but
+may be included in Android OS cloud backup or device transfer.
 
 Network features connect directly to third parties. A configured flight-status
 provider receives the flight identifier, optional date, and required credential.
@@ -86,7 +95,7 @@ the providers in use.
 
 ```bash
 ./gradlew assembleDebug        # requires JDK 17+; Gradle 9.6.1 via wrapper
-./gradlew testDebugUnitTest    # 60 unit tests
+./gradlew testDebugUnitTest    # pure-JVM unit tests
 ```
 
 Helper scripts:
