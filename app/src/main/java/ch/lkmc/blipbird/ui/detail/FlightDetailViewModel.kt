@@ -77,10 +77,20 @@ data class DetailUiState(
 
 /**
  * What the derived cards are built from. Its equality is the recompute guard:
- * an identical re-emission of the same snapshot with unchanged card visibility
- * does no work, which is what the old `lastComputedSnapshotAt` field did by hand.
+ * an identical re-emission does no work, which is what the old
+ * `lastComputedSnapshotAt` field did by hand.
+ *
+ * Only the two cards that actually cost a request take part in the key. Carrying
+ * the whole [DossierSections] here would make a body-clock, airline, or map
+ * toggle re-run the weather and daylight work for a snapshot already derived —
+ * spending an aviationweather.gov and an Open-Meteo call to redraw cards that
+ * were never hidden, which is precisely what §9.6 claims to avoid.
  */
-private data class Derivation(val snapshot: StatusSnapshot?, val sections: DossierSections)
+private data class Derivation(
+    val snapshot: StatusSnapshot?,
+    val ribbon: Boolean,
+    val weather: Boolean,
+)
 
 @HiltViewModel
 class FlightDetailViewModel @Inject constructor(
@@ -171,9 +181,17 @@ class FlightDetailViewModel @Inject constructor(
             // shown/hidden: hiding one has to stop its fetch, and showing it again
             // has to fill it in without waiting for the next refresh. Airport
             // enrichment is cached, so re-running it on a toggle is nearly free.
-            combine(snapshot, settings.dossierSections, ::Derivation)
+            combine(snapshot, settings.dossierSections) { snap, visible ->
+                Derivation(
+                    snapshot = snap,
+                    ribbon = visible.shows(DossierSection.RIBBON),
+                    weather = visible.shows(DossierSection.WEATHER),
+                )
+            }
                 .distinctUntilChanged()
-                .collectLatest { (snap, visible) -> if (snap != null) derive(snap, visible) }
+                .collectLatest { (snap, ribbon, weather) ->
+                    if (snap != null) derive(snap, ribbon, weather)
+                }
         }
         viewModelScope.launch { repository.observeLatestFix(id).collect { lastFix.value = it } }
         viewModelScope.launch { repository.observeTrack(id).collect { track.value = it } }
@@ -251,24 +269,24 @@ class FlightDetailViewModel @Inject constructor(
 
     // ------------------------------------------------------------------ internals
 
-    private suspend fun derive(snap: StatusSnapshot, visible: DossierSections) {
+    private suspend fun derive(snap: StatusSnapshot, ribbon: Boolean, weather: Boolean) {
         // Enrich airports from the bundled reference table (coords + tz + names).
         val dep = airports.enrich(snap.departure)
         val arr = airports.enrich(snap.arrival)
         enriched.value = dep to arr
 
-        computeDaylight(snap, dep, arr, visible)
-        fetchWeather(dep, arr, visible)
+        computeDaylight(snap, dep, arr, ribbon)
+        fetchWeather(dep, arr, weather)
     }
 
     private suspend fun computeDaylight(
         snap: StatusSnapshot,
         dep: AirportRef?,
         arr: AirportRef?,
-        visible: DossierSections,
+        ribbonVisible: Boolean,
     ) {
         // The ribbon is the only consumer; hidden, its samples are dead work.
-        if (!visible.shows(DossierSection.RIBBON)) { daylight.value = null; return }
+        if (!ribbonVisible) { daylight.value = null; return }
         val depLat = dep?.lat; val depLon = dep?.lon
         val arrLat = arr?.lat; val arrLon = arr?.lon
         if (depLat == null || depLon == null || arrLat == null || arrLon == null) {
@@ -293,10 +311,10 @@ class FlightDetailViewModel @Inject constructor(
         }
     }
 
-    private suspend fun fetchWeather(dep: AirportRef?, arr: AirportRef?, visible: DossierSections) {
+    private suspend fun fetchWeather(dep: AirportRef?, arr: AirportRef?, weatherVisible: Boolean) {
         // Airport METARs (one batched call) feed the weather card and nothing else,
         // so a hidden card means the aviationweather.gov request is simply not made.
-        if (!visible.shows(DossierSection.WEATHER)) {
+        if (!weatherVisible) {
             airportWeather.value = emptyList()
         } else {
             val stations = listOfNotNull(dep?.icao, arr?.icao)
