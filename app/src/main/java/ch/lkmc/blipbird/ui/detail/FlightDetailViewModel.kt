@@ -240,7 +240,10 @@ class FlightDetailViewModel @Inject constructor(
             track = trk,
             daylight = day,
             // Pure offset arithmetic — cheap enough to re-derive in the combine
-            // rather than carry a fifteenth upstream flow.
+            // rather than carry a fifteenth upstream flow. Note what it does *not*
+            // read: `day` is null whenever the ribbon is hidden (§9.6), and the body
+            // clock is an independent card that has to survive that, so its zones
+            // come from the enriched airports rather than from the daylight result.
             bodyClock = snap?.arrTimes?.best?.let {
                 JetlagEngine.compute(it, depAirport?.tz, arrAirport?.tz)
             },
