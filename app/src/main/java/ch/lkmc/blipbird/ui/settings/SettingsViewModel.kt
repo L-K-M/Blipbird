@@ -8,6 +8,8 @@ import ch.lkmc.blipbird.core.data.ItineraryRepository
 import ch.lkmc.blipbird.core.data.QuotaLedger
 import ch.lkmc.blipbird.core.datastore.Accent
 import ch.lkmc.blipbird.core.datastore.AppIcon
+import ch.lkmc.blipbird.core.datastore.DossierSection
+import ch.lkmc.blipbird.core.datastore.DossierSections
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
 import ch.lkmc.blipbird.core.datastore.SettingsRepository
 import ch.lkmc.blipbird.core.datastore.ThemeMode
@@ -41,6 +43,7 @@ data class SettingsUiState(
     val notifReminders: Boolean = true,
     val notifInFlight: Boolean = true,
     val reduceMotion: Boolean = false,
+    val dossierSections: DossierSections = DossierSections(),
     val itineraryCount: Int = 0,
     val quota: List<QuotaRow> = emptyList(),
 )
@@ -77,8 +80,8 @@ class SettingsViewModel @Inject constructor(
             listOf(c, s, r, f)
         },
         quotaAndItineraries,
-        settings.reduceMotion,
-    ) { (spec, icon), keys, notifs, quotaAndCount, reduceMotion ->
+        combine(settings.reduceMotion, settings.dossierSections) { motion, sections -> motion to sections },
+    ) { (spec, icon), keys, notifs, quotaAndCount, (reduceMotion, sections) ->
         SettingsUiState(
             spec = spec,
             appIcon = icon,
@@ -91,6 +94,7 @@ class SettingsViewModel @Inject constructor(
             notifReminders = notifs[2],
             notifInFlight = notifs[3],
             reduceMotion = reduceMotion,
+            dossierSections = sections,
             quota = quotaAndCount.first,
             itineraryCount = quotaAndCount.second,
         )
@@ -100,6 +104,9 @@ class SettingsViewModel @Inject constructor(
     fun setAccent(accent: Accent) = viewModelScope.launch { settings.setAccent(accent) }
     fun setHighContrast(v: Boolean) = viewModelScope.launch { settings.setHighContrast(v) }
     fun setReduceMotion(v: Boolean) = viewModelScope.launch { settings.setReduceMotion(v) }
+
+    fun setDossierSection(section: DossierSection, visible: Boolean) =
+        viewModelScope.launch { settings.setDossierSection(section, visible) }
 
     fun setAppIcon(icon: AppIcon) = viewModelScope.launch {
         settings.setAppIcon(icon)

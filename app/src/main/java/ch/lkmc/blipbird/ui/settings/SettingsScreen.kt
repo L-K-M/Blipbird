@@ -80,6 +80,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import ch.lkmc.blipbird.core.datastore.Accent
 import ch.lkmc.blipbird.core.datastore.AppIcon
+import ch.lkmc.blipbird.core.datastore.DossierSection
 import ch.lkmc.blipbird.core.datastore.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -173,6 +174,22 @@ fun SettingsScreen(
                 onClear = { viewModel.clearOpenSkySecret() },
                 optional = true,
             )
+
+            HorizontalDivider(Modifier.padding(vertical = 16.dp))
+
+            // ---- Flight dossier -----------------------------------------
+            SectionTitle(stringResource(R.string.settings_dossier))
+            Text(
+                stringResource(R.string.settings_dossier_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            DossierSectionRow(state, viewModel, DossierSection.MAP, R.string.live_map, R.string.settings_dossier_map_desc)
+            DossierSectionRow(state, viewModel, DossierSection.RIBBON, R.string.flight_ribbon, R.string.settings_dossier_ribbon_desc)
+            DossierSectionRow(state, viewModel, DossierSection.BODY_CLOCK, R.string.body_clock, null)
+            DossierSectionRow(state, viewModel, DossierSection.WEATHER, R.string.weather, R.string.settings_dossier_weather_desc)
+            DossierSectionRow(state, viewModel, DossierSection.AIRLINE, R.string.airline, null)
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
 
@@ -586,6 +603,32 @@ private fun Color.toSeedArgb(): Long {
     val g = (green * 255f + 0.5f).toInt().coerceIn(0, 255).toLong()
     val b = (blue * 255f + 0.5f).toInt().coerceIn(0, 255).toLong()
     return 0xFF000000L or (r shl 16) or (g shl 8) or b
+}
+
+/**
+ * One dossier-card toggle. [descRes] explains what turning the card off actually
+ * costs or saves — hiding the weather cards skips their third-party requests,
+ * hiding the map does not stop position polling, and saying so keeps the switch
+ * from reading as a bigger promise than it is.
+ */
+@Composable
+private fun DossierSectionRow(
+    state: SettingsUiState,
+    viewModel: SettingsViewModel,
+    section: DossierSection,
+    labelRes: Int,
+    descRes: Int?,
+) {
+    ToggleRow(stringResource(labelRes), state.dossierSections.shows(section)) {
+        viewModel.setDossierSection(section, it)
+    }
+    descRes?.let {
+        Text(
+            stringResource(it),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable

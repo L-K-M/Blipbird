@@ -79,6 +79,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
+import ch.lkmc.blipbird.core.datastore.DossierSection
 import ch.lkmc.blipbird.core.model.MovementTimes
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.domain.GreatCircle
@@ -165,8 +166,12 @@ fun FlightDetailScreen(
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // Tablet / landscape: pair the equal-height card couples side by side.
                 val wide = maxWidth >= 620.dp
-                val hasWeather = state.airportWeather.isNotEmpty()
-                val hasAirline = state.airlineName != null
+                // Card visibility (§9.6). The ViewModel already skips the fetches for
+                // hidden cards, so these checks are belt-and-braces for the window
+                // before the stored preference has been read back.
+                val sections = state.sections
+                val hasWeather = sections.shows(DossierSection.WEATHER) && state.airportWeather.isNotEmpty()
+                val hasAirline = sections.shows(DossierSection.AIRLINE) && state.airlineName != null
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
@@ -174,7 +179,9 @@ fun FlightDetailScreen(
                     userScrollEnabled = !isMapInteracting,
                 ) {
                     item { Hero(state) }
-                    item { MapCard(state, onInteractionChanged = { isMapInteracting = it }) }
+                    if (sections.shows(DossierSection.MAP)) {
+                        item { MapCard(state, onInteractionChanged = { isMapInteracting = it }) }
+                    }
                     if (wide && state.snapshot != null) {
                         item {
                             Row(verticalAlignment = Alignment.Top) {
@@ -187,7 +194,7 @@ fun FlightDetailScreen(
                         item { KeyFacts(state) }
                         item { Timeline(state) }
                     }
-                    state.daylight?.let { day ->
+                    state.daylight?.takeIf { sections.shows(DossierSection.RIBBON) }?.let { day ->
                         item {
                             SectionCard(stringResource(R.string.flight_ribbon)) {
                                 FlightRibbon(
@@ -207,7 +214,7 @@ fun FlightDetailScreen(
                             }
                         }
                     }
-                    state.bodyClock?.let { bodyClock ->
+                    state.bodyClock?.takeIf { sections.shows(DossierSection.BODY_CLOCK) }?.let { bodyClock ->
                         item {
                             SectionCard(stringResource(R.string.body_clock)) {
                                 BodyClockBody(

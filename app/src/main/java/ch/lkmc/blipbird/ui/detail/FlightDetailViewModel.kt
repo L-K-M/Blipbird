@@ -8,7 +8,10 @@ import ch.lkmc.blipbird.core.data.FlightRepository
 import ch.lkmc.blipbird.core.data.IdentityResolver
 import ch.lkmc.blipbird.core.data.StatusRefreshCoordinator
 import ch.lkmc.blipbird.core.data.WeatherRepository
+import ch.lkmc.blipbird.core.datastore.DossierSection
+import ch.lkmc.blipbird.core.datastore.DossierSections
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
+import ch.lkmc.blipbird.core.datastore.SettingsRepository
 import ch.lkmc.blipbird.core.model.AirportRef
 import ch.lkmc.blipbird.core.model.AirportWeather
 import ch.lkmc.blipbird.core.model.Designator
@@ -64,11 +67,20 @@ data class DetailUiState(
     val airportWeather: List<AirportWeather> = emptyList(),
     val refreshing: Boolean = false,
     val updatedAt: Instant? = null,
+    /** Which optional cards to draw (§9.6); all of them until the user says otherwise. */
+    val sections: DossierSections = DossierSections(),
     /** OpenSky API client configured — gates the optional flown-path hint. */
     val hasOpenSky: Boolean = true,
     /** Latest lookup failure, null when the last lookup succeeded (G5). */
     val lookupProblem: LookupOutcome? = null,
 )
+
+/**
+ * What the derived cards are built from. Its equality is the recompute guard:
+ * an identical re-emission of the same snapshot with unchanged card visibility
+ * does no work, which is what the old `lastComputedSnapshotAt` field did by hand.
+ */
+private data class Derivation(val snapshot: StatusSnapshot?, val sections: DossierSections)
 
 @HiltViewModel
 class FlightDetailViewModel @Inject constructor(
@@ -78,6 +90,7 @@ class FlightDetailViewModel @Inject constructor(
     private val airports: AirportEnricher,
     private val weatherRepository: WeatherRepository,
     private val identity: IdentityResolver,
+    private val settings: SettingsRepository,
     keyStore: ProviderKeyStore,
 ) : ViewModel() {
 
@@ -97,7 +110,6 @@ class FlightDetailViewModel @Inject constructor(
     val flightActive: StateFlow<Boolean?> = _flightActive
 
     private var pollJob: Job? = null
-    private var lastComputedSnapshotAt: Instant? = null
 
     // Declared above `init` so their initializers don't run after bind() resets
     // them (Kotlin runs property initializers and init blocks in declaration order).
@@ -153,11 +165,15 @@ class FlightDetailViewModel @Inject constructor(
                 }
             }
         }
+        viewModelScope.launch { repository.observeSnapshot(id).collect { snapshot.value = it } }
         viewModelScope.launch {
-            repository.observeSnapshot(id).collect { snap ->
-                snapshot.value = snap
-                if (snap != null) onSnapshot(snap)
-            }
+            // Derived cards recompute when the snapshot changes *or* when a card is
+            // shown/hidden: hiding one has to stop its fetch, and showing it again
+            // has to fill it in without waiting for the next refresh. Airport
+            // enrichment is cached, so re-running it on a toggle is nearly free.
+            combine(snapshot, settings.dossierSections, ::Derivation)
+                .distinctUntilChanged()
+                .collectLatest { (snap, visible) -> if (snap != null) derive(snap, visible) }
         }
         viewModelScope.launch { repository.observeLatestFix(id).collect { lastFix.value = it } }
         viewModelScope.launch { repository.observeTrack(id).collect { track.value = it } }
@@ -167,7 +183,7 @@ class FlightDetailViewModel @Inject constructor(
     }
 
     val uiState: StateFlow<DetailUiState> = combine(
-        listOf(flightId, flightEntity, snapshot, lastFix, track, daylight, routeWeather, airportWeather, enriched, airlineName, refreshing, clock, hasOpenSky, lookupAttempt)
+        listOf(flightId, flightEntity, snapshot, lastFix, track, daylight, routeWeather, airportWeather, enriched, airlineName, refreshing, clock, hasOpenSky, lookupAttempt, settings.dossierSections)
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val id = values[0] as Long
@@ -184,6 +200,7 @@ class FlightDetailViewModel @Inject constructor(
         val now = values[11] as Instant
         val openSky = values[12] as Boolean
         val attempt = values[13] as FlightRepository.LookupAttempt?
+        val visible = values[14] as DossierSections
 
         val d = flight?.let { Designator(it.designatorIata, it.designatorIcao, it.flightNumber, it.suffix) }
         val designator = d?.display ?: ""
@@ -213,6 +230,7 @@ class FlightDetailViewModel @Inject constructor(
             airportWeather = aw,
             refreshing = busy,
             updatedAt = snap?.fetchedAt,
+            sections = visible,
             hasOpenSky = openSky,
             lookupProblem = attempt?.outcome?.takeIf { it != LookupOutcome.SUCCESS },
         )
@@ -233,21 +251,24 @@ class FlightDetailViewModel @Inject constructor(
 
     // ------------------------------------------------------------------ internals
 
-    private suspend fun onSnapshot(snap: StatusSnapshot) {
+    private suspend fun derive(snap: StatusSnapshot, visible: DossierSections) {
         // Enrich airports from the bundled reference table (coords + tz + names).
         val dep = airports.enrich(snap.departure)
         val arr = airports.enrich(snap.arrival)
         enriched.value = dep to arr
 
-        // Recompute ribbon inputs only when the snapshot actually changed.
-        if (lastComputedSnapshotAt == snap.fetchedAt) return
-        lastComputedSnapshotAt = snap.fetchedAt
-
-        computeDaylight(snap, dep, arr)
-        fetchWeather(snap, dep, arr)
+        computeDaylight(snap, dep, arr, visible)
+        fetchWeather(dep, arr, visible)
     }
 
-    private suspend fun computeDaylight(snap: StatusSnapshot, dep: AirportRef?, arr: AirportRef?) {
+    private suspend fun computeDaylight(
+        snap: StatusSnapshot,
+        dep: AirportRef?,
+        arr: AirportRef?,
+        visible: DossierSections,
+    ) {
+        // The ribbon is the only consumer; hidden, its samples are dead work.
+        if (!visible.shows(DossierSection.RIBBON)) { daylight.value = null; return }
         val depLat = dep?.lat; val depLon = dep?.lon
         val arrLat = arr?.lat; val arrLon = arr?.lon
         if (depLat == null || depLon == null || arrLat == null || arrLon == null) {
@@ -272,15 +293,22 @@ class FlightDetailViewModel @Inject constructor(
         }
     }
 
-    private suspend fun fetchWeather(snap: StatusSnapshot, dep: AirportRef?, arr: AirportRef?) {
-        // Airport METARs (one batched call).
-        val stations = listOfNotNull(dep?.icao, arr?.icao)
-        if (stations.isNotEmpty()) {
-            airportWeather.value = weatherRepository.airportWeather(stations)
+    private suspend fun fetchWeather(dep: AirportRef?, arr: AirportRef?, visible: DossierSections) {
+        // Airport METARs (one batched call) feed the weather card and nothing else,
+        // so a hidden card means the aviationweather.gov request is simply not made.
+        if (!visible.shows(DossierSection.WEATHER)) {
+            airportWeather.value = emptyList()
+        } else {
+            val stations = listOfNotNull(dep?.icao, arr?.icao)
+            if (stations.isNotEmpty()) {
+                airportWeather.value = weatherRepository.airportWeather(stations)
+            }
         }
-        // En-route samples at overflight hours (one multi-point call).
-        val day = daylight.value ?: return
-        if (day.samples.isEmpty()) return
+        // En-route samples at overflight hours (one multi-point call). These are the
+        // ribbon's weather half, and daylight is null whenever the ribbon is hidden —
+        // so hiding it also spares Open-Meteo the request.
+        val day = daylight.value
+        if (day == null || day.samples.isEmpty()) { routeWeather.value = emptyList(); return }
         val sampleCount = 12
         val points = (0 until sampleCount).map { i ->
             val idx = (i.toDouble() / (sampleCount - 1) * (day.samples.size - 1)).toInt()

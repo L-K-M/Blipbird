@@ -108,3 +108,5 @@ tag triggers `release.yml`. Never hand-edit `versionCode` for a release.
 - Provider interfaces wrap every external service with ordered failover; pure
   decision cores (phase machine, notification planner, cadence policy,
   daylight engine, jetlag engine) stay plain JVM and unit-tested.
+- Dossier cards the user can hide (§9.6) must skip their *fetch*, not just their
+  rendering — a hidden card that still spends a third-party request is a bug.
