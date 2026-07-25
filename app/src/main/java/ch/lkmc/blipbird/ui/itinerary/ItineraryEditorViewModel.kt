@@ -78,8 +78,14 @@ class ItineraryEditorViewModel @Inject constructor(
      * outright when nobody is collecting, and the editor's collector lives in a
      * `LaunchedEffect` — it is gone for the window a configuration change takes
      * to rebuild the composition. Losing the event there strands the user on an
-     * editor whose itinerary is already committed. Replaying it is safe because
-     * the navigation callbacks are idempotent for a popped entry.
+     * editor whose itinerary is already committed.
+     *
+     * A cached event cannot reach a different draft: `NavEntryStoresViewModel`
+     * keys each [androidx.lifecycle.ViewModelStore] on the `Screen` value, and
+     * `Screen.ItineraryEditor` carries the draft ID, so one instance is bound to
+     * exactly one draft — the same binding that seeds [draftId] from the entry's
+     * `SavedStateHandle`. A replay to the entry that produced it is the intended
+     * recovery, and the navigation callbacks are no-ops once it has been popped.
      */
     private val _saved = MutableSharedFlow<ItinerarySavedEvent>(replay = 1)
     val saved = _saved.asSharedFlow()

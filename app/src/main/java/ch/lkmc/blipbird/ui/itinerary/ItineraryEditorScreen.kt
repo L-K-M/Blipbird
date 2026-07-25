@@ -154,6 +154,7 @@ fun ItineraryEditorScreen(
     LaunchedEffect(missing, navigated) {
         if (missing && !navigated) {
             draftStore.remove(draftId)
+            navigated = true
             onBack()
         }
     }
