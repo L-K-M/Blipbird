@@ -110,3 +110,8 @@ tag triggers `release.yml`. Never hand-edit `versionCode` for a release.
   daylight engine, jetlag engine) stay plain JVM and unit-tested.
 - Dossier cards the user can hide (§9.6) must skip their *fetch*, not just their
   rendering — a hidden card that still spends a third-party request is a bug.
+- The back stack is hand-rolled, so every entry needs **both** scoping helpers:
+  a per-entry `ViewModelStore` (`NavEntryScoping.kt`) *and* a
+  `SaveableStateProvider` keyed on `encodeRoute()` (`MainActivity.kt`). Miss the
+  second and `AnimatedContent` disposes the screen on navigate, silently dropping
+  every `rememberSaveable` it owns — scroll positions and top-bar collapse state.

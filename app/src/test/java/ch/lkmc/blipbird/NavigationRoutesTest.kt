@@ -23,6 +23,30 @@ class NavigationRoutesTest {
         routes.forEach { assertEquals(it, decodeRoute(it.encodeRoute())) }
     }
 
+    /**
+     * `encodeRoute` doubles as the `SaveableStateProvider` key for each back-stack
+     * entry, so two distinct screens sharing a key would silently share one screen's
+     * scroll position and top-bar collapse state — or clobber it on pop.
+     */
+    @Test
+    fun distinctScreensGetDistinctStateKeys() {
+        val screens = listOf(
+            Screen.List,
+            Screen.FlightDetail(42),
+            Screen.FlightDetail(43),
+            Screen.ItineraryDetail(42),
+            Screen.ItineraryEditor("draft-123", null),
+            Screen.ItineraryEditor("draft-123", 7),
+            Screen.GroupExistingFlights("draft-123"),
+            Screen.Settings,
+            Screen.Archived,
+        )
+        val keys = screens.map { it.encodeRoute() }
+        assertEquals(screens.size, keys.toSet().size, "route keys collide: $keys")
+        // A flight and an itinerary with the same id must not share a key.
+        assertNotEquals(Screen.FlightDetail(42).encodeRoute(), Screen.ItineraryDetail(42).encodeRoute())
+    }
+
     @Test
     fun legacyLongsStillDecode() {
         assertEquals(Screen.List, decodeRoute(-1L))
