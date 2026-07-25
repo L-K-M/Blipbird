@@ -110,7 +110,8 @@ class ItineraryDraftStoreTest {
     /**
      * `update` re-reads the draft from the store, so a row's captured index can
      * outlive a removal that shrank the list. Every list mutator must absorb
-     * that instead of throwing IndexOutOfBoundsException.
+     * that instead of throwing IndexOutOfBoundsException — pinned here for the
+     * two that are reachable from tests.
      */
     @Test
     fun legReplacementIgnoresAnIndexThatNoLongerExists() {
@@ -123,6 +124,15 @@ class ItineraryDraftStoreTest {
             listOf(legs[0], replacement),
             legs.replacedAt(1, replacement),
         )
+    }
+
+    @Test
+    fun identityReplacementIgnoresAnIndexThatNoLongerExists() {
+        val legs = listOf(ItineraryDraftLeg(rowId = "first"), ItineraryDraftLeg(rowId = "second"))
+        val replacement = ItineraryDraftLeg(rowId = "third", designator = "LX2803")
+
+        assertEquals(legs, legs.replacedIdentity(2, replacement))
+        assertEquals(legs, legs.replacedIdentity(-1, replacement))
     }
 
     @Test
