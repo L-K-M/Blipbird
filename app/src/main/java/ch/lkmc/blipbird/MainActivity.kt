@@ -18,6 +18,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -295,6 +296,11 @@ fun BlipbirdNav(
     // Routes whose saveable state this holder is currently keeping. Diffing against
     // it means we only ever drop keys we actually provided, and a popped screen's
     // scroll/collapse state is released rather than retained for the session.
+    // Recorded where the key is *provided* rather than inferred from the settled
+    // stack: a screen pushed and popped again inside one transition would never
+    // appear in a settled stack, so its state would sit in the holder unreachable
+    // for the session. The holder exposes no way to enumerate its own keys, so
+    // tracking provision is the only way to know what there is to reclaim.
     // Saved, not merely remembered: the holder restores its map across a
     // configuration change, so an empty set here would strand any key that was
     // popped-but-still-transitioning when the rotation landed.
@@ -329,10 +335,12 @@ fun BlipbirdNav(
             }
         },
     ) { screen ->
+        val route = screen.encodeRoute()
+        SideEffect { savedRoutes += route }
         val owner = remember(screen) {
             NavEntryOwner(activity, storesVm.storeFor(screen), screen)
         }
-        screenState.SaveableStateProvider(screen.encodeRoute()) {
+        screenState.SaveableStateProvider(route) {
             CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
                 when (screen) {
                     is Screen.List -> FlightListScreen(
