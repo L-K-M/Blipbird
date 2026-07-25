@@ -122,7 +122,9 @@ jobs:
           # CRs, copy artifacts) — only genuinely invalid base64 still fails.
           if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d ' \t\r\n' | base64 --decode > keystore.jks 2>/dev/null \
              || [ ! -s keystore.jks ]; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64 even after stripping whitespace. Re-create the secret, e.g.: gh secret set ANDROID_KEYSTORE_BASE64 --repo ${GITHUB_REPOSITORY} --body \"\$(base64 -w0 < your-keystore.jks)\""
+            # Portable encode: -w0 is GNU-only and errors out on macOS's BSD base64,
+            # which is where this secret actually gets created.
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64 even after stripping whitespace. Re-create the secret, e.g.: gh secret set ANDROID_KEYSTORE_BASE64 --repo ${GITHUB_REPOSITORY} --body \"\$(base64 < your-keystore.jks | tr -d '\n')\""
             exit 1
           fi
           "$ZIPALIGN" -p -f 4 "$UNSIGNED" "$ALIGNED"

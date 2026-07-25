@@ -105,7 +105,7 @@ are cleaned up even when a step fails.
 
 | Secret | What it is |
 | --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | The release keystore (`.jks`), base64-encoded: `gh secret set ANDROID_KEYSTORE_BASE64 --repo L-K-M/Blipbird --body "$(base64 -w0 < release.jks)"` |
+| `ANDROID_KEYSTORE_BASE64` | The release keystore (`.jks`), base64-encoded: `gh secret set ANDROID_KEYSTORE_BASE64 --repo L-K-M/Blipbird --body "$(base64 < release.jks \| tr -d '\n')"` — `base64 -w0` is GNU-only and errors on the maintainer's Mac |
 | `ANDROID_KEYSTORE_PASSWORD` | Password for the keystore file |
 | `ANDROID_KEY_ALIAS` | Alias of the signing key inside the keystore |
 | `ANDROID_KEY_PASSWORD` | Password for that key |
@@ -138,7 +138,8 @@ taking v5.x minor and patch updates.
 - **`Tag vX.Y.Z does not match versionName`** — the tag was created by hand. Delete it and
   re-cut with `scripts/release.sh`.
 - **`ANDROID_KEYSTORE_BASE64 is not valid base64`** — re-create the secret with
-  `base64 -w0`; the workflow's error message includes the exact `gh secret set` command.
+  `base64 < release.jks | tr -d '\n'`; the workflow's error message includes the exact
+  `gh secret set` command.
 - **`No Android SDK Build Tools installation found`** — the runner image changed. The step
   selects the highest version present; it does not install one.
 - **Instrumentation job times out booting** — the emulator occasionally fails to come up
