@@ -56,6 +56,28 @@ private fun decodeTaggedRoute(value: String): Screen {
     }
 }
 
+/**
+ * Pops [screen] only while it is still the visible top entry, and never removes
+ * the root.
+ *
+ * A screen's "leave now" effects can fire late: the outgoing entry stays
+ * composed for the whole exit transition, so a Room emission it still observes
+ * (an itinerary the save just dissolved, a flight the delete just removed) can
+ * re-run the effect *after* navigation already moved on. An unconditional
+ * `removeAt(lastIndex)` then pops an unrelated entry — or pops `Screen.List`,
+ * leaving `backStack.last()` with nothing to read.
+ */
+internal fun MutableList<Screen>.popIfTop(screen: Screen): Boolean {
+    if (size <= 1 || lastOrNull() != screen) return false
+    removeAt(lastIndex)
+    return true
+}
+
+/** Pops every entry above the root, keeping the root itself. */
+internal fun MutableList<Screen>.popToRoot() {
+    while (size > 1) removeAt(lastIndex)
+}
+
 private fun validDraftId(value: String): Boolean =
     value.length in 1..80 && value.all { it.isLetterOrDigit() || it == '-' || it == '_' }
 

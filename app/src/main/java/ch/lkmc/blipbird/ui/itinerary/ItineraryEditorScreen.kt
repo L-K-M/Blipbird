@@ -119,6 +119,11 @@ fun ItineraryEditorScreen(
     var replaceLegRowId by remember { mutableStateOf<String?>(null) }
     var focusRequest by remember { mutableStateOf<EditorFocusRequest?>(null) }
     var focusRequestSequence by remember { mutableStateOf(0) }
+    // True once this entry handed navigation off after its own commit. The
+    // outgoing entry stays composed for the exit transition, so Room reporting
+    // the target gone — which is exactly what a dissolving save does — must not
+    // fire the "deleted elsewhere" bail-out on top of that.
+    var navigated by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val nameFocusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
@@ -134,18 +139,20 @@ fun ItineraryEditorScreen(
     LaunchedEffect(viewModel, draftId) {
         viewModel.saved.collectLatest { event ->
             draftStore.remove(draftId)
+            navigated = true
             if (event.trackedNewFlights) onFirstTrack()
             onSaved(event.itineraryId.takeUnless { event.dissolved })
         }
     }
-    LaunchedEffect(creationCheckComplete, committedItineraryId) {
-        if (creationCheckComplete && committedItineraryId != null) {
+    LaunchedEffect(creationCheckComplete, committedItineraryId, navigated) {
+        if (creationCheckComplete && committedItineraryId != null && !navigated) {
             draftStore.remove(draftId)
+            navigated = true
             onSaved(checkNotNull(committedItineraryId))
         }
     }
-    LaunchedEffect(missing) {
-        if (missing) {
+    LaunchedEffect(missing, navigated) {
+        if (missing && !navigated) {
             draftStore.remove(draftId)
             onBack()
         }

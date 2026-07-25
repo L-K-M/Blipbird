@@ -250,9 +250,10 @@ fun BlipbirdNav(
         predictiveBackInProgress = true
         try {
             progress.collect { event -> seekable.seekTo(event.progress, targetState = previous) }
-            (current as? Screen.ItineraryEditor)?.let { draftStore.remove(it.draftId) }
-            (current as? Screen.GroupExistingFlights)?.let { draftStore.remove(it.draftId) }
-            backStack.removeAt(backStack.lastIndex)
+            if (backStack.popIfTop(current)) {
+                (current as? Screen.ItineraryEditor)?.let { draftStore.remove(it.draftId) }
+                (current as? Screen.GroupExistingFlights)?.let { draftStore.remove(it.draftId) }
+            }
         } catch (_: CancellationException) {
             // Gesture cancelled: settle back onto the current screen.
         } finally {
@@ -321,11 +322,11 @@ fun BlipbirdNav(
                 )
                 is Screen.FlightDetail -> FlightDetailScreen(
                     flightId = screen.flightId,
-                    onBack = { backStack.removeAt(backStack.lastIndex) },
+                    onBack = { backStack.popIfTop(screen) },
                 )
                 is Screen.ItineraryDetail -> ItineraryDetailScreen(
                     itineraryId = screen.itineraryId,
-                    onBack = { backStack.removeAt(backStack.lastIndex) },
+                    onBack = { backStack.popIfTop(screen) },
                     onEdit = {
                         navigate(
                             Screen.ItineraryEditor(
@@ -340,13 +341,14 @@ fun BlipbirdNav(
                     draftId = screen.draftId,
                     itineraryId = screen.itineraryId,
                     draftStore = draftStore,
-                    onBack = { backStack.removeAt(backStack.lastIndex) },
+                    onBack = { backStack.popIfTop(screen) },
+                    // Only the editor entry that is still on top may navigate on
+                    // its own save; a late replay from a popped entry must not
+                    // unwind the stack the user has already moved on from.
                     onSaved = { itineraryId ->
-                        if (backStack.lastOrNull() == screen) backStack.removeAt(backStack.lastIndex)
-                        if (itineraryId == null) {
-                            while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
-                        } else {
-                            navigate(Screen.ItineraryDetail(itineraryId))
+                        if (backStack.popIfTop(screen)) {
+                            if (itineraryId == null) backStack.popToRoot()
+                            else navigate(Screen.ItineraryDetail(itineraryId))
                         }
                     },
                     onFirstTrack = onFirstTrack,
@@ -356,20 +358,19 @@ fun BlipbirdNav(
                     draftStore = draftStore,
                     onBack = {
                         draftStore.remove(screen.draftId)
-                        backStack.removeAt(backStack.lastIndex)
+                        backStack.popIfTop(screen)
                     },
                     onContinue = { draft ->
-                        if (draftStore.put(draft)) {
-                            backStack.removeAt(backStack.lastIndex)
+                        if (draftStore.put(draft) && backStack.popIfTop(screen)) {
                             navigate(Screen.ItineraryEditor(draft.draftId, null))
                         }
                     },
                 )
                 is Screen.Settings -> SettingsScreen(
-                    onBack = { backStack.removeAt(backStack.lastIndex) },
+                    onBack = { backStack.popIfTop(screen) },
                 )
                 is Screen.Archived -> ArchivedFlightsScreen(
-                    onBack = { backStack.removeAt(backStack.lastIndex) },
+                    onBack = { backStack.popIfTop(screen) },
                 )
             }
         }
