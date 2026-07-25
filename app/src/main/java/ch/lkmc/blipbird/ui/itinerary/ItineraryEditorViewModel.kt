@@ -73,7 +73,15 @@ class ItineraryEditorViewModel @Inject constructor(
     val committedItineraryId = MutableStateFlow<Long?>(null)
     private var creationCheckRunning = false
 
-    private val _saved = MutableSharedFlow<ItinerarySavedEvent>()
+    /**
+     * Replays the last commit. A zero-buffer [MutableSharedFlow] drops an `emit`
+     * outright when nobody is collecting, and the editor's collector lives in a
+     * `LaunchedEffect` — it is gone for the window a configuration change takes
+     * to rebuild the composition. Losing the event there strands the user on an
+     * editor whose itinerary is already committed. Replaying it is safe because
+     * the navigation callbacks are idempotent for a popped entry.
+     */
+    private val _saved = MutableSharedFlow<ItinerarySavedEvent>(replay = 1)
     val saved = _saved.asSharedFlow()
 
     init {
