@@ -5,6 +5,7 @@ import ch.lkmc.blipbird.ui.itinerary.ItineraryDraft
 import ch.lkmc.blipbird.ui.itinerary.ItineraryDraftLeg
 import ch.lkmc.blipbird.ui.itinerary.ItineraryDraftStoreViewModel
 import ch.lkmc.blipbird.ui.itinerary.beginIdentityReplacement
+import ch.lkmc.blipbird.ui.itinerary.replacedAt
 import ch.lkmc.blipbird.ui.itinerary.replacedIdentity
 import ch.lkmc.blipbird.ui.itinerary.withDepartureDateIdentity
 import ch.lkmc.blipbird.ui.itinerary.withDesignatorIdentity
@@ -104,6 +105,24 @@ class ItineraryDraftStoreTest {
 
         assertEquals(42, edited.existingFlightId)
         assertEquals(null, edited.replacesFlightId)
+    }
+
+    /**
+     * `update` re-reads the draft from the store, so a row's captured index can
+     * outlive a removal that shrank the list. Every list mutator must absorb
+     * that instead of throwing IndexOutOfBoundsException.
+     */
+    @Test
+    fun legReplacementIgnoresAnIndexThatNoLongerExists() {
+        val legs = listOf(ItineraryDraftLeg(rowId = "first"), ItineraryDraftLeg(rowId = "second"))
+        val replacement = ItineraryDraftLeg(rowId = "third", designator = "LX2803")
+
+        assertEquals(legs, legs.replacedAt(2, replacement))
+        assertEquals(legs, legs.replacedAt(-1, replacement))
+        assertEquals(
+            listOf(legs[0], replacement),
+            legs.replacedAt(1, replacement),
+        )
     }
 
     @Test

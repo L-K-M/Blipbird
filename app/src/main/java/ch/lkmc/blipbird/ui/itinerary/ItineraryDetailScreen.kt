@@ -66,7 +66,6 @@ import ch.lkmc.blipbird.core.model.BaggagePlan
 import ch.lkmc.blipbird.core.model.BookingArrangement
 import ch.lkmc.blipbird.core.model.ItineraryTransition
 import ch.lkmc.blipbird.core.model.TransitionIntent
-import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 

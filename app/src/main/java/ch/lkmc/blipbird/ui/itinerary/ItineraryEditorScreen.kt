@@ -282,7 +282,7 @@ fun ItineraryEditorScreen(
                             validationError = if (validationAttempted) legValidationError(leg) else null,
                             onChange = { replacement ->
                                 update { current ->
-                                    current.copy(legs = current.legs.toMutableList().also { it[index] = replacement })
+                                    current.copy(legs = current.legs.replacedAt(index, replacement))
                                 }
                             },
                             onIdentityChange = { replacement ->
@@ -408,7 +408,7 @@ fun ItineraryEditorScreen(
                                 legs = if (identityChanged) {
                                     current.legs.replacedIdentity(index, replacement)
                                 } else {
-                                    current.legs.toMutableList().also { it[index] = replacement }
+                                    current.legs.replacedAt(index, replacement)
                                 }
                             )
                         }
@@ -920,6 +920,19 @@ private fun ItineraryDraftLeg.withoutDepartureDateIdentity(): ItineraryDraftLeg 
         dateLocal = "",
         dateConfirmed = false,
     )
+}
+
+/**
+ * Replaces one leg in place. Every list mutator here tolerates a stale index:
+ * `update` re-reads the draft from the store, so the index a row composed with
+ * can outlive a removal that shrank the list.
+ */
+internal fun List<ItineraryDraftLeg>.replacedAt(
+    index: Int,
+    replacement: ItineraryDraftLeg,
+): List<ItineraryDraftLeg> {
+    if (index !in indices) return this
+    return toMutableList().also { it[index] = replacement }
 }
 
 internal fun List<ItineraryDraftLeg>.replacedIdentity(
