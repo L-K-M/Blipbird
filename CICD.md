@@ -124,6 +124,16 @@ workflow triggered by an outside contributor's PR — so the job is guarded on
 forks, and the third-party action is pinned to an immutable commit rather than a moving
 branch.
 
+The trust boundary that guard draws is **same-repo, not admin-only**: anyone with push
+access can open a branch PR and thereby hand `ZAI_API_KEY` and a write-capable
+`GITHUB_TOKEN` to the pinned action. That is the intended model — collaborators are
+trusted, outside contributors are not — but it is why the pin matters. Before changing it,
+confirm the SHA belongs to the tag you think it does:
+
+```sh
+git ls-remote https://github.com/L-K-M/zai-code-review refs/tags/v0.0.9
+```
+
 ## Dependabot
 
 Weekly, for both `github-actions` and `gradle` (limit 10). One deliberate exclusion:
