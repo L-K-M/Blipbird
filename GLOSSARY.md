@@ -99,6 +99,15 @@ exists to lower the contribution barrier, not to be authoritative.
   elevation, light bands, and cabin-visible crossings for the ribbon/map.
 - **ProjectedRouteProfile** — the time/altitude projection built before
   rendering the ribbon or fetching en-route weather.
+- **JetlagEngine** — the pure offline component behind the §9.5 body-clock
+  card: signed time-zone shift (exact) plus a hedged adaptation rule of thumb.
+- **Phase advance / phase delay** — moving the body clock *earlier* (advance,
+  the harder direction, ~1 h/day) or *later* (delay, ~1.5 h/day). Eastward
+  travel usually needs an advance, westward a delay — but past about nine
+  hours east, delaying the other way round the 24-hour clock is quicker.
+- **CBTmin** — core-body-temperature minimum, roughly two hours before
+  habitual wake. Bright light after it advances the clock, before it delays;
+  it is the anchor for the card's seek/avoid light windows.
 - **Heartbeat** — the single shared `Flow<Instant>` that drives all countdowns
   (`PLAN.md` §6).
 - **CrashRouter** — the local, redacted uncaught-exception sink (`PLAN.md` §17).

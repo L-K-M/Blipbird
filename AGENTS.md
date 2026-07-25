@@ -27,7 +27,7 @@ unidirectional data flow. Room is the source of truth, split by backup boundary:
 (provider-derived snapshots/fixes + bundled reference tables — excluded,
 rebuildable, TTL-pruned). Every external service sits behind a provider interface
 with ordered failover; pure decision cores (phase machine, notification planner,
-cadence policy, daylight engine) are plain JVM code with unit tests.
+cadence policy, daylight engine, jetlag engine) are plain JVM code with unit tests.
 
 Full design rationale, verified API research, and the roadmap live in
 [`PLAN.md`](PLAN.md).
@@ -107,4 +107,4 @@ tag triggers `release.yml`. Never hand-edit `versionCode` for a release.
   need `app/proguard-rules.pro` entries.
 - Provider interfaces wrap every external service with ordered failover; pure
   decision cores (phase machine, notification planner, cadence policy,
-  daylight engine) stay plain JVM and unit-tested.
+  daylight engine, jetlag engine) stay plain JVM and unit-tested.

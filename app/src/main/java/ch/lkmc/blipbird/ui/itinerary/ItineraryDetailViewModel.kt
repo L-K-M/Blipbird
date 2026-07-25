@@ -3,27 +3,38 @@ package ch.lkmc.blipbird.ui.itinerary
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import ch.lkmc.blipbird.core.data.AirportEnricher
 import ch.lkmc.blipbird.core.data.FlightLifecycleCoordinator
+import ch.lkmc.blipbird.core.data.FlightRepository
 import ch.lkmc.blipbird.core.data.ItineraryRepository
 import ch.lkmc.blipbird.core.model.BaggagePlan
 import ch.lkmc.blipbird.core.model.BookingArrangement
 import ch.lkmc.blipbird.core.model.Itinerary
+import ch.lkmc.blipbird.core.model.StatusSnapshot
+import ch.lkmc.blipbird.domain.JetlagEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class ItineraryDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val itineraries: ItineraryRepository,
     private val lifecycle: FlightLifecycleCoordinator,
+    private val flights: FlightRepository,
+    private val airports: AirportEnricher,
 ) : ViewModel() {
     private val itineraryId = savedStateHandle.get<Long>(ItineraryNavArgs.ITINERARY_ID)
         ?.takeIf { it > 0 }
@@ -41,6 +52,23 @@ class ItineraryDetailViewModel @Inject constructor(
         ) ?: flowOf(ItineraryDetailLoadState.Missing)
         .stateIn(viewModelScope, SharingStarted.Eagerly, ItineraryDetailLoadState.Loading)
 
+    /**
+     * Cumulative body-clock shift across the plan (PLAN.md §9.5), measured from the
+     * zone the first leg departs. Needs each leg's resolved route, so it stays null
+     * in zero-key mode — consistent with every other route-derived surface.
+     */
+    val bodyClock: StateFlow<JetlagEngine.Trip?> = loadState
+        .map { state ->
+            (state as? ItineraryDetailLoadState.Found)?.itinerary?.legs?.map { it.flight.id }.orEmpty()
+        }
+        .distinctUntilChanged()
+        .flatMapLatest { ids ->
+            if (ids.isEmpty()) flowOf(emptyList())
+            else combine(ids.map(flights::observeSnapshot)) { it.toList() }
+        }
+        .map(::tripFrom)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
 
@@ -56,6 +84,19 @@ class ItineraryDetailViewModel @Inject constructor(
 
     fun updateBaggage(transitionId: Long, value: BaggagePlan) = mutateTransition {
         itineraries.updateTransition(transitionId, baggagePlan = value)
+    }
+
+    private suspend fun tripFrom(snapshots: List<StatusSnapshot?>): JetlagEngine.Trip? {
+        val start = airports.enrich(snapshots.firstOrNull()?.departure) ?: return null
+        val legs = snapshots.map { snapshot ->
+            val arrival = airports.enrich(snapshot?.arrival)
+            JetlagEngine.TripLeg(
+                arrivalCode = arrival?.code ?: UNRESOLVED_CODE,
+                arrival = snapshot?.arrTimes?.best,
+                arrivalTz = arrival?.tz,
+            )
+        }
+        return JetlagEngine.trip(start.code, start.tz, legs)
     }
 
     private fun mutate(block: suspend (Long) -> Unit) {
@@ -91,6 +132,9 @@ class ItineraryDetailViewModel @Inject constructor(
         }
     }
 }
+
+/** Placeholder for a leg whose route hasn't resolved; such legs are skipped anyway. */
+private const val UNRESOLVED_CODE = "???"
 
 sealed interface ItineraryDetailLoadState {
     data object Loading : ItineraryDetailLoadState

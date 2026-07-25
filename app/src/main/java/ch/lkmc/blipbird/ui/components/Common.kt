@@ -166,6 +166,26 @@ private val TIME_FMT = DateTimeFormatter.ofPattern("HH:mm")
 fun localTime(at: Instant, zone: ZoneId = ZoneId.systemDefault()): String =
     TIME_FMT.withZone(zone).format(at)
 
+/**
+ * A body-clock shift magnitude (§9.5): whole hours, with minutes only for the
+ * :30/:45 zones that need them.
+ */
+@Composable
+fun shiftLabel(minutes: Int): String {
+    val hours = minutes / 60
+    val rest = minutes % 60
+    return if (rest == 0) stringResource(R.string.body_clock_hours, hours)
+    else stringResource(R.string.body_clock_hours_minutes, hours, rest)
+}
+
+/** The same magnitude, signed, for the itinerary shift chain: "+7 h", "−7 h", "±0". */
+@Composable
+fun signedShiftLabel(minutes: Int): String = when {
+    minutes == 0 -> stringResource(R.string.body_clock_shift_none)
+    minutes > 0 -> stringResource(R.string.body_clock_shift_plus, shiftLabel(minutes))
+    else -> stringResource(R.string.body_clock_shift_minus, shiftLabel(-minutes))
+}
+
 fun agoText(from: Instant, now: Instant = Instant.now()): String {
     val d = Duration.between(from, now)
     return when {
