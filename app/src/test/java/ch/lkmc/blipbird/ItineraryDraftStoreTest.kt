@@ -6,7 +6,6 @@ import ch.lkmc.blipbird.ui.itinerary.ItineraryDraftLeg
 import ch.lkmc.blipbird.ui.itinerary.ItineraryDraftStoreViewModel
 import ch.lkmc.blipbird.ui.itinerary.beginIdentityReplacement
 import ch.lkmc.blipbird.ui.itinerary.replacedAt
-import ch.lkmc.blipbird.ui.itinerary.replacedIdentity
 import ch.lkmc.blipbird.ui.itinerary.withDepartureDateIdentity
 import ch.lkmc.blipbird.ui.itinerary.withDesignatorIdentity
 import ch.lkmc.blipbird.core.model.TransitionIntent
@@ -110,8 +109,7 @@ class ItineraryDraftStoreTest {
     /**
      * `update` re-reads the draft from the store, so a row's captured index can
      * outlive a removal that shrank the list. Every list mutator must absorb
-     * that instead of throwing IndexOutOfBoundsException — pinned here for the
-     * two that are reachable from tests.
+     * that instead of throwing IndexOutOfBoundsException.
      */
     @Test
     fun legReplacementIgnoresAnIndexThatNoLongerExists() {
@@ -126,17 +124,14 @@ class ItineraryDraftStoreTest {
         )
     }
 
+    /**
+     * The composer is filled in top to bottom: flight 1's number, its date, what
+     * happens after it, then flight 2. Editing flight 2 must not wipe the answer
+     * just given for flight 1 — "what happens" is the user's plan, not something
+     * derived from either occurrence.
+     */
     @Test
-    fun identityReplacementIgnoresAnIndexThatNoLongerExists() {
-        val legs = listOf(ItineraryDraftLeg(rowId = "first"), ItineraryDraftLeg(rowId = "second"))
-        val replacement = ItineraryDraftLeg(rowId = "third", designator = "LX2803")
-
-        assertEquals(legs, legs.replacedIdentity(2, replacement))
-        assertEquals(legs, legs.replacedIdentity(-1, replacement))
-    }
-
-    @Test
-    fun identityReplacementResetsIncomingAndOutgoingTransitionIntent() {
+    fun editingALegKeepsTheTransitionChoicesAroundIt() {
         val first = ItineraryDraftLeg(
             rowId = "first",
             transitionAfter = TransitionIntent.DIRECT_CONNECTION.name,
@@ -146,13 +141,20 @@ class ItineraryDraftStoreTest {
             transitionAfter = TransitionIntent.DESTINATION_STAY.name,
         )
         val third = ItineraryDraftLeg(rowId = "third")
+        val legs = listOf(first, second, third)
 
-        val updated = listOf(first, second, third).replacedIdentity(
-            index = 1,
-            replacement = second.copy(designator = "LX2802"),
-        )
+        val typed = legs.replacedAt(1, second.withDesignatorIdentity("LX2802"))
+        assertEquals(TransitionIntent.DIRECT_CONNECTION.name, typed[0].transitionAfter)
+        assertEquals(TransitionIntent.DESTINATION_STAY.name, typed[1].transitionAfter)
 
-        assertEquals(TransitionIntent.UNKNOWN.name, updated[0].transitionAfter)
-        assertEquals(TransitionIntent.UNKNOWN.name, updated[1].transitionAfter)
+        val dated = legs.replacedAt(1, second.withDepartureDateIdentity("2026-09-19"))
+        assertEquals(TransitionIntent.DIRECT_CONNECTION.name, dated[0].transitionAfter)
+        assertEquals(TransitionIntent.DESTINATION_STAY.name, dated[1].transitionAfter)
+
+        // Even swapping the occurrence outright keeps the plan; the repository
+        // still starts the rebuilt edge's booking/baggage answers at unknown.
+        val replaced = legs.replacedAt(1, second.beginIdentityReplacement())
+        assertEquals(TransitionIntent.DIRECT_CONNECTION.name, replaced[0].transitionAfter)
+        assertEquals(TransitionIntent.DESTINATION_STAY.name, replaced[1].transitionAfter)
     }
 }

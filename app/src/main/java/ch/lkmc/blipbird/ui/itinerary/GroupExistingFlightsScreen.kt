@@ -4,8 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -129,10 +130,16 @@ fun GroupExistingFlightsScreen(
             )
         },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        BoxWithConstraints(
+            Modifier.padding(padding).fillMaxSize(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            // Same narrow-screen trade as the composer: gutter width goes back to
+            // the content when there isn't much of it (§7.16).
+            val gutter = if (maxWidth < 400.dp) 12.dp else 16.dp
             LazyColumn(
                 modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                contentPadding = PaddingValues(gutter),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
@@ -166,7 +173,7 @@ fun GroupExistingFlightsScreen(
                         ),
                     ) {
                         Row(
-                            Modifier.padding(16.dp),
+                            Modifier.padding(if (gutter < 16.dp) 13.dp else 16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)

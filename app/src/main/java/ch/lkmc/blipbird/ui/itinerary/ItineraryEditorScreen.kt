@@ -1,11 +1,14 @@
 package ch.lkmc.blipbird.ui.itinerary
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +22,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -35,13 +41,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +56,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,15 +64,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -118,7 +129,7 @@ fun ItineraryEditorScreen(
     var removeLegRowId by remember { mutableStateOf<String?>(null) }
     var replaceLegRowId by remember { mutableStateOf<String?>(null) }
     var focusRequest by remember { mutableStateOf<EditorFocusRequest?>(null) }
-    var focusRequestSequence by remember { mutableStateOf(0) }
+    var focusRequestSequence by remember { mutableIntStateOf(0) }
     // True once this entry handed navigation off after its own commit. The
     // outgoing entry stays composed for the exit transition, so Room reporting
     // the target gone — which is exactly what a dissolving save does — must not
@@ -233,12 +244,20 @@ fun ItineraryEditorScreen(
                 CircularProgressIndicator()
             }
         } else {
-            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            BoxWithConstraints(
+                Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                // Narrow phones (and any screen at a large font scale) get back
+                // the horizontal room the default 16 dp gutter was spending on
+                // nothing (§7.16).
+                val compact = maxWidth < COMPACT_EDITOR_WIDTH
+                val gutter = if (compact) 12.dp else 16.dp
                 LazyColumn(
                     modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth(),
                     state = listState,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 16.dp, top = 16.dp, end = 16.dp, bottom = 32.dp,
+                    contentPadding = PaddingValues(
+                        start = gutter, top = gutter, end = gutter, bottom = 32.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -279,16 +298,12 @@ fun ItineraryEditorScreen(
                             count = draft.legs.size,
                             enabled = !saving && creationCheckSucceeded,
                             editing = itineraryId != null,
+                            compact = compact,
                             focusRequest = focusRequest,
                             validationError = if (validationAttempted) legValidationError(leg) else null,
                             onChange = { replacement ->
                                 update { current ->
                                     current.copy(legs = current.legs.replacedAt(index, replacement))
-                                }
-                            },
-                            onIdentityChange = { replacement ->
-                                update { current ->
-                                    current.copy(legs = current.legs.replacedIdentity(index, replacement))
                                 }
                             },
                             onPickDate = { dateRowId = leg.rowId },
@@ -403,15 +418,7 @@ fun ItineraryEditorScreen(
                         update { current ->
                             val index = current.legs.indexOfFirst { it.rowId == rowId }
                             val item = current.legs.getOrNull(index) ?: return@update current
-                            val identityChanged = item.dateLocal != date
-                            val replacement = item.withDepartureDateIdentity(date)
-                            current.copy(
-                                legs = if (identityChanged) {
-                                    current.legs.replacedIdentity(index, replacement)
-                                } else {
-                                    current.legs.replacedAt(index, replacement)
-                                }
-                            )
+                            current.copy(legs = current.legs.replacedAt(index, item.withDepartureDateIdentity(date)))
                         }
                     }
                     dateRowId = null
@@ -472,9 +479,7 @@ fun ItineraryEditorScreen(
                     update { current ->
                         val index = current.legs.indexOfFirst { it.rowId == rowId }
                         val leg = current.legs.getOrNull(index) ?: return@update current
-                        current.copy(
-                            legs = current.legs.replacedIdentity(index, leg.beginIdentityReplacement())
-                        )
+                        current.copy(legs = current.legs.replacedAt(index, leg.beginIdentityReplacement()))
                     }
                     replaceLegRowId = null
                 }) {
@@ -644,7 +649,6 @@ fun ItineraryEditorScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DraftLegCard(
     index: Int,
@@ -652,10 +656,10 @@ private fun DraftLegCard(
     count: Int,
     enabled: Boolean,
     editing: Boolean,
+    compact: Boolean,
     focusRequest: EditorFocusRequest?,
     validationError: String?,
     onChange: (ItineraryDraftLeg) -> Unit,
-    onIdentityChange: (ItineraryDraftLeg) -> Unit,
     onPickDate: () -> Unit,
     onMoveEarlier: () -> Unit,
     onMoveLater: () -> Unit,
@@ -678,7 +682,10 @@ private fun DraftLegCard(
         shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = itinerarySurface()),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.padding(if (compact) 13.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(R.string.itinerary_flight_number, index + 1),
@@ -698,12 +705,7 @@ private fun DraftLegCard(
             OutlinedTextField(
                 value = leg.designator,
                 enabled = enabled && leg.existingFlightId == null,
-                onValueChange = { value ->
-                    val normalized = value.uppercase(Locale.ROOT)
-                    val identityChanged = normalized != leg.designator
-                    val replacement = leg.withDesignatorIdentity(normalized)
-                    if (identityChanged) onIdentityChange(replacement) else onChange(replacement)
-                },
+                onValueChange = { value -> onChange(leg.withDesignatorIdentity(value)) },
                 label = { Text(stringResource(R.string.itinerary_designator)) },
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Characters,
@@ -732,7 +734,7 @@ private fun DraftLegCard(
             }
             if (date != null && !persistedIdentityLocked) {
                 TextButton(
-                    onClick = { onIdentityChange(leg.withoutDepartureDateIdentity()) },
+                    onClick = { onChange(leg.withoutDepartureDateIdentity()) },
                     enabled = enabled,
                     modifier = Modifier.heightIn(min = 48.dp),
                 ) {
@@ -748,37 +750,42 @@ private fun DraftLegCard(
                     Text(stringResource(R.string.itinerary_replace_flight))
                 }
             }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            // Equal halves rather than a flow: "Move earlier"/"Move later" are a
+            // pair, and at a large font scale on a narrow phone the flow version
+            // wrapped them onto two ragged lines.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     enabled = enabled && index > 0,
                     onClick = onMoveEarlier,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) { Text(stringResource(R.string.itinerary_move_earlier)) }
+                    contentPadding = MOVE_BUTTON_PADDING,
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                ) { Text(stringResource(R.string.itinerary_move_earlier), maxLines = 2, textAlign = TextAlign.Center) }
                 OutlinedButton(
                     enabled = enabled && index < count - 1,
                     onClick = onMoveLater,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) { Text(stringResource(R.string.itinerary_move_later)) }
+                    contentPadding = MOVE_BUTTON_PADDING,
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                ) { Text(stringResource(R.string.itinerary_move_later), maxLines = 2, textAlign = TextAlign.Center) }
             }
             if (index < count - 1) {
                 Text(
                     stringResource(R.string.itinerary_after_flight),
                     style = MaterialTheme.typography.labelLarge,
                 )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                // A single choice with four long labels: chips wrapped one per
+                // line anyway on a phone, so this is the same information as a
+                // proper radio group — aligned, tappable across the full width,
+                // and announced as "2 of 4" by TalkBack.
+                Column(
+                    Modifier.selectableGroup(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     transitionChoices().forEach { (intent, label) ->
-                        FilterChip(
+                        TransitionChoiceRow(
                             selected = TransitionIntent.decode(leg.transitionAfter) == intent,
                             enabled = enabled,
+                            label = stringResource(label),
                             onClick = { onChange(leg.copy(transitionAfter = intent.name)) },
-                            label = { Text(stringResource(label)) },
-                            modifier = Modifier.heightIn(min = 48.dp),
                         )
                     }
                 }
@@ -792,6 +799,38 @@ private fun DraftLegCard(
                 )
             }
         }
+    }
+}
+
+/** Below this the composer trades gutter width for content width. */
+private val COMPACT_EDITOR_WIDTH = 400.dp
+
+/** Tighter than the button default so a two-word label still fits half a phone. */
+private val MOVE_BUTTON_PADDING = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+
+/** One option of the single-choice "what happens after this flight" group. */
+@Composable
+private fun TransitionChoiceRow(
+    selected: Boolean,
+    enabled: Boolean,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .background(
+                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+            )
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null, enabled = enabled)
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -927,6 +966,16 @@ private fun ItineraryDraftLeg.withoutDepartureDateIdentity(): ItineraryDraftLeg 
  * Replaces one leg in place. Every list mutator here tolerates a stale index:
  * `update` re-reads the draft from the store, so the index a row composed with
  * can outlive a removal that shrank the list.
+ *
+ * Editing a leg deliberately leaves the transition choices around it alone.
+ * "What happens after this flight" is the user's plan, not a fact derived from
+ * the occurrence — and clearing it on an edit meant that typing flight 2's
+ * number silently reset the answer just given for flight 1, which is the natural
+ * order to fill the composer in. Adjacency changes are different, and
+ * [movedWithTransitions]/[removedPreservingTransitions] still reset the edges
+ * they genuinely invalidate (§7.11). Booking and baggage answers are not held in
+ * the draft at all: the repository re-attaches them only to an unchanged leg
+ * pair with an unchanged intent, so a replaced occurrence still starts unknown.
  */
 internal fun List<ItineraryDraftLeg>.replacedAt(
     index: Int,
@@ -934,19 +983,6 @@ internal fun List<ItineraryDraftLeg>.replacedAt(
 ): List<ItineraryDraftLeg> {
     if (index !in indices) return this
     return toMutableList().also { it[index] = replacement }
-}
-
-internal fun List<ItineraryDraftLeg>.replacedIdentity(
-    index: Int,
-    replacement: ItineraryDraftLeg,
-): List<ItineraryDraftLeg> {
-    if (index !in indices) return this
-    return toMutableList().also { updated ->
-        if (index > 0) {
-            updated[index - 1] = updated[index - 1].copy(transitionAfter = TransitionIntent.UNKNOWN.name)
-        }
-        updated[index] = replacement.copy(transitionAfter = TransitionIntent.UNKNOWN.name)
-    }
 }
 
 private fun List<ItineraryDraftLeg>.movedWithTransitions(from: Int, to: Int): List<ItineraryDraftLeg> {
