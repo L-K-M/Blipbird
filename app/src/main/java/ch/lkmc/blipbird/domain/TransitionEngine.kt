@@ -434,7 +434,7 @@ object TransitionEngine {
         ) {
             return Disruption.STALE_OR_MISSING_TIMES
         }
-        if (latestCalculated != null && !latestCalculated.isPositive()) return Disruption.INVALID_OVERLAP
+        if (latestCalculated != null && !latestCalculated.isAboveZero()) return Disruption.INVALID_OVERLAP
         return null
     }
 
@@ -451,7 +451,7 @@ object TransitionEngine {
         outbound.status == FlightStatus.CANCELLED -> Disruption.OUTBOUND_CANCELLED
         inbound.status == FlightStatus.CANCELLED -> Disruption.INBOUND_CANCELLED
         gap == null -> Disruption.STALE_OR_MISSING_TIMES
-        !gap.isPositive() -> Disruption.INVALID_OVERLAP
+        !gap.isAboveZero() -> Disruption.INVALID_OVERLAP
         else -> null
     }
 
@@ -480,7 +480,7 @@ object TransitionEngine {
         if (intent != TransitionIntent.UNKNOWN || gap == null) return null
         return when {
             continuity != Continuity.SAME_AIRPORT -> null
-            !gap.isPositive() -> null
+            !gap.isAboveZero() -> null
             gap <= CONNECTION_SUGGESTION_MAX_GAP -> TransitionIntent.DIRECT_CONNECTION
             else -> TransitionIntent.DESTINATION_STAY
         }
@@ -520,5 +520,13 @@ object TransitionEngine {
         airport.iata, airport.icao, airport.name, airport.city, airport.tz,
     ).size
 
-    private fun Duration.isPositive(): Boolean = !isZero && !isNegative
+    /**
+     * Deliberately not named `isPositive`. `java.time.Duration.isPositive()`
+     * arrived with JDK 18 and is present in recent `android.jar`s, so a member
+     * of that name silently wins over an extension at compile time — and then
+     * fails at runtime on every JVM (CI's Temurin 17 among them) and every
+     * device below the API level that shipped it. The unit tests caught it as a
+     * `NoSuchMethodError`; the name is what keeps it caught.
+     */
+    private fun Duration.isAboveZero(): Boolean = !isZero && !isNegative
 }
