@@ -339,6 +339,7 @@ fun BlipbirdNav(
                 is Screen.ItineraryDetail -> ItineraryDetailScreen(
                     itineraryId = screen.itineraryId,
                     onBack = { backStack.popIfTop(screen) },
+                    onOpenSettings = { navigate(Screen.Settings) },
                     onEdit = {
                         navigate(
                             Screen.ItineraryEditor(

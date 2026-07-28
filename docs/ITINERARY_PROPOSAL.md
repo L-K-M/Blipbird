@@ -11,6 +11,14 @@
 >
 > **Independent review:** re-verified 2026-07-24; see Appendix A
 >
+> **Implementation status (2026-07-28):** Tier 0 shipped first; the itinerary
+> detail screen now also draws the §7.6 spine from resolved snapshots and
+> `TransitionEngine` implements §8.2–§8.9. Connection windows stay gated per
+> §8.2 on a provider whose adapter maps documented gate `OUT`/`IN` — AeroAPI
+> today, AeroDataBox once its time-family mapping is corrected (`REVIEW.md`
+> IT-7). The confirmed occurrence pair of §8.8 is re-derived per evaluation
+> rather than persisted (`REVIEW.md` IT-8). Tiers 2–4 remain untouched.
+>
 > **Related roadmap items:** `REVIEW.md` F10 (layover awareness), F11
 > (trip grouping), F15 (airport information), F16 (offline projected mode),
 > and `PLAN.md` v2 multi-flight grouping.

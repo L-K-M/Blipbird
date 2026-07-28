@@ -186,8 +186,16 @@ fun signedShiftLabel(minutes: Int): String = when {
     else -> stringResource(R.string.body_clock_shift_minus, shiftLabel(-minutes))
 }
 
-fun agoText(from: Instant, now: Instant = Instant.now()): String {
-    val d = Duration.between(from, now)
+fun agoText(from: Instant, now: Instant = Instant.now()): String =
+    elapsedText(Duration.between(from, now))
+
+/**
+ * The same coarse magnitude as [agoText] for callers that already hold the
+ * elapsed duration (the connection card's per-endpoint retrieval ages) rather
+ * than the instant it was measured from.
+ */
+fun elapsedText(elapsed: Duration): String {
+    val d = if (elapsed.isNegative) Duration.ZERO else elapsed
     return when {
         d.toMinutes() < 1 -> "${d.seconds}s"
         d.toHours() < 1 -> "${d.toMinutes()}m"

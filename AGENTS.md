@@ -27,7 +27,8 @@ unidirectional data flow. Room is the source of truth, split by backup boundary:
 (provider-derived snapshots/fixes + bundled reference tables — excluded,
 rebuildable, TTL-pruned). Every external service sits behind a provider interface
 with ordered failover; pure decision cores (phase machine, notification planner,
-cadence policy, daylight engine, jetlag engine) are plain JVM code with unit tests.
+cadence policy, daylight engine, jetlag engine, transition engine) are plain JVM
+code with unit tests.
 
 Full design rationale, verified API research, and the roadmap live in
 [`PLAN.md`](PLAN.md).
@@ -107,6 +108,13 @@ tag triggers `release.yml`. Never hand-edit `versionCode` for a release.
   need `app/proguard-rules.pro` entries.
 - Provider interfaces wrap every external service with ordered failover; pure
   decision cores (phase machine, notification planner, cadence policy,
-  daylight engine, jetlag engine) stay plain JVM and unit-tested.
+  daylight engine, jetlag engine, transition engine) stay plain JVM and
+  unit-tested.
 - Dossier cards the user can hide (§9.6) must skip their *fetch*, not just their
   rendering — a hidden card that still spends a third-party request is a bug.
+- Connection windows are gate-milestone arithmetic
+  (`docs/ITINERARY_PROPOSAL.md` §8.2): only a provider whose adapter maps
+  documented gate `OUT`/`IN` with a stated certainty may carry one, and
+  `TransitionEngine.GATE_MILESTONE_PROVIDERS` is the single place that records
+  which do. Widening it means correcting an adapter's time-family mapping first,
+  with fixtures — never editing the set on its own.
