@@ -91,6 +91,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.core.model.TransitionIntent
+import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.ui.components.BirdRefreshIndicator
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
@@ -451,12 +452,39 @@ private fun ItineraryHomeCard(
                     modifier = Modifier.size(22.dp),
                 )
                 Spacer(Modifier.width(8.dp))
+                // The resolved airport chain when there is one; the flight numbers
+                // are the honest fallback until the routes come back.
                 Text(
-                    row.designators,
+                    row.routeChain ?: row.designators,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+            }
+            if (row.routeChain != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    row.designators,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            row.currentLeg?.let { leg ->
+                val phase = itineraryLegPhase(leg)
+                if (phase != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.itinerary_current_leg, leg.title, phase),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
             Text(
@@ -477,6 +505,21 @@ private fun ItineraryHomeCard(
                 )
             }
         }
+    }
+}
+
+/** The featured member's countdown, or null when nothing has resolved for it. */
+@Composable
+private fun itineraryLegPhase(leg: ItineraryHomeLeg): String? {
+    val at = leg.view.nextEventAt ?: return null
+    return when (leg.view.nextEventLabel) {
+        FlightPhaseMachine.NextEvent.DEPARTS_IN -> departsInText(Duration.between(leg.now, at))
+        FlightPhaseMachine.NextEvent.LANDS_IN -> landsInText(Duration.between(leg.now, at))
+        FlightPhaseMachine.NextEvent.LANDED_AT -> stringResource(
+            R.string.itinerary_landed_at,
+            localTime(at, leg.arrTz?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()),
+        )
+        FlightPhaseMachine.NextEvent.NONE -> null
     }
 }
 
@@ -828,11 +871,11 @@ private fun phaseTime(row: FlightRow): String {
     // Instant.now() at composition time (DS4-G9): the latter makes the call
     // unstable and recomposes rows without any real data change.
     return when (row.view.nextEventLabel) {
-        ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.DEPARTS_IN ->
+        FlightPhaseMachine.NextEvent.DEPARTS_IN ->
             departsInText(Duration.between(row.now, at))
-        ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.LANDS_IN ->
+        FlightPhaseMachine.NextEvent.LANDS_IN ->
             landsInText(Duration.between(row.now, at))
-        ch.lkmc.blipbird.domain.FlightPhaseMachine.NextEvent.LANDED_AT ->
+        FlightPhaseMachine.NextEvent.LANDED_AT ->
             "Landed ${localTime(at, row.arrTz?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault())}"
         else -> stringResource(R.string.value_unknown)
     }

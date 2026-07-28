@@ -13,8 +13,10 @@ import ch.lkmc.blipbird.core.data.ItineraryRepository
 import ch.lkmc.blipbird.core.data.StatusRefreshCoordinator
 import ch.lkmc.blipbird.core.database.TrackedFlightEntity
 import ch.lkmc.blipbird.core.datastore.ProviderKeyStore
+import ch.lkmc.blipbird.core.model.AirportRef
 import ch.lkmc.blipbird.core.model.Designator
 import ch.lkmc.blipbird.core.model.FlightStatus
+import ch.lkmc.blipbird.core.model.Itinerary
 import ch.lkmc.blipbird.core.model.StatusSnapshot
 import ch.lkmc.blipbird.core.model.TrackRequest
 import ch.lkmc.blipbird.core.model.TransitionIntent
@@ -23,6 +25,8 @@ import ch.lkmc.blipbird.domain.DesignatorParser
 import ch.lkmc.blipbird.domain.FlightDates
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.domain.LookupOutcome
+import ch.lkmc.blipbird.core.data.displayDesignator
+import ch.lkmc.blipbird.ui.itinerary.UNRESOLVED_CODE
 import ch.lkmc.blipbird.ui.itinerary.dateSpan
 import ch.lkmc.blipbird.ui.itinerary.designatorLine
 import ch.lkmc.blipbird.ui.itinerary.displayTitle
@@ -32,6 +36,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -115,6 +120,22 @@ data class ItineraryHomeRow(
     val transitions: List<TransitionIntent>,
     val sortDate: LocalDate?,
     val createdAt: Long,
+    /** Airport chain once the member routes resolve, e.g. "GVA → FRA → HND". */
+    val routeChain: String? = null,
+    /** The leg the card leads with: the first one that hasn't arrived yet (§7.2). */
+    val currentLeg: ItineraryHomeLeg? = null,
+)
+
+/** The one member flight an itinerary card features, with its live phase line. */
+@Immutable
+data class ItineraryHomeLeg(
+    val title: String,
+    val depCode: String?,
+    val arrCode: String?,
+    val arrTz: String?,
+    val view: FlightPhaseMachine.View,
+    /** The shared ticker value this row was derived from (DS4-G9). */
+    val now: Instant,
 )
 
 /**
@@ -195,24 +216,13 @@ class FlightListViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RowsState.Loading)
 
     private val itineraryRowsState: StateFlow<ItineraryRowsState> = itineraryRepository.observeActive()
-        .map { itineraries ->
+        .flatMapLatest { itineraries ->
+            if (itineraries.isEmpty()) flowOf(emptyList())
+            else combine(itineraries.map(::itineraryRowFlow)) { it.toList() }
+        }
+        .map { rows ->
             ItineraryRowsState.Loaded(
-                itineraries.map { itinerary ->
-                    ItineraryHomeRow(
-                        id = itinerary.id,
-                        title = itinerary.displayTitle(context),
-                        dateSpan = itinerary.dateSpan(context),
-                        designators = itinerary.designatorLine(
-                            limit = 4,
-                            separator = " ${context.getString(R.string.itinerary_designator_separator)} ",
-                            overflowLabel = { context.getString(R.string.itinerary_more_flights, it) },
-                        ),
-                        flightCount = itinerary.legs.size,
-                        transitions = itinerary.transitions.map { it.intent },
-                        sortDate = itinerary.legs.mapNotNull { it.date }.minOrNull(),
-                        createdAt = itinerary.createdAt,
-                    )
-                }.sortedWith(
+                rows.sortedWith(
                     compareBy<ItineraryHomeRow> { it.sortDate == null }
                         .thenBy { it.sortDate }
                         .thenBy { it.createdAt }
@@ -220,6 +230,67 @@ class FlightListViewModel @Inject constructor(
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ItineraryRowsState.Loading)
+
+    /**
+     * An itinerary card with its members' live state folded in: without this the
+     * card could only ever show flight numbers, which is exactly the "nothing
+     * loads" impression the detail screen used to give. Snapshots are read from
+     * Room — no extra provider requests — and the member flows are rebuilt only
+     * when the graph itself changes.
+     */
+    private fun itineraryRowFlow(itinerary: Itinerary): Flow<ItineraryHomeRow> {
+        val ids = itinerary.legs.map { it.flight.id }
+        val snapshots: Flow<List<StatusSnapshot?>> =
+            if (ids.isEmpty()) flowOf(emptyList())
+            else combine(ids.map(repository::observeSnapshot)) { it.toList() }
+        return combine(snapshots, clock) { snaps, now ->
+            val routes = snaps.map { snapshot ->
+                airports.enrich(snapshot?.departure) to airports.enrich(snapshot?.arrival)
+            }
+            val views = snaps.map { FlightPhaseMachine.derive(it, null, now) }
+            val currentIndex = views.indexOfFirst {
+                it.status != FlightStatus.ARRIVED && it.status != FlightStatus.LANDED
+            }.takeIf { it >= 0 } ?: views.lastIndex
+            ItineraryHomeRow(
+                id = itinerary.id,
+                title = itinerary.displayTitle(context),
+                dateSpan = itinerary.dateSpan(context),
+                designators = itinerary.designatorLine(
+                    limit = 4,
+                    separator = " ${context.getString(R.string.itinerary_designator_separator)} ",
+                    overflowLabel = { context.getString(R.string.itinerary_more_flights, it) },
+                ),
+                flightCount = itinerary.legs.size,
+                transitions = itinerary.transitions.map { it.intent },
+                sortDate = itinerary.legs.mapNotNull { it.date }.minOrNull(),
+                createdAt = itinerary.createdAt,
+                routeChain = routeChain(routes),
+                currentLeg = itinerary.legs.getOrNull(currentIndex)?.let { leg ->
+                    ItineraryHomeLeg(
+                        title = leg.flight.displayDesignator(),
+                        depCode = routes.getOrNull(currentIndex)?.first?.code,
+                        arrCode = routes.getOrNull(currentIndex)?.second?.code,
+                        arrTz = routes.getOrNull(currentIndex)?.second?.tz,
+                        view = views[currentIndex],
+                        now = now,
+                    )
+                },
+            )
+        }
+    }
+
+    /** Null until at least one leg resolved, so the card never invents a route. */
+    private fun routeChain(routes: List<Pair<AirportRef?, AirportRef?>>): String? {
+        if (routes.none { it.first != null || it.second != null }) return null
+        val codes = mutableListOf<String>()
+        for ((departure, arrival) in routes) {
+            val dep = departure?.code ?: UNRESOLVED_CODE
+            val arr = arrival?.code ?: UNRESOLVED_CODE
+            if (codes.lastOrNull() != dep) codes += dep
+            codes += arr
+        }
+        return codes.joinToString("  →  ")
+    }
 
     private val contentState = combine(rowsState, itineraryRowsState) { flights, itineraries ->
         val loadedFlights = (flights as? RowsState.Loaded)?.rows.orEmpty()
