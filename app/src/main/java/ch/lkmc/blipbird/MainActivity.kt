@@ -18,6 +18,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -238,6 +239,12 @@ fun BlipbirdNav(
 
     val current = backStack.last()
 
+    // Where each entry sits in the stack, sampled as the stack changes. A popped
+    // entry keeps its last depth while it animates out, so the transition spec
+    // below can still ask how deep the screen the user is leaving was.
+    val depths = remember { mutableMapOf<Screen, Int>() }
+    SideEffect { backStack.forEachIndexed { index, screen -> depths[screen] = index } }
+
     // Predictive back (G10 unlock): the gesture scrubs the pop transition —
     // dragging reveals the previous screen under the departing one, releasing
     // commits the pop, cancelling springs the current screen back.
@@ -278,7 +285,12 @@ fun BlipbirdNav(
     LaunchedEffect(seekable, storesVm) {
         snapshotFlow { Triple(seekable.currentState, seekable.targetState, backStack.toList()) }
             .collect { (from, to, stack) ->
-                if (from == to) storesVm.retainOnly(stack.toSet())
+                if (from == to) {
+                    storesVm.retainOnly(stack.toSet())
+                    // Same moment, same reason: the departed entry's depth is only
+                    // needed until its exit transition finishes.
+                    depths.keys.retainAll(stack.toSet())
+                }
             }
     }
 
@@ -289,10 +301,10 @@ fun BlipbirdNav(
     val transition = rememberTransition(seekable, label = "screen")
     transition.AnimatedContent(
         transitionSpec = {
-            val forward = screenRank(targetState) >= screenRank(initialState)
+            val forward = navigationForward(initialState, targetState, backStack, depths)
             // Deeper screens render above shallower ones, so a push covers the
             // outgoing screen and a pop reveals the incoming one beneath.
-            val zIndex = screenRank(targetState).toFloat()
+            val zIndex = navigationDepth(targetState, backStack, depths).toFloat()
             when {
                 reducedMotion -> BlipbirdMotion.crossfade(zIndex)
                 forward -> BlipbirdMotion.push(zIndex)
@@ -375,19 +387,4 @@ fun BlipbirdNav(
             }
         }
     }
-}
-
-/**
- * Navigation depth for transition direction and z-order: moving to a deeper
- * (or equal — e.g. a deep link replacing one detail with another) screen is a
- * push, to a shallower one a pop.
- */
-private fun screenRank(screen: Screen): Int = when (screen) {
-    is Screen.List -> 0
-    is Screen.Settings -> 1
-    is Screen.Archived -> 1
-    is Screen.GroupExistingFlights -> 2
-    is Screen.ItineraryEditor -> 2
-    is Screen.FlightDetail -> 2
-    is Screen.ItineraryDetail -> 2
 }

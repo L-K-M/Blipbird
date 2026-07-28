@@ -78,6 +78,53 @@ internal fun MutableList<Screen>.popToRoot() {
     while (size > 1) removeAt(lastIndex)
 }
 
+/**
+ * Where [screen] sits on the journey into the app: its index in the live back
+ * stack, else the last index it was seen at, else its static rank.
+ *
+ * The middle case is the one that matters. A popped entry stays composed for its
+ * whole exit transition, so the screen the user is leaving is already off the
+ * stack when the transition spec asks how deep it was.
+ */
+internal fun navigationDepth(
+    screen: Screen,
+    stack: List<Screen>,
+    remembered: Map<Screen, Int>,
+): Int = stack.indexOf(screen).takeIf { it >= 0 } ?: remembered[screen] ?: screenRank(screen)
+
+/**
+ * True when moving from [from] to [to] should animate as a push (the incoming
+ * screen covers the outgoing one) rather than a pop.
+ *
+ * Equal depth counts as forward: that is a *replacement* at the same level, like
+ * a notification deep link swapping one flight dossier for another.
+ *
+ * Depth, not screen kind: a flight dossier opened from an itinerary is one level
+ * deeper than the itinerary, and going back to it has to run the pop. Ranking by
+ * screen type gave both the same number, so that back step animated as a push —
+ * the itinerary slid in from the wrong edge.
+ */
+internal fun navigationForward(
+    from: Screen,
+    to: Screen,
+    stack: List<Screen>,
+    remembered: Map<Screen, Int>,
+): Boolean = navigationDepth(to, stack, remembered) >= navigationDepth(from, stack, remembered)
+
+/**
+ * Static fallback depth for an entry with no recorded stack position — only
+ * reachable before the first stack sample, so it just needs to be sane.
+ */
+internal fun screenRank(screen: Screen): Int = when (screen) {
+    is Screen.List -> 0
+    is Screen.Settings -> 1
+    is Screen.Archived -> 1
+    is Screen.GroupExistingFlights -> 2
+    is Screen.ItineraryEditor -> 2
+    is Screen.FlightDetail -> 2
+    is Screen.ItineraryDetail -> 2
+}
+
 private fun validDraftId(value: String): Boolean =
     value.length in 1..80 && value.all { it.isLetterOrDigit() || it == '-' || it == '_' }
 
