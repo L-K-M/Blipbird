@@ -9,6 +9,11 @@ import androidx.compose.ui.unit.dp
  * card and the transition card below it line up on the same gutter.
  */
 
+/**
+ * Below this every itinerary surface trades gutter width for content width
+ * (§7.16) — the spine, the composer and the group picker alike. One constant, so
+ * they cannot disagree about what "narrow" means.
+ */
 internal val COMPACT_WIDTH = 400.dp
 
 internal data class SpineMetrics(

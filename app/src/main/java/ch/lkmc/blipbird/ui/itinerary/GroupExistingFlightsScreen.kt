@@ -135,11 +135,12 @@ fun GroupExistingFlightsScreen(
             contentAlignment = Alignment.TopCenter,
         ) {
             // Same narrow-screen trade as the composer: gutter width goes back to
-            // the content when there isn't much of it (§7.16).
-            val gutter = if (maxWidth < 400.dp) 12.dp else 16.dp
+            // the content when there isn't much of it (§7.16). Off the spine's own
+            // measurements so this screen can't drift from the one below it.
+            val metrics = spineMetrics(compact = maxWidth < COMPACT_WIDTH)
             LazyColumn(
                 modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth(),
-                contentPadding = PaddingValues(gutter),
+                contentPadding = PaddingValues(metrics.screenPadding),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
@@ -173,7 +174,7 @@ fun GroupExistingFlightsScreen(
                         ),
                     ) {
                         Row(
-                            Modifier.padding(if (gutter < 16.dp) 13.dp else 16.dp),
+                            Modifier.padding(metrics.cardPadding),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)

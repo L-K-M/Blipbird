@@ -156,9 +156,9 @@
     <string name="connection_endpoint_actual_arrival">Actual gate arrival</string>
     <string name="connection_endpoint_estimated_arrival">Estimated gate arrival</string>
     <string name="connection_endpoint_scheduled_arrival">Scheduled gate arrival</string>
-    <string name="connection_endpoint_actual_departure">actual gate departure</string>
-    <string name="connection_endpoint_estimated_departure">estimated gate departure</string>
-    <string name="connection_endpoint_scheduled_departure">scheduled gate departure</string>
+    <string name="connection_endpoint_actual_departure">Actual gate departure</string>
+    <string name="connection_endpoint_estimated_departure">Estimated gate departure</string>
+    <string name="connection_endpoint_scheduled_departure">Scheduled gate departure</string>
     <string name="connection_inbound_fetched">Inbound fetched %1$s ago</string>
     <string name="connection_onward_fetched">onward fetched %1$s ago</string>
     <string name="connection_pending_leg">%1$s has no resolved route for its confirmed date yet.</string>

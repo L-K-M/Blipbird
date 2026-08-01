@@ -215,7 +215,7 @@ class ItineraryDetailViewModel @Inject constructor(
             val legs = (itinerary as? ItineraryDetailLoadState.Found)?.itinerary?.legs.orEmpty()
             for (leg in legs) {
                 if (flights.latestSnapshot(leg.flight.id) != null) continue
-                runCatching { statusRefresh.refreshFlight(leg.flight.id) }
+                refreshLegQuietly(leg.flight.id)
             }
         }
     }
@@ -245,7 +245,7 @@ class ItineraryDetailViewModel @Inject constructor(
             try {
                 val legs = (loadState.value as? ItineraryDetailLoadState.Found)?.itinerary?.legs.orEmpty()
                 for (leg in legs) {
-                    runCatching { statusRefresh.refreshFlight(leg.flight.id, force = true) }
+                    refreshLegQuietly(leg.flight.id, force = true)
                 }
             } finally {
                 refreshing.value = false
@@ -399,6 +399,23 @@ class ItineraryDetailViewModel @Inject constructor(
             codes += arr
         }
         return codes.joinToString(ROUTE_SEPARATOR)
+    }
+
+    /**
+     * One leg's lookup, tolerating a provider failure but never a cancellation.
+     * `runCatching` would swallow the `CancellationException` too, so a scope
+     * cancelled mid-plan (the user navigating away) left the loop grinding
+     * through every remaining leg instead of stopping. The provider's own reason
+     * still reaches the user per leg, through `lookupProblem`.
+     */
+    private suspend fun refreshLegQuietly(flightId: Long, force: Boolean = false) {
+        try {
+            statusRefresh.refreshFlight(flightId, force = force)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Recorded on the snapshot; surfaced by the derivation below.
+        }
     }
 
     private fun mutate(block: suspend (Long) -> Unit) {

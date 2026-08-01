@@ -251,7 +251,7 @@ fun ItineraryEditorScreen(
                 // Narrow phones (and any screen at a large font scale) get back
                 // the horizontal room the default 16 dp gutter was spending on
                 // nothing (§7.16).
-                val compact = maxWidth < COMPACT_EDITOR_WIDTH
+                val compact = maxWidth < COMPACT_WIDTH
                 val gutter = if (compact) 12.dp else 16.dp
                 LazyColumn(
                     modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth(),
@@ -801,9 +801,6 @@ private fun DraftLegCard(
         }
     }
 }
-
-/** Below this the composer trades gutter width for content width. */
-private val COMPACT_EDITOR_WIDTH = 400.dp
 
 /** Tighter than the button default so a two-word label still fits half a phone. */
 private val MOVE_BUTTON_PADDING = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
