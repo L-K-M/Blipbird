@@ -161,7 +161,7 @@ class ItineraryDetailViewModel @Inject constructor(
      */
     private val clock: SharedFlow<Instant> = flow {
         while (true) { emit(Instant.now()); delay(30_000) }
-    }.distinctUntilChanged().shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+    }.shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
     private val refreshing = MutableStateFlow(false)
 
@@ -396,7 +396,7 @@ class ItineraryDetailViewModel @Inject constructor(
             val dep = leg.depCode ?: UNRESOLVED_CODE
             val arr = leg.arrCode ?: UNRESOLVED_CODE
             if (codes.lastOrNull() != dep) codes += dep
-            codes += arr
+            if (codes.lastOrNull() != arr) codes += arr
         }
         return codes.joinToString(ROUTE_SEPARATOR)
     }

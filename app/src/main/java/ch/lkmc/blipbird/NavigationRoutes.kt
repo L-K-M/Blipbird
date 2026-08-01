@@ -90,7 +90,11 @@ internal fun navigationDepth(
     screen: Screen,
     stack: List<Screen>,
     remembered: Map<Screen, Int>,
-): Int = stack.indexOf(screen).takeIf { it >= 0 } ?: remembered[screen] ?: screenRank(screen)
+    // lastIndexOf, not indexOf: the question is where this screen sits *now*.
+    // `navigate` pops back to an existing entry rather than pushing a second copy,
+    // so the two agree today — but that invariant lives in MainActivity, and a
+    // depth that reads the first of two copies would animate the wrong way.
+): Int = stack.lastIndexOf(screen).takeIf { it >= 0 } ?: remembered[screen] ?: screenRank(screen)
 
 /**
  * True when moving from [from] to [to] should animate as a push (the incoming

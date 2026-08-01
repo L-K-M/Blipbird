@@ -220,6 +220,22 @@ class NavigationRoutesTest {
         assertTrue(navigationForward(previous, next, stack, depths))
     }
 
+    /**
+     * Depth is where a screen sits *now*, so a stack carrying the same entry twice
+     * reports the deeper one. `navigate` pops back rather than pushing a duplicate,
+     * so this cannot arise today — the test pins the contract to this function
+     * instead of to that invariant, since reading the shallower copy would animate
+     * a push as a pop.
+     */
+    @Test
+    fun depthReadsTheDeepestOccurrenceOfARepeatedScreen() {
+        val flight = Screen.FlightDetail(42)
+        val stack = listOf(Screen.List, flight, Screen.ItineraryDetail(7), flight)
+
+        assertEquals(3, navigationDepth(flight, stack, emptyMap()))
+        assertTrue(navigationForward(Screen.ItineraryDetail(7), flight, stack, emptyMap()))
+    }
+
     /** With no sample yet (first frame after a restore) the static rank stands in. */
     @Test
     fun unknownDepthFallsBackToTheStaticRank() {

@@ -160,7 +160,7 @@
     <string name="connection_endpoint_estimated_departure">Estimated gate departure</string>
     <string name="connection_endpoint_scheduled_departure">Scheduled gate departure</string>
     <string name="connection_inbound_fetched">Inbound fetched %1$s ago</string>
-    <string name="connection_onward_fetched">onward fetched %1$s ago</string>
+    <string name="connection_onward_fetched">Onward fetched %1$s ago</string>
     <string name="connection_pending_leg">%1$s has no resolved route for its confirmed date yet.</string>
     <string name="connection_outbound_cancelled">Onward flight cancelled</string>
     <string name="connection_inbound_cancelled">Inbound flight cancelled</string>

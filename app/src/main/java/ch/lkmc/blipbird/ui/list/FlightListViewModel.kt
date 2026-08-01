@@ -287,7 +287,7 @@ class FlightListViewModel @Inject constructor(
             val dep = departure?.code ?: UNRESOLVED_CODE
             val arr = arrival?.code ?: UNRESOLVED_CODE
             if (codes.lastOrNull() != dep) codes += dep
-            codes += arr
+            if (codes.lastOrNull() != arr) codes += arr
         }
         return codes.joinToString("  →  ")
     }

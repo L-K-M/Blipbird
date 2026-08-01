@@ -817,10 +817,13 @@ private fun TransitionChoiceRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            // Background before selectable: later modifiers draw on top, so the
+            // other order painted the container colour over the ripple and the
+            // selected row gave no tap feedback at all.
             .background(
                 if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
             )
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .heightIn(min = 48.dp)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
