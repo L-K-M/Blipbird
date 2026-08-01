@@ -23,6 +23,85 @@ class NavigationRoutesTest {
         routes.forEach { assertEquals(it, decodeRoute(it.encodeRoute())) }
     }
 
+    /**
+     * `encodeRoute` doubles as the `SaveableStateProvider` key for each back-stack
+     * entry, so two distinct screens sharing a key would silently share one screen's
+     * scroll position and top-bar collapse state — or clobber it on pop.
+     */
+    @Test
+    fun distinctScreensGetDistinctStateKeys() {
+        val screens = listOf(
+            Screen.List,
+            Screen.FlightDetail(42),
+            Screen.FlightDetail(43),
+            Screen.ItineraryDetail(42),
+            Screen.ItineraryEditor("draft-123", null),
+            // Same itinerary id, different draft: pins draftId as a discriminator
+            // in its own right, so a refactor that dropped it from the key would
+            // fail here and not only in the round-trip test.
+            Screen.ItineraryEditor("draft-456", null),
+            Screen.ItineraryEditor("draft-123", 7),
+            Screen.GroupExistingFlights("draft-123"),
+            Screen.GroupExistingFlights("draft-456"),
+            Screen.Settings,
+            Screen.Archived,
+        )
+        val keys = screens.map { it.encodeRoute() }
+        assertEquals(screens.size, keys.toSet().size, "route keys collide: $keys")
+        // A flight and an itinerary with the same id must not share a key.
+        assertNotEquals(Screen.FlightDetail(42).encodeRoute(), Screen.ItineraryDetail(42).encodeRoute())
+    }
+
+    /**
+     * The key must depend only on a screen's identifying *values*. An encoder that
+     * reached for `hashCode()` or identity would still round-trip and still look
+     * unique, but two equal screens rebuilt across a process restart would land on
+     * different keys and silently lose their state.
+     */
+    @Test
+    fun equalScreensProduceTheSameStateKey() {
+        assertEquals(Screen.FlightDetail(42).encodeRoute(), Screen.FlightDetail(42).encodeRoute())
+        assertEquals(
+            Screen.ItineraryEditor("draft-123", 7).encodeRoute(),
+            Screen.ItineraryEditor("draft-123", 7).encodeRoute(),
+        )
+        assertEquals(Screen.Settings.encodeRoute(), Screen.Settings.encodeRoute())
+    }
+
+    /**
+     * Compile-time guard, not a runtime one: adding a [Screen] subtype makes this
+     * `when` non-exhaustive and breaks the build right here, so a new destination
+     * cannot quietly inherit an untested state key.
+     */
+    @Test
+    fun everyScreenTypeIsAccountedForInTheKeyTests() {
+        val samples = listOf(
+            Screen.List,
+            Screen.FlightDetail(1),
+            Screen.ItineraryDetail(1),
+            Screen.ItineraryEditor("draft-1", null),
+            Screen.GroupExistingFlights("draft-1"),
+            Screen.Settings,
+            Screen.Archived,
+        )
+        samples.forEach { screen ->
+            // Deliberately assertion-free: nothing here can fail at runtime, and a
+            // `when` of `-> true` plus assertTrue(true) would only dress that up as
+            // verification. The guard is the compiler refusing a non-exhaustive
+            // `when` — if this stops compiling, add the new subtype to
+            // distinctScreensGetDistinctStateKeys and equalScreensProduceTheSameStateKey.
+            when (screen) {
+                is Screen.List -> Unit
+                is Screen.FlightDetail -> Unit
+                is Screen.ItineraryDetail -> Unit
+                is Screen.ItineraryEditor -> Unit
+                is Screen.GroupExistingFlights -> Unit
+                is Screen.Settings -> Unit
+                is Screen.Archived -> Unit
+            }
+        }
+    }
+
     @Test
     fun legacyLongsStillDecode() {
         assertEquals(Screen.List, decodeRoute(-1L))
