@@ -450,6 +450,11 @@ object TransitionEngine {
         inbound == null || outbound == null -> Disruption.PENDING_ROUTE_CONFIRMATION
         outbound.status == FlightStatus.CANCELLED -> Disruption.OUTBOUND_CANCELLED
         inbound.status == FlightStatus.CANCELLED -> Disruption.INBOUND_CANCELLED
+        // A diversion moves the airport the break is spent at, so a stay or a
+        // surface transfer needs the same flag a connection gets: without it the
+        // gross gap reads as a normal one computed at the planned airport.
+        inbound.status == FlightStatus.DIVERTED || outbound.status == FlightStatus.DIVERTED ->
+            Disruption.DIVERTED
         gap == null -> Disruption.STALE_OR_MISSING_TIMES
         !gap.isAboveZero() -> Disruption.INVALID_OVERLAP
         else -> null

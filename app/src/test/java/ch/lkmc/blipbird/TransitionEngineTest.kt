@@ -321,6 +321,33 @@ class TransitionEngineTest {
         assertNull(assessment.disruption)
     }
 
+    /**
+     * A diversion moves the airport the break is spent at, so a stay and a surface
+     * transfer need the flag a connection already got — otherwise the gross gap
+     * reads as an ordinary one computed at the airport the user planned for.
+     */
+    @Test
+    fun aDivertedInboundDisruptsABreakJustAsItDoesAConnection() {
+        val diverted = inboundSnapshot.copy(status = FlightStatus.DIVERTED)
+
+        assertEquals(
+            Disruption.DIVERTED,
+            evaluate(intent = TransitionIntent.DESTINATION_STAY, inbound = diverted).disruption,
+        )
+        assertEquals(
+            Disruption.DIVERTED,
+            evaluate(intent = TransitionIntent.SURFACE_TRANSFER, inbound = diverted).disruption,
+        )
+        // Still after cancellation in the §8.9 precedence order.
+        assertEquals(
+            Disruption.INBOUND_CANCELLED,
+            evaluate(
+                intent = TransitionIntent.DESTINATION_STAY,
+                inbound = inboundSnapshot.copy(status = FlightStatus.CANCELLED),
+            ).disruption,
+        )
+    }
+
     @Test
     fun aStayReportsAGrossBreakAndNoConnectionWindow() {
         val assessment = evaluate(intent = TransitionIntent.DESTINATION_STAY)

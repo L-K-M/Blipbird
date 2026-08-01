@@ -875,8 +875,10 @@ private fun phaseTime(row: FlightRow): String {
             departsInText(Duration.between(row.now, at))
         FlightPhaseMachine.NextEvent.LANDS_IN ->
             landsInText(Duration.between(row.now, at))
-        FlightPhaseMachine.NextEvent.LANDED_AT ->
-            "Landed ${localTime(at, row.arrTz?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault())}"
+        FlightPhaseMachine.NextEvent.LANDED_AT -> stringResource(
+            R.string.itinerary_landed_at,
+            localTime(at, row.arrTz?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()),
+        )
         else -> stringResource(R.string.value_unknown)
     }
 }

@@ -241,6 +241,9 @@ class ItineraryDetailViewModel @Inject constructor(
     /** Force a lookup for every member, sequentially — a 20-leg plan is not a fan-out. */
     fun refresh() {
         if (!refreshing.compareAndSet(expect = false, update = true)) return
+        // A failed archive or transition edit leaves its message behind; the next
+        // gesture shouldn't inherit it, the same way `mutate` clears before acting.
+        error.value = null
         viewModelScope.launch {
             try {
                 val legs = (loadState.value as? ItineraryDetailLoadState.Found)?.itinerary?.legs.orEmpty()

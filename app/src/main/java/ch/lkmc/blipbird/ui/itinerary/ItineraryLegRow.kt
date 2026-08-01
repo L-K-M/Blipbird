@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -62,7 +63,7 @@ internal fun LegRow(leg: ItineraryLegUi, metrics: SpineMetrics, onOpen: () -> Un
             modifier = Modifier
                 .fillMaxWidth()
                 .itineraryBorder(22.dp)
-                .clickable(onClick = onOpen),
+                .clickable(role = Role.Button, onClick = onOpen),
             shape = RoundedCornerShape(22.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         ) {
