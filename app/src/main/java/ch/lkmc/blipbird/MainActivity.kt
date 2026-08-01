@@ -18,12 +18,14 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -186,6 +188,12 @@ data class FlightInvocation(val flightId: Long, val slot: String, val eventToken
     val key: String get() = "$flightId:$slot:$eventToken"
 }
 
+/** Route keys whose per-entry UI state the nav's SaveableStateHolder is holding. */
+private val SavedRoutesSaver = listSaver<MutableSet<String>, String>(
+    save = { it.toList() },
+    restore = { it.toMutableSet() },
+)
+
 /** Tagged routes avoid collisions between positive flight and itinerary IDs. */
 private val BackStackSaver = listSaver<SnapshotStateList<Screen>, Any>(
     save = { stack -> stack.map { it.encodeRoute() } },
@@ -208,6 +216,16 @@ fun BlipbirdNav(
     }
     val draftStore: ItineraryDraftStoreViewModel = viewModel()
     val drafts by draftStore.drafts.collectAsStateWithLifecycle()
+
+    /**
+     * Per-entry `rememberSaveable` state, the UI-state counterpart to the
+     * per-entry ViewModel stores below. Without it, `AnimatedContent` disposes a
+     * screen once its exit transition settles and every saveable it owns dies with
+     * it — so returning from a flight rebuilt the list with its `LargeTopAppBar`
+     * fully expanded and its grid scrolled back to the top. Navigation 3 supplies
+     * this for free; the hand-rolled stack has to do it by hand.
+     */
+    val screenState = rememberSaveableStateHolder()
 
     fun navigate(target: Screen) {
         val existing = backStack.indexOf(target)
@@ -275,10 +293,30 @@ fun BlipbirdNav(
     // popped screen keeps its (frozen) state while it animates out.
     val storesVm: NavEntryStoresViewModel = viewModel()
     val activity = LocalActivity.current as ComponentActivity
+    // Routes whose saveable state this holder is currently keeping. Diffing against
+    // it means we only ever drop keys we actually provided, and a popped screen's
+    // scroll/collapse state is released rather than retained for the session.
+    // Recorded where the key is *provided* rather than inferred from the settled
+    // stack: a screen pushed and popped again inside one transition would never
+    // appear in a settled stack, so its state would sit in the holder unreachable
+    // for the session. The holder exposes no way to enumerate its own keys, so
+    // tracking provision is the only way to know what there is to reclaim.
+    // Saved, not merely remembered: the holder restores its map across a
+    // configuration change, so an empty set here would strand any key that was
+    // popped-but-still-transitioning when the rotation landed.
+    val savedRoutes = rememberSaveable(saver = SavedRoutesSaver) { mutableSetOf<String>() }
     LaunchedEffect(seekable, storesVm) {
         snapshotFlow { Triple(seekable.currentState, seekable.targetState, backStack.toList()) }
             .collect { (from, to, stack) ->
-                if (from == to) storesVm.retainOnly(stack.toSet())
+                if (from != to) return@collect
+                storesVm.retainOnly(stack.toSet())
+                // Safe against the SideEffect above not having run yet: an
+                // unrecorded route simply isn't reclaimed this pass, and the next
+                // settle catches it. Nothing live is ever removed.
+                val alive = stack.mapTo(mutableSetOf()) { it.encodeRoute() }
+                (savedRoutes - alive).forEach { screenState.removeState(it) }
+                savedRoutes.clear()
+                savedRoutes += alive
             }
     }
 
@@ -300,78 +338,87 @@ fun BlipbirdNav(
             }
         },
     ) { screen ->
+        val route = screen.encodeRoute()
+        // SideEffect, not LaunchedEffect: this runs synchronously with the apply
+        // phase, so the key is recorded before the cleanup collector below can
+        // observe a settled transition, and before a configuration change could
+        // strand it. Re-running on every recomposition is intended and free — the
+        // set dedupes, and once-per-route would trade that for a later write.
+        SideEffect { savedRoutes += route }
         val owner = remember(screen) {
             NavEntryOwner(activity, storesVm.storeFor(screen), screen)
         }
-        CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
-            when (screen) {
-                is Screen.List -> FlightListScreen(
-                    onOpenFlight = { navigate(Screen.FlightDetail(it)) },
-                    onOpenItinerary = { navigate(Screen.ItineraryDetail(it)) },
-                    onAddItinerary = {
-                        val draftId = UUID.randomUUID().toString()
-                        draftStore.put(ItineraryDraft(draftId = draftId))
-                        navigate(Screen.ItineraryEditor(draftId, null))
-                    },
-                    onGroupFlights = {
-                        navigate(Screen.GroupExistingFlights(UUID.randomUUID().toString()))
-                    },
-                    onOpenSettings = { navigate(Screen.Settings) },
-                    onOpenArchived = { navigate(Screen.Archived) },
-                    onFirstTrack = onFirstTrack,
-                )
-                is Screen.FlightDetail -> FlightDetailScreen(
-                    flightId = screen.flightId,
-                    onBack = { backStack.popIfTop(screen) },
-                )
-                is Screen.ItineraryDetail -> ItineraryDetailScreen(
-                    itineraryId = screen.itineraryId,
-                    onBack = { backStack.popIfTop(screen) },
-                    onEdit = {
-                        navigate(
-                            Screen.ItineraryEditor(
-                                draftId = UUID.randomUUID().toString(),
-                                itineraryId = screen.itineraryId,
+        screenState.SaveableStateProvider(route) {
+            CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
+                when (screen) {
+                    is Screen.List -> FlightListScreen(
+                        onOpenFlight = { navigate(Screen.FlightDetail(it)) },
+                        onOpenItinerary = { navigate(Screen.ItineraryDetail(it)) },
+                        onAddItinerary = {
+                            val draftId = UUID.randomUUID().toString()
+                            draftStore.put(ItineraryDraft(draftId = draftId))
+                            navigate(Screen.ItineraryEditor(draftId, null))
+                        },
+                        onGroupFlights = {
+                            navigate(Screen.GroupExistingFlights(UUID.randomUUID().toString()))
+                        },
+                        onOpenSettings = { navigate(Screen.Settings) },
+                        onOpenArchived = { navigate(Screen.Archived) },
+                        onFirstTrack = onFirstTrack,
+                    )
+                    is Screen.FlightDetail -> FlightDetailScreen(
+                        flightId = screen.flightId,
+                        onBack = { backStack.popIfTop(screen) },
+                    )
+                    is Screen.ItineraryDetail -> ItineraryDetailScreen(
+                        itineraryId = screen.itineraryId,
+                        onBack = { backStack.popIfTop(screen) },
+                        onEdit = {
+                            navigate(
+                                Screen.ItineraryEditor(
+                                    draftId = UUID.randomUUID().toString(),
+                                    itineraryId = screen.itineraryId,
+                                )
                             )
-                        )
-                    },
-                    onOpenFlight = { navigate(Screen.FlightDetail(it)) },
-                )
-                is Screen.ItineraryEditor -> ItineraryEditorScreen(
-                    draftId = screen.draftId,
-                    itineraryId = screen.itineraryId,
-                    draftStore = draftStore,
-                    onBack = { backStack.popIfTop(screen) },
-                    // Only the editor entry that is still on top may navigate on
-                    // its own save; a late replay from a popped entry must not
-                    // unwind the stack the user has already moved on from.
-                    onSaved = { itineraryId ->
-                        if (backStack.popIfTop(screen)) {
-                            if (itineraryId == null) backStack.popToRoot()
-                            else navigate(Screen.ItineraryDetail(itineraryId))
-                        }
-                    },
-                    onFirstTrack = onFirstTrack,
-                )
-                is Screen.GroupExistingFlights -> GroupExistingFlightsScreen(
-                    draftId = screen.draftId,
-                    draftStore = draftStore,
-                    onBack = {
-                        draftStore.remove(screen.draftId)
-                        backStack.popIfTop(screen)
-                    },
-                    onContinue = { draft ->
-                        if (draftStore.put(draft) && backStack.popIfTop(screen)) {
-                            navigate(Screen.ItineraryEditor(draft.draftId, null))
-                        }
-                    },
-                )
-                is Screen.Settings -> SettingsScreen(
-                    onBack = { backStack.popIfTop(screen) },
-                )
-                is Screen.Archived -> ArchivedFlightsScreen(
-                    onBack = { backStack.popIfTop(screen) },
-                )
+                        },
+                        onOpenFlight = { navigate(Screen.FlightDetail(it)) },
+                    )
+                    is Screen.ItineraryEditor -> ItineraryEditorScreen(
+                        draftId = screen.draftId,
+                        itineraryId = screen.itineraryId,
+                        draftStore = draftStore,
+                        onBack = { backStack.popIfTop(screen) },
+                        // Only the editor entry that is still on top may navigate on
+                        // its own save; a late replay from a popped entry must not
+                        // unwind the stack the user has already moved on from.
+                        onSaved = { itineraryId ->
+                            if (backStack.popIfTop(screen)) {
+                                if (itineraryId == null) backStack.popToRoot()
+                                else navigate(Screen.ItineraryDetail(itineraryId))
+                            }
+                        },
+                        onFirstTrack = onFirstTrack,
+                    )
+                    is Screen.GroupExistingFlights -> GroupExistingFlightsScreen(
+                        draftId = screen.draftId,
+                        draftStore = draftStore,
+                        onBack = {
+                            draftStore.remove(screen.draftId)
+                            backStack.popIfTop(screen)
+                        },
+                        onContinue = { draft ->
+                            if (draftStore.put(draft) && backStack.popIfTop(screen)) {
+                                navigate(Screen.ItineraryEditor(draft.draftId, null))
+                            }
+                        },
+                    )
+                    is Screen.Settings -> SettingsScreen(
+                        onBack = { backStack.popIfTop(screen) },
+                    )
+                    is Screen.Archived -> ArchivedFlightsScreen(
+                        onBack = { backStack.popIfTop(screen) },
+                    )
+                }
             }
         }
     }
