@@ -72,12 +72,17 @@ python3 scripts/generate_icons.py            # media-sources/icon.png -> mipmaps
 
 ## CI/CD (family contract)
 
+Full detail — per-job breakdown, the secrets table, local equivalents and the
+failure modes — is in [CICD.md](CICD.md).
+
 - [`ci.yml`](.github/workflows/ci.yml) — push to main / PRs / manual: wrapper
   validation, tests, lint, debug APK artifact. Hardening trio: least-privilege
   token, PR-only concurrency cancellation, job timeouts.
 - [`zai-code-review.yml`](.github/workflows/zai-code-review.yml) — GLM 5.2
-  reviews every non-draft PR (`pull_request_target`); no-ops without the
-  `ZAI_API_KEY` secret.
+  reviews every non-draft PR from this repository (`pull_request_target`);
+  no-ops without the `ZAI_API_KEY` secret. Fork PRs are excluded by design —
+  `pull_request_target` hands secrets and a write-capable token to a workflow
+  an outside contributor triggered — and the action is pinned to a commit.
 - [`release.yml`](.github/workflows/release.yml) — tag push `v*`: verifies the
   tag matches the committed `versionName`, re-runs tests + lint, builds
   `assembleRelease`, signs with the keystore secrets
