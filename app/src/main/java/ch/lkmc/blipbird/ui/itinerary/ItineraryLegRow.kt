@@ -56,12 +56,24 @@ import java.time.format.FormatStyle
  * transition below it deliberately gets none.
  */
 @Composable
-internal fun LegRow(leg: ItineraryLegUi, metrics: SpineMetrics, onOpen: () -> Unit) {
+internal fun LegRow(
+    leg: ItineraryLegUi,
+    metrics: SpineMetrics,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .itineraryBorder(LEG_CARD_RADIUS)
-            .clickable(role = Role.Button, onClick = onOpen),
+            // The label belongs to the action, not to the card's contents:
+            // `clickable` merges its descendants, so a chevron carrying the same
+            // string would read it out as if it were another line of the card.
+            .clickable(
+                role = Role.Button,
+                onClickLabel = stringResource(R.string.itinerary_open_flight),
+                onClick = onOpen,
+            ),
         shape = RoundedCornerShape(LEG_CARD_RADIUS),
         // surfaceContainerHigh, not surface: in the dark scheme `surface` and
         // `background` are the same colour, so the card that carries the flight
@@ -130,11 +142,10 @@ private fun LegHeader(leg: ItineraryLegUi, metrics: SpineMetrics) {
             StatusWord(leg.view.status)
         }
         Spacer(Modifier.width(4.dp))
-        // The whole card opens the dossier; a disclosure chevron says so without
-        // spending a line of copy on it, and carries the label for TalkBack.
+        // Purely decorative: the card's own onClickLabel already names the action.
         Icon(
             Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = stringResource(R.string.itinerary_open_flight),
+            contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp),
         )

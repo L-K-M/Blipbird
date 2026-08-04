@@ -65,7 +65,13 @@ internal fun TransitionRow(
             .height(IntrinsicSize.Min),
     ) {
         Connector()
-        Column(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp)) {
+        Column(
+            Modifier.padding(
+                start = metrics.connectorGap,
+                top = metrics.cardPadding,
+                bottom = metrics.cardPadding,
+            )
+        ) {
             TransitionHeader(transition, enabled, onIntent)
             Spacer(Modifier.height(4.dp))
             when (transition.intent) {

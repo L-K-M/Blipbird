@@ -23,15 +23,29 @@ internal val COMPACT_WIDTH = 400.dp
 internal data class SpineMetrics(
     /** Padding around the whole spine. */
     val screenPadding: Dp,
-    /** Padding inside each card. */
+    /** Padding inside each card, and above and below a transition's text. */
     val cardPadding: Dp,
     /** How far the transition's connector sits in from the card's left edge. */
     val connectorInset: Dp,
+    /** Gap between that connector and the text hanging off it. */
+    val connectorGap: Dp,
     val compact: Boolean,
 )
 
 internal fun spineMetrics(compact: Boolean): SpineMetrics = if (compact) {
-    SpineMetrics(screenPadding = 12.dp, cardPadding = 14.dp, connectorInset = 20.dp, compact = true)
+    SpineMetrics(
+        screenPadding = 12.dp,
+        cardPadding = 14.dp,
+        connectorInset = 20.dp,
+        connectorGap = 14.dp,
+        compact = true,
+    )
 } else {
-    SpineMetrics(screenPadding = 16.dp, cardPadding = 18.dp, connectorInset = 26.dp, compact = false)
+    SpineMetrics(
+        screenPadding = 16.dp,
+        cardPadding = 18.dp,
+        connectorInset = 26.dp,
+        connectorGap = 16.dp,
+        compact = false,
+    )
 }

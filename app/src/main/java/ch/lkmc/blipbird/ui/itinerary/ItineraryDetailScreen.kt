@@ -178,34 +178,30 @@ fun ItineraryDetailScreen(
                             }
                         }
                         item("summary") {
-                            Column(Modifier.padding(bottom = SECTION_GAP)) {
-                                SummaryCard(
-                                    title = graph.displayTitle(context),
-                                    dateSpan = graph.dateSpan(context),
-                                    routeChain = state.routeChain,
-                                    designators = graph.designatorLine(
-                                        separator = " ${stringResource(R.string.itinerary_designator_separator)} ",
-                                    ),
-                                    padding = metrics.cardPadding,
-                                )
-                            }
+                            SummaryCard(
+                                title = graph.displayTitle(context),
+                                dateSpan = graph.dateSpan(context),
+                                routeChain = state.routeChain,
+                                designators = graph.designatorLine(
+                                    separator = " ${stringResource(R.string.itinerary_designator_separator)} ",
+                                ),
+                                padding = metrics.cardPadding,
+                                modifier = Modifier.padding(bottom = SECTION_GAP),
+                            )
                         }
                         state.bodyClock?.let { trip ->
                             item("body-clock") {
-                                Column(Modifier.padding(bottom = SECTION_GAP)) {
-                                    ItineraryBodyClockCard(trip)
-                                }
+                                ItineraryBodyClockCard(trip, Modifier.padding(bottom = SECTION_GAP))
                             }
                         }
                         if (state.awaitingFirstSnapshot) {
                             item("live-state") {
-                                Column(Modifier.padding(bottom = SECTION_GAP)) {
-                                    LiveDetailsNotice(
-                                        hasStatusKey = state.hasStatusKey,
-                                        padding = metrics.cardPadding,
-                                        onOpenSettings = onOpenSettings,
-                                    )
-                                }
+                                LiveDetailsNotice(
+                                    hasStatusKey = state.hasStatusKey,
+                                    padding = metrics.cardPadding,
+                                    onOpenSettings = onOpenSettings,
+                                    modifier = Modifier.padding(bottom = SECTION_GAP),
+                                )
                             }
                         }
                         state.legs.forEachIndexed { index, leg ->
