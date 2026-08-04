@@ -105,6 +105,13 @@ data class StatusLookupAttemptEntity(
     val outcome: String,
     val consecutiveFailures: Int,
     val nextEligibleAt: Long,
+    /**
+     * Which provider(s) the [outcome] is attributable to, comma-separated, in
+     * chain order — "aerodatabox", or "aerodatabox,aeroapi" when both produced
+     * the same failure. Null on rows written before this column existed, which
+     * is why every message that uses it has an unattributed fallback.
+     */
+    val provider: String? = null,
 )
 
 /** Crash-safe tombstone for cross-database/platform lifecycle cleanup. */

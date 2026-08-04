@@ -91,6 +91,7 @@ data class FlightRow(
     val now: Instant,
     /** Latest lookup failure, null when the last lookup succeeded (G5). */
     val lookupProblem: LookupOutcome? = null,
+    val lookupProviders: List<String> = emptyList(),
 )
 
 data class ListUiState(
@@ -360,6 +361,7 @@ class FlightListViewModel @Inject constructor(
                 airlineIata = designator.airlineIata,
                 now = now,
                 lookupProblem = attempt?.outcome?.takeIf { it != LookupOutcome.SUCCESS },
+                lookupProviders = attempt?.providers.orEmpty(),
             )
         }
 

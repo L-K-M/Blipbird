@@ -87,6 +87,8 @@ data class ItineraryLegUi(
     val baggageBelt: String?,
     val fetchedAt: Instant?,
     val lookupProblem: LookupOutcome?,
+    /** Which service the problem belongs to; empty when unrecorded. */
+    val lookupProviders: List<String> = emptyList(),
     /** A snapshot exists for this flight, whichever occurrence it describes. */
     val hasSnapshot: Boolean,
     /** That snapshot describes the occurrence the user confirmed (§8.8). */
@@ -264,6 +266,7 @@ class ItineraryDetailViewModel @Inject constructor(
         val departure: AirportRef?,
         val arrival: AirportRef?,
         val lookupProblem: LookupOutcome?,
+        val lookupProviders: List<String>,
     )
 
     private fun liveFlow(flightId: Long): Flow<LegLive> = combine(
@@ -279,6 +282,7 @@ class ItineraryDetailViewModel @Inject constructor(
             departure = airports.enrich(snapshot?.departure),
             arrival = airports.enrich(snapshot?.arrival),
             lookupProblem = attempt?.outcome?.takeIf { it != LookupOutcome.SUCCESS },
+            lookupProviders = attempt?.providers.orEmpty(),
         )
     }
 
@@ -315,6 +319,7 @@ class ItineraryDetailViewModel @Inject constructor(
             baggageBelt = snapshot?.baggageBelt?.takeIf { landed },
             fetchedAt = snapshot?.fetchedAt,
             lookupProblem = live?.lookupProblem,
+            lookupProviders = live?.lookupProviders.orEmpty(),
             hasSnapshot = snapshot != null,
             occurrenceConfirmed = engineLeg(this, live).occurrenceConfirmed,
             now = now,

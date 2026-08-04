@@ -38,7 +38,8 @@ import ch.lkmc.blipbird.ui.components.departsInText
 import ch.lkmc.blipbird.ui.components.elapsedText
 import ch.lkmc.blipbird.ui.components.landsInText
 import ch.lkmc.blipbird.ui.components.localTime
-import ch.lkmc.blipbird.ui.components.lookupProblemRes
+import ch.lkmc.blipbird.ui.components.lookupProblemNeedsUser
+import ch.lkmc.blipbird.ui.components.lookupProblemText
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -175,22 +176,26 @@ private fun LegFootnotes(leg: ItineraryLegUi) {
     }
     // "Fetched", never "Updated": `fetchedAt` is this device's retrieval time,
     // and a fresh fetch can still carry old upstream values (§8.10).
+    val problem = leg.lookupProblem
     val infoLine = listOfNotNull(
         leg.fetchedAt?.let {
             stringResource(R.string.itinerary_fetched_ago, elapsedText(Duration.between(it, leg.now)))
         },
-        leg.lookupProblem?.let { stringResource(lookupProblemRes(it)) },
+        problem?.let { lookupProblemText(it, leg.lookupProviders) },
     ).joinToString("  ·  ")
     if (infoLine.isNotEmpty()) {
         Spacer(Modifier.height(8.dp))
         Text(
             infoLine,
             style = MaterialTheme.typography.labelSmall,
-            // A lookup that will retry is not an error state. It still has to be
-            // legible as *why* a leg is thin, so it takes the accent rather than
-            // the alarm colour.
-            color = if (leg.lookupProblem != null) MaterialTheme.colorScheme.tertiary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            // Split by who has to act. A 429 or an unreachable host retries itself
+            // and only explains why a leg is thin; a missing key or a spent budget
+            // waits on the user and keeps the alarm colour it always had.
+            color = when {
+                problem == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                lookupProblemNeedsUser(problem) -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.tertiary
+            },
         )
     }
 }
