@@ -137,7 +137,11 @@ data class ItineraryDetailUiState(
     /** No leg has any provider data yet — the screen explains that once, not per leg. */
     val awaitingFirstSnapshot: Boolean get() = legs.isNotEmpty() && legs.none { it.hasSnapshot }
 
-    /** The leg the journey is at: the first not yet arrived, else the last (§7.2). */
+    /**
+     * The leg the journey is at: the first not yet arrived, else the last
+     * (§7.2). -1 when the plan has no legs — callers compare it against
+     * positions, and must not index [legs] with it.
+     */
     val currentLegIndex: Int
         get() = legs.indexOfFirst {
             it.view.status != FlightStatus.LANDED && it.view.status != FlightStatus.ARRIVED

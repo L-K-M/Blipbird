@@ -194,20 +194,23 @@ private fun ConnectionBody(
         }
     } else {
         Row {
+            // Each answer owns half the row and wraps if it must — an answer
+            // ellipsized to "Checked bags: Collect and re…" hides the very
+            // information the button exists to show.
             TextButton(
                 onClick = onBooking,
                 enabled = enabled,
-                modifier = Modifier.weight(1f, fill = false).heightIn(min = 48.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
             ) {
-                Text(stringResource(R.string.itinerary_booking_value, bookingLabel(transition.booking)), maxLines = 1)
+                Text(stringResource(R.string.itinerary_booking_value, bookingLabel(transition.booking)))
             }
             Spacer(Modifier.width(8.dp))
             TextButton(
                 onClick = onBaggage,
                 enabled = enabled,
-                modifier = Modifier.weight(1f, fill = false).heightIn(min = 48.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
             ) {
-                Text(stringResource(R.string.itinerary_baggage_value, baggageLabel(transition.baggage)), maxLines = 1)
+                Text(stringResource(R.string.itinerary_baggage_value, baggageLabel(transition.baggage)))
             }
         }
     }

@@ -103,6 +103,8 @@ internal fun LegRow(
                     Spacer(Modifier.height(6.dp))
                     val total = Duration.between(leg.depTime, leg.arrTime).seconds
                     val flown = Duration.between(leg.depTime, leg.now).seconds
+                    // No clamp here: FlightProgressBar coerces to [0, 1] on
+                    // its own first line, for every caller alike.
                     FlightProgressBar(
                         progress = if (total <= 0) 0f else flown.toFloat() / total.toFloat(),
                         color = MaterialTheme.colorScheme.primary,
