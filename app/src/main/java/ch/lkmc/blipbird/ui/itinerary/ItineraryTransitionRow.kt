@@ -36,6 +36,7 @@ import ch.lkmc.blipbird.domain.TransitionEngine
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.elapsedText
+import ch.lkmc.blipbird.ui.components.withTabularNumbers
 import java.time.Duration
 
 // ---------------------------------------------------------------- transitions
@@ -66,7 +67,9 @@ internal fun TransitionRow(
             .padding(start = metrics.connectorInset)
             .height(IntrinsicSize.Min),
     ) {
-        Connector()
+        // The thread lights up in the accent while the traveller is actually
+        // between flights — colour as state, the spine's one live moment.
+        Connector(live = transition.assessment.transfer?.inProgress == true)
         // weight, so the text column claims the rest of the row outright. It
         // already filled it, but only because the header inside happens to hold a
         // weighted child — take that weight away and the whole block would
@@ -86,6 +89,7 @@ internal fun TransitionRow(
                 TransitionIntent.DIRECT_CONNECTION -> ConnectionBody(
                     transition = transition,
                     enabled = enabled,
+                    compact = metrics.compact,
                     onBooking = onBooking,
                     onBaggage = onBaggage,
                 )
@@ -159,6 +163,7 @@ private fun TransitionHeader(transition: ItineraryTransitionUi, enabled: Boolean
 private fun ConnectionBody(
     transition: ItineraryTransitionUi,
     enabled: Boolean,
+    compact: Boolean,
     onBooking: () -> Unit,
     onBaggage: () -> Unit,
 ) {
@@ -178,11 +183,33 @@ private fun ConnectionBody(
     }
     if (demotedExplanation) DisruptionLine(transition)
     Spacer(Modifier.height(4.dp))
-    TextButton(onClick = onBooking, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-        Text(stringResource(R.string.itinerary_booking_value, bookingLabel(transition.booking)))
-    }
-    TextButton(onClick = onBaggage, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-        Text(stringResource(R.string.itinerary_baggage_value, baggageLabel(transition.baggage)))
+    // Two related answers share a line where the width allows it — stacked
+    // full-height buttons were a third of this card's height saying two words.
+    if (compact) {
+        TextButton(onClick = onBooking, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.itinerary_booking_value, bookingLabel(transition.booking)))
+        }
+        TextButton(onClick = onBaggage, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.itinerary_baggage_value, baggageLabel(transition.baggage)))
+        }
+    } else {
+        Row {
+            TextButton(
+                onClick = onBooking,
+                enabled = enabled,
+                modifier = Modifier.weight(1f, fill = false).heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(R.string.itinerary_booking_value, bookingLabel(transition.booking)), maxLines = 1)
+            }
+            Spacer(Modifier.width(8.dp))
+            TextButton(
+                onClick = onBaggage,
+                enabled = enabled,
+                modifier = Modifier.weight(1f, fill = false).heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(R.string.itinerary_baggage_value, baggageLabel(transition.baggage)), maxLines = 1)
+            }
+        }
     }
     LocationBlock(assessment, outboundShownAbove = gatePromoted)
 }
@@ -205,10 +232,13 @@ private fun TransferBlock(transition: ItineraryTransitionUi) {
     // On the ground with the onward flight still to leave: time left is the
     // headline (§8.5, widened from gate actuals to a reported landing).
     untilDeparture?.let { remaining ->
+        // The one number a traveller mid-transfer cares about: headline size,
+        // accent colour, digits that hold their width as the minutes tick.
         Text(
             stringResource(R.string.connection_until_onward, countdownText(remaining)),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge.withTabularNumbers(),
             fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
         )
         Text(
             stringResource(R.string.connection_boarding_earlier),
@@ -227,7 +257,7 @@ private fun TransferBlock(transition: ItineraryTransitionUi) {
     destination?.let {
         Text(
             it,
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
     }
@@ -245,7 +275,7 @@ private fun TransferBlock(transition: ItineraryTransitionUi) {
         if (untilDeparture == null && destination != null) Spacer(Modifier.height(2.dp))
         Text(
             stringResource(R.string.connection_reported_span, countdownText(it)),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.withTabularNumbers(),
         )
     }
     if (untilDeparture != null || destination != null || gap != null) {
@@ -549,11 +579,15 @@ private fun UnsetBody(
  * meets the card above and the card below and the three read as one journey.
  */
 @Composable
-private fun Connector() {
+private fun Connector(live: Boolean) {
     Box(
         Modifier
             .width(2.dp)
             .fillMaxHeight()
-            .background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(1.dp))
+            .background(
+                if (live) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outlineVariant,
+                RoundedCornerShape(1.dp),
+            )
     )
 }

@@ -56,7 +56,7 @@ import ch.lkmc.blipbird.core.model.TransitionIntent
 import ch.lkmc.blipbird.ui.components.BirdRefreshIndicator
 
 /** Air between the header cards, and between two legs with no edge of their own. */
-private val SECTION_GAP = 12.dp
+private val SECTION_GAP = 14.dp
 
 /**
  * The journey spine (`docs/ITINERARY_PROPOSAL.md` §7.6): ordered leg rows joined
@@ -202,12 +202,14 @@ fun ItineraryDetailScreen(
                                 )
                             }
                         }
+                        val currentLegIndex = state.currentLegIndex
                         state.legs.forEachIndexed { index, leg ->
                             item("leg-${leg.legId}") {
                                 LegRow(
                                     leg = leg,
                                     metrics = metrics,
                                     onOpen = { onOpenFlight(leg.flightId) },
+                                    current = index == currentLegIndex,
                                 )
                             }
                             val transition = state.transitions.firstOrNull { it.inboundLegId == leg.legId }

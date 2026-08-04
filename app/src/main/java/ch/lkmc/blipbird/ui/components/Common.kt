@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
@@ -210,6 +211,13 @@ fun landsInText(untilArrival: Duration): String =
  * Countdown with adaptive granularity: days → h m → m. Past-due targets clamp to
  * "0m" — "Lands in -2h 15m" (stale data) is never shown to the user.
  */
+/**
+ * Digits that keep one width as they tick. Every clock time and countdown wears
+ * this: without it a "9" narrower than an "11" makes live numbers shimmy and
+ * columns of times sit ragged.
+ */
+fun TextStyle.withTabularNumbers(): TextStyle = copy(fontFeatureSettings = "tnum")
+
 fun countdownText(d: Duration): String {
     val s = d.seconds.coerceAtLeast(0)
     return when {

@@ -19,6 +19,7 @@ import ch.lkmc.blipbird.core.model.BookingArrangement
 import ch.lkmc.blipbird.core.model.DateIntentSource
 import ch.lkmc.blipbird.core.model.Itinerary
 import ch.lkmc.blipbird.core.model.ItineraryLeg
+import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.core.model.StatusSnapshot
 import ch.lkmc.blipbird.core.model.TransitionIntent
 import ch.lkmc.blipbird.domain.FlightDates
@@ -99,6 +100,12 @@ data class ItineraryLegUi(
     val now: Instant,
 ) {
     val routeResolved: Boolean get() = depCode != null && arrCode != null
+
+    /** In the air right now — the one state where a leg card draws motion. */
+    val airborne: Boolean
+        get() = view.status == FlightStatus.DEPARTED ||
+            view.status == FlightStatus.EN_ROUTE ||
+            view.status == FlightStatus.APPROACHING
 }
 
 /** One edge of the journey spine: the user's answers plus the derived assessment. */
@@ -129,6 +136,12 @@ data class ItineraryDetailUiState(
 ) {
     /** No leg has any provider data yet — the screen explains that once, not per leg. */
     val awaitingFirstSnapshot: Boolean get() = legs.isNotEmpty() && legs.none { it.hasSnapshot }
+
+    /** The leg the journey is at: the first not yet arrived, else the last (§7.2). */
+    val currentLegIndex: Int
+        get() = legs.indexOfFirst {
+            it.view.status != FlightStatus.LANDED && it.view.status != FlightStatus.ARRIVED
+        }.takeIf { it >= 0 } ?: legs.lastIndex
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

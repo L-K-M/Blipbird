@@ -34,16 +34,16 @@ internal data class SpineMetrics(
 
 internal fun spineMetrics(compact: Boolean): SpineMetrics = if (compact) {
     SpineMetrics(
-        screenPadding = 12.dp,
-        cardPadding = 14.dp,
+        screenPadding = 14.dp,
+        cardPadding = 16.dp,
         connectorInset = 20.dp,
         connectorGap = 14.dp,
         compact = true,
     )
 } else {
     SpineMetrics(
-        screenPadding = 16.dp,
-        cardPadding = 18.dp,
+        screenPadding = 18.dp,
+        cardPadding = 20.dp,
         connectorInset = 26.dp,
         connectorGap = 16.dp,
         compact = false,

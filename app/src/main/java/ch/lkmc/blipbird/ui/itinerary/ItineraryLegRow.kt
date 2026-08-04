@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.FlightStatus
 import ch.lkmc.blipbird.domain.FlightPhaseMachine
+import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.departsInText
@@ -40,6 +41,7 @@ import ch.lkmc.blipbird.ui.components.landsInText
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.lookupProblemNeedsUser
 import ch.lkmc.blipbird.ui.components.lookupProblemText
+import ch.lkmc.blipbird.ui.components.withTabularNumbers
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -62,6 +64,8 @@ internal fun LegRow(
     metrics: SpineMetrics,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The leg the journey is at right now — its card sits one surface tier up. */
+    current: Boolean = false,
 ) {
     Card(
         modifier = modifier
@@ -79,15 +83,35 @@ internal fun LegRow(
         // surfaceContainerHigh, not surface: in the dark scheme `surface` and
         // `background` are the same colour, so the card that carries the flight
         // was drawing an invisible box while the transition below it looked like
-        // the boxed one. The weight now matches the meaning.
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        // the boxed one. The weight now matches the meaning — and the leg the
+        // journey is at takes one more tier, so the spine has a focal point
+        // instead of a run of identical grey.
+        colors = CardDefaults.cardColors(
+            containerColor = if (current) MaterialTheme.colorScheme.surfaceContainerHighest
+            else MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
     ) {
         Column(Modifier.padding(metrics.cardPadding)) {
             LegHeader(leg, metrics)
             if (leg.routeResolved) {
                 Spacer(Modifier.height(14.dp))
                 RouteRow(leg)
-                Spacer(Modifier.height(10.dp))
+                // A flight in the air draws its own progress — the one moment a
+                // flight card earns colour and motion (colour is state here,
+                // never decoration).
+                if (leg.airborne && leg.depTime != null && leg.arrTime != null) {
+                    Spacer(Modifier.height(6.dp))
+                    val total = Duration.between(leg.depTime, leg.arrTime).seconds
+                    val flown = Duration.between(leg.depTime, leg.now).seconds
+                    FlightProgressBar(
+                        progress = if (total <= 0) 0f else flown.toFloat() / total.toFloat(),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                } else {
+                    Spacer(Modifier.height(10.dp))
+                }
                 PhaseLine(leg)
             } else {
                 Spacer(Modifier.height(10.dp))
@@ -224,7 +248,7 @@ private fun RouteRow(leg: ItineraryLegUi) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     countdownText(Duration.between(leg.depTime, leg.arrTime)),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.withTabularNumbers(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -261,10 +285,12 @@ private fun AirportCell(
             val zone = tz?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
             Spacer(Modifier.height(1.dp))
             Row(verticalAlignment = Alignment.Top) {
+                // The time is what a traveller reads off this cell — it gets
+                // title size and digits that hold their width as data updates.
                 Text(
                     localTime(time, zone),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.titleMedium.withTabularNumbers(),
+                    fontWeight = FontWeight.SemiBold,
                 )
                 // +1 red-eye / −1 across-the-date-line marker — display only.
                 if (dayOffset != null && dayOffset != 0) {
@@ -318,17 +344,18 @@ private fun PhaseLine(leg: ItineraryLegUi) {
         if (phase != null) {
             Text(
                 phase,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium.withTabularNumbers(),
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f, fill = fact != null),
             )
         }
         if (fact != null) {
             if (phase != null) Spacer(Modifier.width(8.dp))
+            // A terminal or gate is a fact the traveller acts on — full
+            // contrast, unlike the qualifiers around it.
             Text(
                 fact,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
             )
         }
     }
