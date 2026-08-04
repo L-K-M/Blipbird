@@ -489,7 +489,10 @@ private fun ItineraryHomeCard(
             }
             // One line for what used to be three: when, how many, how joined.
             // Repeated transition labels collapse — a three-leg chain of direct
-            // connections says "Direct connection" once, not twice.
+            // connections says "Direct connection" once, not twice. The pipe is
+            // deliberately tighter than the "  ·  " between fields: the labels
+            // are one sub-list inside the last field, and giving both separators
+            // equal air would read as four fields instead of three.
             val transitionSummary = row.transitions.take(3)
                 .map { transitionLabel(it) }
                 .distinct()
