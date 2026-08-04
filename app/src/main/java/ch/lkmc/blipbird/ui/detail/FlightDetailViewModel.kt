@@ -73,6 +73,7 @@ data class DetailUiState(
     val hasOpenSky: Boolean = true,
     /** Latest lookup failure, null when the last lookup succeeded (G5). */
     val lookupProblem: LookupOutcome? = null,
+    val lookupProviders: List<String> = emptyList(),
 )
 
 /**
@@ -254,6 +255,7 @@ class FlightDetailViewModel @Inject constructor(
             sections = visible,
             hasOpenSky = openSky,
             lookupProblem = attempt?.outcome?.takeIf { it != LookupOutcome.SUCCESS },
+            lookupProviders = attempt?.providers.orEmpty(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DetailUiState())
 

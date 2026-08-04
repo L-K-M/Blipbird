@@ -91,7 +91,8 @@ import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.departsInText
 import ch.lkmc.blipbird.ui.components.landsInText
 import ch.lkmc.blipbird.ui.components.localTime
-import ch.lkmc.blipbird.ui.components.lookupProblemRes
+import ch.lkmc.blipbird.ui.components.lookupProblemNeedsUser
+import ch.lkmc.blipbird.ui.components.lookupProblemText
 import ch.lkmc.blipbird.ui.components.statusText
 import ch.lkmc.blipbird.ui.components.monogramColor
 import ch.lkmc.blipbird.ui.components.monogramContentColor
@@ -250,9 +251,13 @@ fun FlightDetailScreen(
                             // different user actions, not one silent gap.
                             state.lookupProblem?.let {
                                 Text(
-                                    stringResource(lookupProblemRes(it)),
+                                    lookupProblemText(it, state.lookupProviders),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.error,
+                                    // Same split as the itinerary spine: a message
+                                    // that ends "will retry" shouldn't be the same
+                                    // colour as one that needs the user.
+                                    color = if (lookupProblemNeedsUser(it)) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.tertiary,
                                 )
                             }
                         }

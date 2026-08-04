@@ -206,6 +206,8 @@ class FlightRepository @Inject constructor(
         val attemptedAt: Instant,
         val outcome: LookupOutcome?,
         val nextEligibleAt: Instant,
+        /** Providers the outcome is attributable to; empty when unrecorded. */
+        val providers: List<String> = emptyList(),
     )
 
     fun observeLookupAttempt(flightId: Long): Flow<LookupAttempt?> =
@@ -215,6 +217,7 @@ class FlightRepository @Inject constructor(
                     attemptedAt = Instant.ofEpochMilli(it.attemptedAt),
                     outcome = runCatching { LookupOutcome.valueOf(it.outcome) }.getOrNull(),
                     nextEligibleAt = Instant.ofEpochMilli(it.nextEligibleAt),
+                    providers = it.provider?.split(',')?.filter(String::isNotBlank).orEmpty(),
                 )
             }
         }
@@ -277,6 +280,7 @@ class FlightRepository @Inject constructor(
                 requestedDate = date,
                 attemptedAt = attemptedAt,
                 retryAfter = lookups.maxRetryAfter(),
+                providers = lookups.failureProviders(),
             )
             return null
         }
@@ -473,6 +477,7 @@ class FlightRepository @Inject constructor(
         requestedDate: java.time.LocalDate?,
         attemptedAt: Instant,
         retryAfter: Duration? = null,
+        providers: List<String> = emptyList(),
     ) {
         val previous = lookupAttemptDao.byFlightId(flightId)
         val previousOutcome = previous?.outcome?.let { value ->
@@ -496,6 +501,7 @@ class FlightRepository @Inject constructor(
                 outcome = outcome.name,
                 consecutiveFailures = failures,
                 nextEligibleAt = eligibleAt.toEpochMilli(),
+                provider = providers.takeIf { it.isNotEmpty() }?.joinToString(","),
             )
         )
     }
@@ -625,10 +631,18 @@ class StatusProviderChain @Inject constructor(
         val outcome: LookupOutcome,
         /** Longest provider-requested Retry-After seen during this lookup. */
         val retryAfter: Duration? = null,
+        /**
+         * Providers that produced [outcome], in chain order. "Rate limited" is
+         * one service saying so, and the user can only act on it if we say which
+         * — so the name has to survive the collapse to a single outcome.
+         */
+        val failedProviders: List<String> = emptyList(),
     )
 
     suspend fun fetchCandidates(designator: Designator, date: java.time.LocalDate?): Lookup {
-        val failures = mutableSetOf<LookupOutcome>()
+        // Pairs, not a set of outcomes: two providers can fail the same way, and
+        // one can fail while another is merely out of quota.
+        val failures = mutableListOf<Pair<String, LookupOutcome>>()
         var retryAfter: Duration? = null
         for (provider in listOf<FlightStatusProvider>(aeroDataBox, aeroApi)) {
             // Reserve the unit atomically before the request so two concurrent
@@ -639,7 +653,7 @@ class StatusProviderChain @Inject constructor(
             // a provider ever bills for failed requests, drop the refund on Error
             // and keep it only for NoKey.
             if (!quota.trySpend(provider.name, provider.unitsPerLookup)) {
-                failures += LookupOutcome.QUOTA_EXHAUSTED
+                failures += provider.name to LookupOutcome.QUOTA_EXHAUSTED
                 continue
             }
             when (val result = provider.fetch(designator, date)) {
@@ -648,15 +662,15 @@ class StatusProviderChain @Inject constructor(
                 }
                 is StatusResult.NotFound -> {
                     // A real lookup happened — keep the reserved unit.
-                    failures += LookupOutcome.NOT_FOUND
+                    failures += provider.name to LookupOutcome.NOT_FOUND
                 }
                 is StatusResult.NoKey -> {
                     quota.refund(provider.name, provider.unitsPerLookup)
-                    failures += LookupOutcome.NO_KEY
+                    failures += provider.name to LookupOutcome.NO_KEY
                 }
                 is StatusResult.Error -> {
                     quota.refund(provider.name, provider.unitsPerLookup)
-                    failures += when {
+                    failures += provider.name to when {
                         result.rateLimited -> LookupOutcome.RATE_LIMITED
                         result.retryable -> LookupOutcome.TRANSIENT_ERROR
                         else -> LookupOutcome.NONRETRYABLE_ERROR
@@ -665,15 +679,27 @@ class StatusProviderChain @Inject constructor(
                 }
             }
         }
-        return Lookup(emptyList(), LookupOutcome.worstFailure(failures), retryAfter)
+        val worst = LookupOutcome.worstFailure(failures.map { it.second })
+        return Lookup(
+            candidates = emptyList(),
+            outcome = worst,
+            retryAfter = retryAfter,
+            failedProviders = failures.filter { it.second == worst }.map { it.first }.distinct(),
+        )
     }
 }
 
-private fun List<StatusProviderChain.Lookup>.failureOutcome(): LookupOutcome = when {
+internal fun List<StatusProviderChain.Lookup>.failureOutcome(): LookupOutcome = when {
     // A lookup that returned candidates none of which survived instance
     // selection is a NOT_FOUND for the user, same as a definitive miss.
     any { it.outcome == LookupOutcome.NOT_FOUND || it.outcome == LookupOutcome.SUCCESS } -> LookupOutcome.NOT_FOUND
     else -> LookupOutcome.worstFailure(map { it.outcome })
+}
+
+/** The providers behind [failureOutcome], so the message can name them. */
+internal fun List<StatusProviderChain.Lookup>.failureProviders(): List<String> {
+    val outcome = failureOutcome()
+    return filter { it.outcome == outcome }.flatMap { it.failedProviders }.distinct()
 }
 
 private fun List<StatusProviderChain.Lookup>.maxRetryAfter(): Duration? =

@@ -122,7 +122,7 @@ abstract class UserDatabase : RoomDatabase() {
         AirportEntity::class,
         AirlineEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class OpsDatabase : RoomDatabase() {
@@ -172,9 +172,21 @@ abstract class OpsDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Records which provider a failed lookup is attributable to, so the UI
+         * can name the service that is rate-limited or missing a key instead of
+         * saying only that something went wrong. Nullable: rows written before
+         * this column stay unattributed rather than being guessed at.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `status_lookup_attempt` ADD COLUMN `provider` TEXT")
+            }
+        }
+
         fun build(context: Context): OpsDatabase =
             Room.databaseBuilder(context, OpsDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

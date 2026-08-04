@@ -15,6 +15,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -122,19 +123,76 @@ internal fun contrastRatio(foreground: Color, background: Color): Double {
     return (lighter + 0.05) / (darker + 0.05)
 }
 
+/** A provider's own name for itself. An unknown id is shown as stored. */
+@Composable
+fun providerLabel(name: String): String = when (name) {
+    "aerodatabox" -> stringResource(R.string.provider_aerodatabox)
+    "aeroapi" -> stringResource(R.string.provider_aeroapi)
+    else -> name
+}
+
 /**
- * Short label for a failed lookup outcome, shared by list and detail (G5):
- * "no key", "quota", "rate limited" and "unreachable" must be distinguishable
- * in the UI instead of all rendering as silently missing data.
+ * Short label for a failed lookup outcome, shared by list, detail and itinerary
+ * (G5): "no key", "quota", "rate limited" and "unreachable" must be
+ * distinguishable in the UI instead of all rendering as silently missing data.
+ *
+ * Where [providers] is known, the service is named — a rate limit or a rejected
+ * key is only actionable if the user can tell *which* of their keys to go and
+ * look at. It is empty for attempts recorded before that was stored, and for
+ * `NOT_FOUND`, which is a fact about the flight rather than about a service; both
+ * fall back to the unattributed wording.
  */
-fun lookupProblemRes(outcome: LookupOutcome): Int = when (outcome) {
-    LookupOutcome.NO_KEY -> R.string.lookup_problem_no_key
-    LookupOutcome.QUOTA_EXHAUSTED -> R.string.lookup_problem_quota
-    LookupOutcome.RATE_LIMITED -> R.string.lookup_problem_rate_limited
-    LookupOutcome.TRANSIENT_ERROR -> R.string.lookup_problem_offline
-    LookupOutcome.NOT_FOUND -> R.string.lookup_problem_not_found
-    LookupOutcome.NONRETRYABLE_ERROR -> R.string.lookup_problem_failed
-    LookupOutcome.SUCCESS -> R.string.value_unknown   // never rendered
+@Composable
+fun lookupProblemText(outcome: LookupOutcome, providers: List<String> = emptyList()): String {
+    val named = providers.map { providerLabel(it) }
+    // "A", "A and B", "A, B and C" — folding with the conjunction instead would
+    // give "A and B and C" the day a third provider joins the chain. Formatted
+    // by the resource system rather than String.format, so the arguments resolve
+    // against the same configuration the pattern itself came from.
+    val services = when (named.size) {
+        0 -> null
+        1 -> named.single()
+        else -> stringResource(
+            R.string.provider_and,
+            named.dropLast(1).joinToString(", "),
+            named.last(),
+        )
+    }
+    return when (outcome) {
+        LookupOutcome.NO_KEY ->
+            if (services != null) stringResource(R.string.lookup_problem_no_key_named, services)
+            else stringResource(R.string.lookup_problem_no_key)
+        LookupOutcome.QUOTA_EXHAUSTED ->
+            if (services != null) stringResource(R.string.lookup_problem_quota_named, services)
+            else stringResource(R.string.lookup_problem_quota)
+        LookupOutcome.RATE_LIMITED ->
+            if (services != null) stringResource(R.string.lookup_problem_rate_limited_named, services)
+            else stringResource(R.string.lookup_problem_rate_limited)
+        LookupOutcome.TRANSIENT_ERROR ->
+            if (services != null) stringResource(R.string.lookup_problem_offline_named, services)
+            else stringResource(R.string.lookup_problem_offline)
+        LookupOutcome.NONRETRYABLE_ERROR ->
+            // The only message that goes on to say whose key to check, so it is
+            // the only one that has to agree in number with what it just named.
+            if (services != null) {
+                pluralStringResource(R.plurals.lookup_problem_failed_named, named.size, services)
+            } else {
+                stringResource(R.string.lookup_problem_failed)
+            }
+        LookupOutcome.NOT_FOUND -> stringResource(R.string.lookup_problem_not_found)
+        LookupOutcome.SUCCESS -> stringResource(R.string.value_unknown)   // never rendered
+    }
+}
+
+/**
+ * Whether the user has to do something about [outcome], or whether the app will
+ * simply try again. A missing or rejected key and an exhausted budget wait on
+ * them; a 429 or an unreachable host do not.
+ */
+fun lookupProblemNeedsUser(outcome: LookupOutcome): Boolean = when (outcome) {
+    LookupOutcome.NO_KEY, LookupOutcome.QUOTA_EXHAUSTED, LookupOutcome.NONRETRYABLE_ERROR -> true
+    LookupOutcome.RATE_LIMITED, LookupOutcome.TRANSIENT_ERROR,
+    LookupOutcome.NOT_FOUND, LookupOutcome.SUCCESS -> false
 }
 
 /**

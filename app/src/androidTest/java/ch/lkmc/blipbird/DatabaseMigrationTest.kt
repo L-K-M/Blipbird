@@ -80,6 +80,47 @@ class DatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * The attribution column is nullable on purpose: an attempt recorded before
+     * this version has no provider to name, and the UI has to keep saying the
+     * unattributed thing for it rather than inventing a service.
+     */
+    @Test
+    fun opsMigrationAddsLookupProviderAndLeavesOlderAttemptsUnattributed() {
+        val opsHelper = MigrationTestHelper(
+            InstrumentationRegistry.getInstrumentation(),
+            OpsDatabase::class.java,
+        )
+        opsHelper.createDatabase(OPS_DB, 3).apply {
+            execSQL(
+                """INSERT INTO status_lookup_attempt
+                    (trackedFlightId, attemptedAt, outcome, consecutiveFailures, nextEligibleAt)
+                    VALUES (7, 1000, 'RATE_LIMITED', 2, 5000)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val db = opsHelper.runMigrationsAndValidate(OPS_DB, 4, true, OpsDatabase.MIGRATION_3_4)
+        db.query("SELECT outcome, consecutiveFailures, provider FROM status_lookup_attempt").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("RATE_LIMITED", cursor.getString(0))
+            assertEquals(2, cursor.getInt(1))
+            assertTrue(cursor.isNull(2))
+        }
+        db.execSQL(
+            """INSERT INTO status_lookup_attempt
+                (trackedFlightId, attemptedAt, outcome, consecutiveFailures, nextEligibleAt, provider)
+                VALUES (8, 2000, 'NO_KEY', 1, 6000, 'aerodatabox,aeroapi')
+            """.trimIndent()
+        )
+        db.query("SELECT provider FROM status_lookup_attempt WHERE trackedFlightId = 8").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("aerodatabox,aeroapi", cursor.getString(0))
+        }
+        db.close()
+    }
+
     private companion object {
         const val USER_DB = "migration-user-test"
         const val OPS_DB = "migration-ops-test"

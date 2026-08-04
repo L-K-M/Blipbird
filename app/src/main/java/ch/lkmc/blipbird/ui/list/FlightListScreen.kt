@@ -96,7 +96,7 @@ import ch.lkmc.blipbird.ui.components.BirdRefreshIndicator
 import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.StatusWord
 import ch.lkmc.blipbird.ui.components.agoText
-import ch.lkmc.blipbird.ui.components.lookupProblemRes
+import ch.lkmc.blipbird.ui.components.lookupProblemText
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.departsInText
 import ch.lkmc.blipbird.ui.components.landsInText
@@ -800,7 +800,7 @@ private fun FlightRowCard(row: FlightRow, onClick: () -> Unit, onLongClick: () -
         // "rate limited" and "unreachable" are different user actions.
         val infoLine = listOfNotNull(
             row.updatedAt?.let { stringResource(R.string.updated_ago, agoText(it, row.now)) },
-            row.lookupProblem?.let { stringResource(lookupProblemRes(it)) },
+            row.lookupProblem?.let { lookupProblemText(it, row.lookupProviders) },
         ).joinToString("  ·  ")
         if (infoLine.isNotEmpty()) {
             Spacer(Modifier.height(2.dp))
