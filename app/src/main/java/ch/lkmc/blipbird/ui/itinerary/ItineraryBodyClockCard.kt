@@ -33,9 +33,9 @@ import kotlin.math.abs
  * transfer claim is made here, so this stays clear of the gates §4.6 keeps open.
  */
 @Composable
-internal fun ItineraryBodyClockCard(trip: JetlagEngine.Trip) {
+internal fun ItineraryBodyClockCard(trip: JetlagEngine.Trip, modifier: Modifier = Modifier) {
     Card(
-        modifier = Modifier.fillMaxWidth().itineraryBorder(18.dp),
+        modifier = modifier.fillMaxWidth().itineraryBorder(18.dp),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = itinerarySurface(0.42f)),
     ) {

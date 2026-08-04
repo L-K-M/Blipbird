@@ -38,9 +38,10 @@ internal fun SummaryCard(
     routeChain: String?,
     designators: String,
     padding: Dp,
+    modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().itineraryBorder(26.dp),
+        modifier = modifier.fillMaxWidth().itineraryBorder(26.dp),
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
@@ -90,9 +91,14 @@ internal fun SummaryCard(
  * whether an approved status source is configured at all (§7.9).
  */
 @Composable
-internal fun LiveDetailsNotice(hasStatusKey: Boolean, padding: Dp, onOpenSettings: () -> Unit) {
+internal fun LiveDetailsNotice(
+    hasStatusKey: Boolean,
+    padding: Dp,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Card(
-        modifier = Modifier.fillMaxWidth().itineraryBorder(18.dp),
+        modifier = modifier.fillMaxWidth().itineraryBorder(18.dp),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = itinerarySurface(0.5f)),
     ) {
