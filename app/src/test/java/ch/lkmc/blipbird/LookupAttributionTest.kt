@@ -56,12 +56,19 @@ class LookupAttributionTest {
     }
 
     /**
-     * A pass where any date found candidates reads as NOT_FOUND for the user, and
-     * that is a fact about the flight rather than about a service — nothing to
-     * name, and nothing to send anyone to Settings for.
+     * NOT_FOUND outranks the unkeyed provider, and attribution follows the
+     * outcome that won — so the provider that actually looked is the one
+     * recorded, not the one that never got to ask.
+     *
+     * This layer answers "who produced the winning outcome", which is a question
+     * of fact and has an answer here. Whether the user is *told* is a separate
+     * decision made in `lookupProblemText`, which leaves NOT_FOUND unattributed
+     * because no flight for this date is a fact about the flight rather than
+     * about a service. Recording it anyway costs nothing and is the only trace
+     * of which provider was consulted when one later has to be blamed.
      */
     @Test
-    fun attributesNothingWhenTheOutcomeIsNotFound() {
+    fun attributesTheProviderThatLookedWhenNotFoundWins() {
         val lookups = listOf(
             lookup(LookupOutcome.NOT_FOUND, "aerodatabox"),
             lookup(LookupOutcome.NO_KEY, "aeroapi"),
