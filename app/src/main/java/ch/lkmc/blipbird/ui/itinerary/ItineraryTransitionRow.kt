@@ -65,12 +65,18 @@ internal fun TransitionRow(
             .height(IntrinsicSize.Min),
     ) {
         Connector()
+        // weight, so the text column claims the rest of the row outright. It
+        // already filled it, but only because the header inside happens to hold a
+        // weighted child — take that weight away and the whole block would
+        // silently shrink to its longest word.
         Column(
-            Modifier.padding(
-                start = metrics.connectorGap,
-                top = metrics.cardPadding,
-                bottom = metrics.cardPadding,
-            )
+            Modifier
+                .weight(1f)
+                .padding(
+                    start = metrics.connectorGap,
+                    top = metrics.cardPadding,
+                    bottom = metrics.cardPadding,
+                )
         ) {
             TransitionHeader(transition, enabled, onIntent)
             Spacer(Modifier.height(4.dp))
