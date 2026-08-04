@@ -102,6 +102,7 @@ import ch.lkmc.blipbird.ui.components.departsInText
 import ch.lkmc.blipbird.ui.components.landsInText
 import ch.lkmc.blipbird.ui.components.localTime
 import ch.lkmc.blipbird.ui.components.monogramColor
+import ch.lkmc.blipbird.ui.components.withTabularNumbers
 import ch.lkmc.blipbird.ui.components.monogramContentColor
 import ch.lkmc.blipbird.ui.components.rememberReducedMotion
 import ch.lkmc.blipbird.ui.itinerary.contrastAware
@@ -478,9 +479,11 @@ private fun ItineraryHomeCard(
                 val phase = itineraryLegPhase(leg)
                 if (phase != null) {
                     Spacer(Modifier.height(8.dp))
+                    // The live fact is what the tile is for — it outranks the
+                    // route line, and its digits hold width as they tick.
                     Text(
                         stringResource(R.string.itinerary_current_leg, leg.title, phase),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.titleMedium.withTabularNumbers(),
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

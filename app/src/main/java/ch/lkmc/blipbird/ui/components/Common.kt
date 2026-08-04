@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
@@ -205,6 +206,15 @@ fun departsInText(untilDeparture: Duration): String =
 
 fun landsInText(untilArrival: Duration): String =
     if (untilArrival.isNegative) "Landing…" else "Lands in ${countdownText(untilArrival)}"
+
+/**
+ * Digits that keep one width as they tick. Every clock time and countdown wears
+ * this: without it a "9" narrower than an "11" makes live numbers shimmy and
+ * columns of times sit ragged. Merges with any features already on the style
+ * rather than replacing them — a caller's ligatures or stylistic sets survive.
+ */
+fun TextStyle.withTabularNumbers(): TextStyle =
+    copy(fontFeatureSettings = listOfNotNull(fontFeatureSettings, "tnum").joinToString(", "))
 
 /**
  * Countdown with adaptive granularity: days → h m → m. Past-due targets clamp to
