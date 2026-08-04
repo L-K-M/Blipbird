@@ -164,6 +164,8 @@
     <string name="connection_change_shorter">%1$s shorter than latest scheduled</string>
     <string name="connection_change_none">No change from latest scheduled</string>
     <string name="connection_until_onward">Until onward departure  %1$s</string>
+    <string name="connection_terminal_change">Terminal %1$s → Terminal %2$s</string>
+    <string name="connection_reported_span">%1$s between the reported times</string>
     <string name="connection_boarding_earlier">Boarding or gate closing may be earlier.</string>
     <string name="connection_endpoint_actual_arrival">Actual gate arrival</string>
     <string name="connection_endpoint_estimated_arrival">Estimated gate arrival</string>
