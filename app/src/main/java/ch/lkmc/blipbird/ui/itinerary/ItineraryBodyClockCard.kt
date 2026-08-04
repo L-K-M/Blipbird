@@ -34,6 +34,10 @@ import kotlin.math.abs
  */
 @Composable
 internal fun ItineraryBodyClockCard(trip: JetlagEngine.Trip, modifier: Modifier = Modifier) {
+    // The screen only offers this card a trip that clears the negligible
+    // threshold — a plan whose peak shift doesn't matter gets no card at all,
+    // rather than a card explaining that it has nothing to explain.
+    val plan = trip.peakPlan ?: return
     Card(
         modifier = modifier.fillMaxWidth().itineraryBorder(18.dp),
         shape = RoundedCornerShape(18.dp),
@@ -49,38 +53,30 @@ internal fun ItineraryBodyClockCard(trip: JetlagEngine.Trip, modifier: Modifier 
             )
             Spacer(Modifier.height(10.dp))
 
-            val plan = trip.peakPlan
-            if (plan == null) {
-                Text(
-                    stringResource(R.string.itinerary_body_clock_negligible),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            } else {
-                Text(
-                    stringResource(
-                        if (trip.peak.shiftMinutes > 0) R.string.itinerary_body_clock_peak_later
-                        else R.string.itinerary_body_clock_peak_earlier,
-                        shiftLabel(abs(trip.peak.shiftMinutes)),
-                        trip.peak.arrivalCode,
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    pluralStringResource(
-                        when (plan.direction) {
-                            JetlagEngine.Direction.ADVANCE -> R.plurals.itinerary_body_clock_plan_earlier
-                            JetlagEngine.Direction.DELAY -> R.plurals.itinerary_body_clock_plan_later
-                        },
-                        plan.days,
-                        shiftLabel(plan.shiftMinutes),
-                        plan.days,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                stringResource(
+                    if (trip.peak.shiftMinutes > 0) R.string.itinerary_body_clock_peak_later
+                    else R.string.itinerary_body_clock_peak_earlier,
+                    shiftLabel(abs(trip.peak.shiftMinutes)),
+                    trip.peak.arrivalCode,
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                pluralStringResource(
+                    when (plan.direction) {
+                        JetlagEngine.Direction.ADVANCE -> R.plurals.itinerary_body_clock_plan_earlier
+                        JetlagEngine.Direction.DELAY -> R.plurals.itinerary_body_clock_plan_later
+                    },
+                    plan.days,
+                    shiftLabel(plan.shiftMinutes),
+                    plan.days,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             Spacer(Modifier.height(10.dp))
             Text(

@@ -37,14 +37,16 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import java.time.LocalDate
 import javax.inject.Inject
@@ -168,14 +170,27 @@ class ItineraryDetailViewModel @Inject constructor(
     private val refreshing = MutableStateFlow(false)
 
     /**
-     * Provider-derived state per member flight, keyed by flight id. Re-subscribed
-     * only when the *membership* changes: the graph flow re-emits for every alias
-     * or answer edit, and rebuilding N Room flows on each of those would drop and
-     * re-run the whole page.
+     * Member flight ids in spine order, re-emitting only when the *membership*
+     * changes: the graph flow re-emits for every alias or answer edit, and this
+     * chain's consumers only care about who is on the plan.
      */
-    private val live: Flow<Map<Long, LegLive>> = loadState
+    private val memberIds: Flow<List<Long>> = loadState
         .map { state -> (state as? ItineraryDetailLoadState.Found)?.itinerary?.legs?.map { it.flight.id }.orEmpty() }
         .distinctUntilChanged()
+
+    /**
+     * Provider-derived state per member flight, keyed by flight id. Rebuilt only
+     * on membership change — rebuilding N Room flows on every graph edit would
+     * drop and re-run the whole page.
+     *
+     * The quiet lookups ride this chain's own subscription instead of a standing
+     * collector in `init`: a collector for the VM's whole life would hold
+     * `loadState`'s Room observation open long after the UI stopped collecting,
+     * silently defeating its WhileSubscribed policy. Launched, not inlined — a
+     * lookup run must never delay the page's own emissions.
+     */
+    private val live: Flow<Map<Long, LegLive>> = memberIds
+        .onEach(::launchQuietLookups)
         .flatMapLatest { ids ->
             if (ids.isEmpty()) flowOf(emptyMap())
             else combine(ids.map(::liveFlow)) { values -> values.associateBy { it.flightId } }
@@ -205,19 +220,52 @@ class ItineraryDetailViewModel @Inject constructor(
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
 
-    init {
-        // A member that has never resolved shows nothing at all, and a plan more
-        // than 48 h out is outside every background cadence (CadencePolicy), so
-        // nothing would fill it in either. One debounced lookup per empty leg on
-        // open is the difference between an itinerary that loads and one that
-        // looks broken; legs that already have a snapshot are left to the worker
-        // and to pull-to-refresh rather than spending a request on open.
+    /** Members already given their one quiet lookup by this screen instance. */
+    private val quietLookupAttempted = mutableSetOf<Long>()
+
+    /** One lookup run at a time — a membership edit mid-run queues, never fans out. */
+    private val quietLookupGate = Mutex()
+
+    /**
+     * A member that has never resolved shows nothing at all, and a plan more
+     * than 48 h out is outside every background cadence (CadencePolicy), so
+     * nothing would fill it in either. One debounced lookup per empty leg is the
+     * difference between an itinerary that loads and one that looks broken.
+     * Driven by the membership flow rather than once at open: a leg added by a
+     * later edit arrives as a membership change and deserves the same first
+     * lookup — otherwise it sits blank until a manual pull-to-refresh, with no
+     * lookup attempt to even attribute the blankness to. Legs that already have
+     * a snapshot are left to the worker and to pull-to-refresh rather than
+     * spending a request here.
+     */
+    private fun launchQuietLookups(ids: List<Long>) {
         viewModelScope.launch {
-            val itinerary = loadState.first { it !is ItineraryDetailLoadState.Loading }
-            val legs = (itinerary as? ItineraryDetailLoadState.Found)?.itinerary?.legs.orEmpty()
-            for (leg in legs) {
-                if (flights.latestSnapshot(leg.flight.id) != null) continue
-                refreshLegQuietly(leg.flight.id)
+            quietLookupGate.withLock {
+                // A member removed by an edit forfeits its mark: coming back is
+                // a deliberate re-add and earns a fresh first lookup, and the
+                // set stays bounded by the current membership.
+                quietLookupAttempted.retainAll(ids.toSet())
+                try {
+                    for (id in ids) {
+                        // One attempt per present member per screen instance:
+                        // membership re-emits on every add/remove, and a failed
+                        // lookup must not turn each subsequent edit into a retry.
+                        // Marked before the checks on purpose — if this id's
+                        // eligibility read throws, the next run skips past it to
+                        // the members after it instead of wedging on it forever.
+                        if (!quietLookupAttempted.add(id)) continue
+                        if (flights.latestSnapshot(id) != null) continue
+                        refreshLegQuietly(id)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // A failed eligibility read forfeits this run, not the
+                    // screen's remaining lookups; worker and refresh still cover.
+                    // Silent like every other ViewModel swallow here — the lookup
+                    // path already records its own failure as the attributed
+                    // outcome the leg card renders.
+                }
             }
         }
     }

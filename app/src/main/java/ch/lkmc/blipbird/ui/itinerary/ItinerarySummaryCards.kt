@@ -25,15 +25,22 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
 
 // ---------------------------------------------------------------- summary
 
+/**
+ * The trip's banner. Deliberately without the itinerary's title — the app bar
+ * directly above already carries it, and a card that repeats the screen's own
+ * name is a line of chrome, not information. What this card alone knows is the
+ * whole plan's airport chain; the flight numbers stand in until routes resolve,
+ * and each leg card below carries its own designator either way.
+ */
 @Composable
 internal fun SummaryCard(
-    title: String,
     dateSpan: String?,
     routeChain: String?,
     designators: String,
@@ -46,41 +53,34 @@ internal fun SummaryCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
         Column(Modifier.padding(padding)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.semantics { heading() },
-            )
+            // Same idiom as the leg cards: the quiet line above, the hero below.
             dateSpan?.let {
-                Spacer(Modifier.height(4.dp))
-                Text(it, color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.8f))
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.8f),
+                )
+                Spacer(Modifier.height(6.dp))
             }
-            routeChain?.let {
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Route,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Route,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    routeChain ?: designators,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    // A many-leg chain (or the unbounded designator fallback)
+                    // must not turn the banner into a paragraph at title size.
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).semantics { heading() },
+                )
             }
-            Spacer(Modifier.height(if (routeChain == null) 10.dp else 6.dp))
-            Text(
-                designators,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.85f),
-            )
         }
     }
 }

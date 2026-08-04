@@ -1027,7 +1027,13 @@ the standard advice that very long eastward trips are easier handled as delays â
 flags that case explicitly ("the clock jumped forward, but moving your body clock later is
 the shorter way round") so the recommendation doesn't read as a bug. A shift under three
 hours produces no plan at all; it is not a real body-clock problem and saying so is more
-useful than a fabricated one-day estimate.
+useful than a fabricated one-day estimate. The per-flight card collapses to one reassuring
+line in that case; the *itinerary* summary goes further and shows no card at all when even
+the trip's peak shift is negligible â€” and when it does appear, it sits below the journey
+spine, since it is trip-level advice rather than navigation. That absence also covers a
+partially resolved plan whose resolved legs are all negligible: the same absence-over-guess
+rule as a missing zone, rather than a partial verdict issued while lookups are still
+running. The card simply appears once a leg resolves to a shift that matters.
 
 **Light windows.** Bright light after the core-body-temperature minimum advances the clock;
 light before it delays. CBTmin is estimated as two hours before habitual wake, and Blipbird

@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -98,6 +99,9 @@ fun ItineraryDetailScreen(
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        // The screen's h1 lives here now that the summary card
+                        // no longer repeats the title below it.
+                        modifier = Modifier.semantics { heading() },
                     )
                 },
                 navigationIcon = {
@@ -179,7 +183,6 @@ fun ItineraryDetailScreen(
                         }
                         item("summary") {
                             SummaryCard(
-                                title = graph.displayTitle(context),
                                 dateSpan = graph.dateSpan(context),
                                 routeChain = state.routeChain,
                                 designators = graph.designatorLine(
@@ -188,11 +191,6 @@ fun ItineraryDetailScreen(
                                 padding = metrics.cardPadding,
                                 modifier = Modifier.padding(bottom = SECTION_GAP),
                             )
-                        }
-                        state.bodyClock?.let { trip ->
-                            item("body-clock") {
-                                ItineraryBodyClockCard(trip, Modifier.padding(bottom = SECTION_GAP))
-                            }
                         }
                         if (state.awaitingFirstSnapshot) {
                             item("live-state") {
@@ -231,6 +229,15 @@ fun ItineraryDetailScreen(
                                 // A pair with no edge of its own still needs air
                                 // between the two cards.
                                 item("gap-${leg.legId}") { Spacer(Modifier.height(SECTION_GAP)) }
+                            }
+                        }
+                        // Trip-level advice, not navigation: it reads after the
+                        // journey it advises on, and only when it clears the
+                        // negligible threshold — a chain of ±0s is not worth the
+                        // screen's most prominent slot, or any slot.
+                        state.bodyClock?.takeIf { it.peakPlan != null }?.let { trip ->
+                            item("body-clock") {
+                                ItineraryBodyClockCard(trip, Modifier.padding(top = SECTION_GAP))
                             }
                         }
                         item("bottom-space") { Spacer(Modifier.height(24.dp)) }
