@@ -144,14 +144,19 @@ fun providerLabel(name: String): String = when (name) {
  */
 @Composable
 fun lookupProblemText(outcome: LookupOutcome, providers: List<String> = emptyList()): String {
-    val conjunction = stringResource(R.string.provider_and)
     val named = providers.map { providerLabel(it) }
     // "A", "A and B", "A, B and C" — folding with the conjunction instead would
-    // give "A and B and C" the day a third provider joins the chain.
+    // give "A and B and C" the day a third provider joins the chain. Formatted
+    // by the resource system rather than String.format, so the arguments resolve
+    // against the same configuration the pattern itself came from.
     val services = when (named.size) {
         0 -> null
         1 -> named.single()
-        else -> String.format(conjunction, named.dropLast(1).joinToString(", "), named.last())
+        else -> stringResource(
+            R.string.provider_and,
+            named.dropLast(1).joinToString(", "),
+            named.last(),
+        )
     }
     return when (outcome) {
         LookupOutcome.NO_KEY ->
