@@ -308,6 +308,90 @@ class TransitionEngineTest {
         assertTrue(TransitionEngine.carriesGateMilestones("aeroapi"))
     }
 
+    /**
+     * §8.2 gates the windows, not the facts: the same two instants the leg cards
+     * print still yield a reported span, so a connection on a gate-unsupported
+     * source is not a blank card. The span is [Assessment.transfer], never a
+     * window, and [Assessment.breakDuration] stays reserved for non-connections.
+     */
+    @Test
+    fun aGateUnsupportedConnectionStillCarriesItsReportedSpan() {
+        val assessment = evaluate(
+            inbound = inboundSnapshot.copy(provider = "aerodatabox"),
+            outbound = outboundSnapshot.copy(provider = "aerodatabox"),
+        )
+
+        assertEquals(Disruption.GATE_TIMES_UNSUPPORTED, assessment.disruption)
+        assertNull(assessment.latestScheduledWindow)
+        assertNull(assessment.latestCalculatedWindow)
+        assertNull(assessment.breakDuration)
+        val transfer = assessment.transfer
+        assertEquals(Duration.ofMinutes(165), transfer?.gap)
+        assertEquals(TimeCertainty.SCHEDULED, transfer?.startCertainty)
+        assertEquals(TimeCertainty.SCHEDULED, transfer?.endCertainty)
+        // Nothing has landed: the countdown state must not fire off schedule alone.
+        assertEquals(false, transfer?.inProgress)
+    }
+
+    /** The span follows the same actual → estimated → scheduled chain the cards print. */
+    @Test
+    fun theReportedSpanPrefersTheLatestReportedTimes() {
+        val estimatedIn = Instant.parse("2026-09-18T06:40:00Z")
+        val assessment = evaluate(
+            inbound = inboundSnapshot.copy(
+                provider = "aerodatabox",
+                arrTimes = inboundSnapshot.arrTimes.copy(estimated = estimatedIn),
+            ),
+            outbound = outboundSnapshot.copy(provider = "aerodatabox"),
+        )
+
+        val transfer = assessment.transfer
+        assertEquals(estimatedIn, transfer?.start)
+        assertEquals(TimeCertainty.ESTIMATED, transfer?.startCertainty)
+        assertEquals(Duration.ofMinutes(150), transfer?.gap)
+    }
+
+    /**
+     * The countdown state opens on a reported landing — an actual arrival or a
+     * LANDED/ARRIVED status, whichever the source manages — and closes on an
+     * actual departure (§8.5, widened from gate actuals).
+     */
+    @Test
+    fun theTransferGoesLiveOnLandingAndClosesOnDeparture() {
+        val landedNoActual = evaluate(
+            inbound = inboundSnapshot.copy(provider = "aerodatabox", status = FlightStatus.LANDED),
+            outbound = outboundSnapshot.copy(provider = "aerodatabox"),
+        )
+        assertEquals(true, landedNoActual.transfer?.inProgress)
+
+        val actualIn = evaluate(
+            inbound = inboundSnapshot.copy(
+                arrTimes = inboundSnapshot.arrTimes.copy(actual = Instant.parse("2026-09-18T06:30:00Z")),
+            ),
+        )
+        assertEquals(true, actualIn.transfer?.inProgress)
+
+        val departed = evaluate(
+            inbound = inboundSnapshot.copy(
+                arrTimes = inboundSnapshot.arrTimes.copy(actual = Instant.parse("2026-09-18T06:30:00Z")),
+            ),
+            outbound = outboundSnapshot.copy(
+                depTimes = outboundSnapshot.depTimes.copy(actual = Instant.parse("2026-09-18T09:12:00Z")),
+                status = FlightStatus.DEPARTED,
+            ),
+        )
+        assertEquals(false, departed.transfer?.inProgress)
+    }
+
+    /** A stay's gross gap stays in [Assessment.breakDuration]; the transfer is connections-only. */
+    @Test
+    fun aStayCarriesNoTransfer() {
+        val assessment = evaluate(intent = TransitionIntent.DESTINATION_STAY)
+
+        assertNull(assessment.transfer)
+        assertEquals(Duration.ofMinutes(165), assessment.breakDuration)
+    }
+
     /** A stopover's gross gap is not a gate-to-gate window, so it survives that. */
     @Test
     fun aStayStillReportsItsGapOnASourceWithoutGateMilestones() {

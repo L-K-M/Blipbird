@@ -33,8 +33,10 @@ import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.TimeCertainty
 import ch.lkmc.blipbird.core.model.TransitionIntent
 import ch.lkmc.blipbird.domain.TransitionEngine
+import ch.lkmc.blipbird.ui.components.FlightProgressBar
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.elapsedText
+import java.time.Duration
 
 // ---------------------------------------------------------------- transitions
 
@@ -129,6 +131,21 @@ private fun TransitionHeader(transition: ItineraryTransitionUi, enabled: Boolean
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // A terminal change is the one airport fact the reported gates let
+            // us state — the closest this screen can honestly get to "how far
+            // is the walk".
+            val fromTerminal = transition.assessment.inboundLocation.terminal
+            val toTerminal = transition.assessment.outboundLocation.terminal
+            if (
+                transition.intent == TransitionIntent.DIRECT_CONNECTION &&
+                fromTerminal != null && toTerminal != null && fromTerminal != toTerminal
+            ) {
+                Text(
+                    stringResource(R.string.connection_terminal_change, fromTerminal, toTerminal),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         if (transition.intent != TransitionIntent.UNKNOWN) {
             TextButton(onClick = onIntent, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
@@ -146,11 +163,20 @@ private fun ConnectionBody(
     onBaggage: () -> Unit,
 ) {
     val assessment = transition.assessment
-    // §7.7: the factual state leads, the duration follows. Never the other way round.
-    DisruptionLine(transition)
-    if (assessment.disruption == null || assessment.disruption in TIMING_STILL_MEANINGFUL) {
+    // §7.7: the factual state leads, the duration follows — except the one calm
+    // explanation whose only job is to say why a *refined* window is absent.
+    // That reads after the facts it qualifies, not instead of them: hiding the
+    // span, the gate and the countdown behind it was this card's old failure.
+    val demotedExplanation = assessment.disruption == TransitionEngine.Disruption.GATE_TIMES_UNSUPPORTED
+    val timingAllowed = assessment.disruption == null ||
+        assessment.disruption in TIMING_STILL_MEANINGFUL || demotedExplanation
+    if (!demotedExplanation) DisruptionLine(transition)
+    val gatePromoted = timingAllowed && assessment.transfer != null && assessment.outboundLocation.known
+    if (timingAllowed) {
+        TransferBlock(transition)
         WindowBlock(transition)
     }
+    if (demotedExplanation) DisruptionLine(transition)
     Spacer(Modifier.height(4.dp))
     TextButton(onClick = onBooking, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
         Text(stringResource(R.string.itinerary_booking_value, bookingLabel(transition.booking)))
@@ -158,7 +184,73 @@ private fun ConnectionBody(
     TextButton(onClick = onBaggage, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
         Text(stringResource(R.string.itinerary_baggage_value, baggageLabel(transition.baggage)))
     }
-    LocationBlock(assessment)
+    LocationBlock(assessment, outboundShownAbove = gatePromoted)
+}
+
+/**
+ * What is factually known about the change of planes, §8.2 notwithstanding: the
+ * onward gate, the live countdown with its progress while the traveller is on
+ * the ground, and the gross span between the reported times. None of this is a
+ * connection window — the windows keep their own block and their own gate.
+ */
+@Composable
+private fun TransferBlock(transition: ItineraryTransitionUi) {
+    val assessment = transition.assessment
+    val transfer = assessment.transfer ?: return
+    val now = transition.now
+    val gap = transfer.gap.takeIf { !it.isNegative && !it.isZero }
+    val untilDeparture = Duration.between(now, transfer.end)
+        .takeIf { transfer.inProgress && !it.isNegative && !it.isZero }
+
+    // On the ground with the onward flight still to leave: time left is the
+    // headline (§8.5, widened from gate actuals to a reported landing).
+    untilDeparture?.let { remaining ->
+        Text(
+            stringResource(R.string.connection_until_onward, countdownText(remaining)),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            stringResource(R.string.connection_boarding_earlier),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+    }
+    // The walk's destination, in the leg cards' own "Gate B42 · Terminal 1"
+    // vocabulary. Reported, like everything here — the confirm-on-displays
+    // footnote below still applies to it.
+    val destination = listOfNotNull(
+        assessment.outboundLocation.gate?.let { "${stringResource(R.string.gate)} $it" },
+        assessment.outboundLocation.terminal?.let { "${stringResource(R.string.terminal)} $it" },
+    ).joinToString("  ·  ").takeIf { it.isNotEmpty() }
+    destination?.let {
+        Text(
+            it,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+    if (untilDeparture != null && gap != null) {
+        Spacer(Modifier.height(4.dp))
+        FlightProgressBar(
+            progress = (gap.seconds - untilDeparture.seconds).toFloat() / gap.seconds.toFloat(),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.outlineVariant,
+            // A walk through a terminal, not a flight.
+            planeVisible = false,
+        )
+    }
+    gap?.let {
+        if (untilDeparture == null && destination != null) Spacer(Modifier.height(2.dp))
+        Text(
+            stringResource(R.string.connection_reported_span, countdownText(it)),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+    if (untilDeparture != null || destination != null || gap != null) {
+        Spacer(Modifier.height(6.dp))
+    }
 }
 
 /**
@@ -247,21 +339,9 @@ private fun WindowBlock(transition: ItineraryTransitionUi) {
     val calculated = assessment.latestCalculatedWindow
     if (scheduled == null && calculated == null) return
 
-    // Once the traveller is actually at the gate, time left is the headline and
-    // the two windows drop below it (§8.5).
-    assessment.remainingUntilOutbound?.takeIf { assessment.arrivedAtGate }?.let { remaining ->
-        Text(
-            stringResource(R.string.connection_until_onward, countdownText(remaining)),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            stringResource(R.string.connection_boarding_earlier),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(6.dp))
-    }
+    // The live "until onward departure" headline lives in TransferBlock now,
+    // for every provider alike; this block is only the refined gate-to-gate
+    // arithmetic §8.2 allows.
     // A negative window is never printed as a duration: countdownText clamps to
     // "0m", which would read as a connection that only just works.
     val shownScheduled = scheduled?.takeIf { !it.isNegative }
@@ -334,12 +414,19 @@ private fun departureCertaintyRes(certainty: TimeCertainty): Int = when (certain
     else -> R.string.connection_endpoint_scheduled_departure
 }
 
-/** Reported terminal/gate facts for the app user — never an instruction (§7.8). */
+/**
+ * Reported terminal/gate facts for the app user — never an instruction (§7.8).
+ * [outboundShownAbove] means [TransferBlock] already promoted the onward gate;
+ * the line isn't repeated here, but the confirm-on-displays footnote still
+ * covers it.
+ */
 @Composable
-private fun LocationBlock(assessment: TransitionEngine.Assessment) {
+private fun LocationBlock(assessment: TransitionEngine.Assessment, outboundShownAbove: Boolean) {
     val inbound = locationText(assessment.inboundLocation)
-    val outbound = locationText(assessment.outboundLocation)
-    if (inbound == null && outbound == null && !assessment.onwardGatePending) return
+    val outbound = locationText(assessment.outboundLocation).takeUnless { outboundShownAbove }
+    val anyReported = inbound != null || outbound != null ||
+        (outboundShownAbove && assessment.outboundLocation.known)
+    if (!anyReported && !assessment.onwardGatePending) return
     Spacer(Modifier.height(6.dp))
     inbound?.let {
         Text(
@@ -360,7 +447,7 @@ private fun LocationBlock(assessment: TransitionEngine.Assessment) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    if (inbound != null || outbound != null) {
+    if (anyReported) {
         Text(
             stringResource(R.string.connection_confirm_displays),
             style = MaterialTheme.typography.labelSmall,

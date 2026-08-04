@@ -157,6 +157,33 @@ object TransitionEngine {
     }
 
     /**
+     * The reported span of a direct connection: latest reported arrival to
+     * latest reported departure, in whatever time family the provider gives.
+     * §8.2 gates the *windows* — a claimed gate-to-gate figure — not these two
+     * instants, which are the same values the leg cards on either side of this
+     * edge already print. [gap] is therefore a gross figure in the same class as
+     * [Assessment.breakDuration], never a connection window, and the UI labels
+     * it as time between reported times.
+     */
+    data class Transfer(
+        val start: Instant,
+        val startCertainty: TimeCertainty,
+        val end: Instant,
+        val endCertainty: TimeCertainty,
+        /**
+         * The traveller is on the ground with the onward flight still to leave:
+         * an actual inbound arrival is known (§7.6's arrived-at-gate), or the
+         * inbound is reported landed, and no actual outbound departure exists.
+         * Countdown and progress render only in this state — §8.5's rule,
+         * widened from gate actuals so a source without them can still say what
+         * it knows once the flight has visibly landed.
+         */
+        val inProgress: Boolean,
+    ) {
+        val gap: Duration get() = Duration.between(start, end)
+    }
+
+    /**
      * One leg as the engine sees it: the occurrence the user confirmed, plus the
      * latest snapshot and the reference-enriched airports the caller resolved for
      * it. [confirmedDepartureDate] is the leg's departure-airport-local date and
@@ -218,6 +245,13 @@ object TransitionEngine {
          * provider reports, which is why a direct connection never uses it.
          */
         val breakDuration: Duration?,
+        /**
+         * The reported span of a direct connection — see [Transfer]. Null for
+         * every other intent, and null when either side lacks a reported time.
+         * Populated regardless of disruption, like [breakDuration]; the UI
+         * decides which states may show it.
+         */
+        val transfer: Transfer?,
         val inboundLocation: ReportedLocation,
         val outboundLocation: ReportedLocation,
         /** True once actual inbound gate `IN` is known — only then is the traveller at the airport (§7.6). */
@@ -268,6 +302,26 @@ object TransitionEngine {
         val remaining = outboundOut?.instant
             ?.takeIf { actualIn != null && actualOut == null }
             ?.let { Duration.between(now, it) }
+
+        val transferStart = reportedEndpoint(inboundSnapshot?.arrTimes)
+        val transferEnd = reportedEndpoint(outboundSnapshot?.depTimes)
+        val inboundOnGround = actualIn != null ||
+            inboundSnapshot?.status == FlightStatus.LANDED ||
+            inboundSnapshot?.status == FlightStatus.ARRIVED
+        val transfer = if (
+            input.intent == TransitionIntent.DIRECT_CONNECTION &&
+            transferStart != null && transferEnd != null
+        ) {
+            Transfer(
+                start = transferStart.first,
+                startCertainty = transferStart.second,
+                end = transferEnd.first,
+                endCertainty = transferEnd.second,
+                inProgress = inboundOnGround && actualOut == null,
+            )
+        } else {
+            null
+        }
 
         val inboundRetrieval = retrievalState(inboundSnapshot, inboundIn?.certainty, now)
         val outboundRetrieval = retrievalState(outboundSnapshot, outboundOut?.certainty, now)
@@ -323,6 +377,7 @@ object TransitionEngine {
             outboundRetrieval = outboundRetrieval,
             disruption = disruption,
             breakDuration = grossGap.takeIf { input.intent != TransitionIntent.DIRECT_CONNECTION },
+            transfer = transfer,
             inboundLocation = if (locationsAllowed) {
                 ReportedLocation(inboundSnapshot?.arrTerminal, inboundSnapshot?.arrGate)
             } else {
@@ -488,6 +543,26 @@ object TransitionEngine {
             !gap.isAboveZero() -> null
             gap <= CONNECTION_SUGGESTION_MAX_GAP -> TransitionIntent.DIRECT_CONNECTION
             else -> TransitionIntent.DESTINATION_STAY
+        }
+    }
+
+    /**
+     * Best reported instant of the gate chain, with what it claims to be —
+     * without the §8.2 provider check, because it feeds [Transfer] rather than a
+     * window. Runway values stay out here too: mixing them into a span shown as
+     * "between the reported times" would contradict the leg cards, which print
+     * the gate-chain values.
+     */
+    private fun reportedEndpoint(times: MovementTimes?): Pair<Instant, TimeCertainty>? {
+        if (times == null) return null
+        val actual = times.actual
+        val estimated = times.estimated
+        val scheduled = times.scheduled
+        return when {
+            actual != null -> actual to TimeCertainty.ACTUAL
+            estimated != null -> estimated to TimeCertainty.ESTIMATED
+            scheduled != null -> scheduled to TimeCertainty.SCHEDULED
+            else -> null
         }
     }
 
