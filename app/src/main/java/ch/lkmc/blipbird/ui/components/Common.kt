@@ -208,16 +208,18 @@ fun landsInText(untilArrival: Duration): String =
     if (untilArrival.isNegative) "Landing…" else "Lands in ${countdownText(untilArrival)}"
 
 /**
+ * Digits that keep one width as they tick. Every clock time and countdown wears
+ * this: without it a "9" narrower than an "11" makes live numbers shimmy and
+ * columns of times sit ragged. Merges with any features already on the style
+ * rather than replacing them — a caller's ligatures or stylistic sets survive.
+ */
+fun TextStyle.withTabularNumbers(): TextStyle =
+    copy(fontFeatureSettings = listOfNotNull(fontFeatureSettings, "tnum").joinToString(", "))
+
+/**
  * Countdown with adaptive granularity: days → h m → m. Past-due targets clamp to
  * "0m" — "Lands in -2h 15m" (stale data) is never shown to the user.
  */
-/**
- * Digits that keep one width as they tick. Every clock time and countdown wears
- * this: without it a "9" narrower than an "11" makes live numbers shimmy and
- * columns of times sit ragged.
- */
-fun TextStyle.withTabularNumbers(): TextStyle = copy(fontFeatureSettings = "tnum")
-
 fun countdownText(d: Duration): String {
     val s = d.seconds.coerceAtLeast(0)
     return when {
