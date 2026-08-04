@@ -29,7 +29,6 @@ import ch.lkmc.blipbird.core.data.displayDesignator
 import ch.lkmc.blipbird.ui.itinerary.UNRESOLVED_CODE
 import ch.lkmc.blipbird.ui.itinerary.dateSpan
 import ch.lkmc.blipbird.ui.itinerary.designatorLine
-import ch.lkmc.blipbird.ui.itinerary.displayTitle
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -114,7 +113,12 @@ data class ListUiState(
 @Immutable
 data class ItineraryHomeRow(
     val id: Long,
-    val title: String,
+    /**
+     * The name the user typed, or null for the generated "N-flight itinerary"
+     * title. The card only spends a line on a title the user authored — every
+     * fact the generated one encodes (count, first date) is on the card anyway.
+     */
+    val customTitle: String?,
     val dateSpan: String?,
     val designators: String,
     val flightCount: Int,
@@ -254,7 +258,7 @@ class FlightListViewModel @Inject constructor(
             }.takeIf { it >= 0 } ?: views.lastIndex
             ItineraryHomeRow(
                 id = itinerary.id,
-                title = itinerary.displayTitle(context),
+                customTitle = itinerary.name,
                 dateSpan = itinerary.dateSpan(context),
                 designators = itinerary.designatorLine(
                     limit = 4,

@@ -398,6 +398,13 @@ private fun ListSectionHeading(text: String) {
     )
 }
 
+/**
+ * An itinerary's home tile, at most four lines: a name only the user could have
+ * written, the airport chain, the featured leg's countdown, and one meta line.
+ * The generated "N-flight itinerary - date" title is never shown here — every
+ * fact it encodes (count, first date) is already on the meta line, and the old
+ * card spent up to three of its lines restating it.
+ */
 @Composable
 private fun ItineraryHomeCard(
     row: ItineraryHomeRow,
@@ -414,19 +421,43 @@ private fun ItineraryHomeCard(
         Column(Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        row.title,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.semantics { heading() },
-                    )
-                    row.dateSpan?.let {
+                    if (row.customTitle != null) {
                         Text(
-                            it,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.75f),
+                            row.customTitle,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.semantics { heading() },
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.Route,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        // The resolved airport chain when there is one; the
+                        // flight numbers are the honest fallback until the
+                        // routes come back. With no name above, this line *is*
+                        // the card's title and takes the title's size.
+                        Text(
+                            row.routeChain ?: row.designators,
+                            style = if (row.customTitle == null) MaterialTheme.typography.titleLarge
+                            else MaterialTheme.typography.titleSmall,
+                            fontWeight = if (row.customTitle == null) FontWeight.Bold
+                            else FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(
+                                    if (row.customTitle == null) Modifier.semantics { heading() }
+                                    else Modifier
+                                ),
                         )
                     }
                 }
@@ -443,36 +474,6 @@ private fun ItineraryHomeCard(
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.Route,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                // The resolved airport chain when there is one; the flight numbers
-                // are the honest fallback until the routes come back.
-                Text(
-                    row.routeChain ?: row.designators,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            if (row.routeChain != null) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    row.designators,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.78f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
             row.currentLeg?.let { leg ->
                 val phase = itineraryLegPhase(leg)
                 if (phase != null) {
@@ -486,24 +487,27 @@ private fun ItineraryHomeCard(
                     )
                 }
             }
+            // One line for what used to be three: when, how many, how joined.
+            // Repeated transition labels collapse — a three-leg chain of direct
+            // connections says "Direct connection" once, not twice.
+            val transitionSummary = row.transitions.take(3)
+                .map { transitionLabel(it) }
+                .distinct()
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(" | ")
+            val meta = listOfNotNull(
+                row.dateSpan,
+                stringResource(R.string.itinerary_flight_count, row.flightCount),
+                transitionSummary,
+            ).joinToString("  ·  ")
             Spacer(Modifier.height(8.dp))
             Text(
-                stringResource(R.string.itinerary_flight_count, row.flightCount),
+                meta,
                 style = MaterialTheme.typography.bodySmall,
                 color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.78f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            if (row.transitions.isNotEmpty()) {
-                val labels = mutableListOf<String>()
-                for (intent in row.transitions.take(3)) labels += transitionLabel(intent)
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    labels.joinToString("  |  "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.78f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
     }
 }

@@ -37,7 +37,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -168,14 +167,20 @@ class ItineraryDetailViewModel @Inject constructor(
     private val refreshing = MutableStateFlow(false)
 
     /**
-     * Provider-derived state per member flight, keyed by flight id. Re-subscribed
-     * only when the *membership* changes: the graph flow re-emits for every alias
-     * or answer edit, and rebuilding N Room flows on each of those would drop and
-     * re-run the whole page.
+     * Member flight ids in spine order, re-emitting only when the *membership*
+     * changes: the graph flow re-emits for every alias or answer edit, and both
+     * consumers below only care about who is on the plan.
      */
-    private val live: Flow<Map<Long, LegLive>> = loadState
+    private val memberIds: Flow<List<Long>> = loadState
         .map { state -> (state as? ItineraryDetailLoadState.Found)?.itinerary?.legs?.map { it.flight.id }.orEmpty() }
         .distinctUntilChanged()
+
+    /**
+     * Provider-derived state per member flight, keyed by flight id. Rebuilt only
+     * on membership change — rebuilding N Room flows on every graph edit would
+     * drop and re-run the whole page.
+     */
+    private val live: Flow<Map<Long, LegLive>> = memberIds
         .flatMapLatest { ids ->
             if (ids.isEmpty()) flowOf(emptyMap())
             else combine(ids.map(::liveFlow)) { values -> values.associateBy { it.flightId } }
@@ -205,19 +210,30 @@ class ItineraryDetailViewModel @Inject constructor(
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
 
+    /** Members already given their one quiet lookup by this screen instance. */
+    private val quietLookupAttempted = mutableSetOf<Long>()
+
     init {
         // A member that has never resolved shows nothing at all, and a plan more
         // than 48 h out is outside every background cadence (CadencePolicy), so
-        // nothing would fill it in either. One debounced lookup per empty leg on
-        // open is the difference between an itinerary that loads and one that
-        // looks broken; legs that already have a snapshot are left to the worker
-        // and to pull-to-refresh rather than spending a request on open.
+        // nothing would fill it in either. One debounced lookup per empty leg is
+        // the difference between an itinerary that loads and one that looks
+        // broken. Collected from the membership flow rather than once at open: a
+        // leg added by a later edit arrives as a membership change and deserves
+        // the same first lookup — otherwise it sits blank until a manual
+        // pull-to-refresh, with no lookup attempt to even attribute the
+        // blankness to. Legs that already have a snapshot are left to the worker
+        // and to pull-to-refresh rather than spending a request here.
         viewModelScope.launch {
-            val itinerary = loadState.first { it !is ItineraryDetailLoadState.Loading }
-            val legs = (itinerary as? ItineraryDetailLoadState.Found)?.itinerary?.legs.orEmpty()
-            for (leg in legs) {
-                if (flights.latestSnapshot(leg.flight.id) != null) continue
-                refreshLegQuietly(leg.flight.id)
+            memberIds.collect { ids ->
+                for (id in ids) {
+                    // One attempt per member per screen instance: membership
+                    // re-emits on every add/remove, and a failed lookup must not
+                    // turn each subsequent edit into a retry.
+                    if (!quietLookupAttempted.add(id)) continue
+                    if (flights.latestSnapshot(id) != null) continue
+                    refreshLegQuietly(id)
+                }
             }
         }
     }

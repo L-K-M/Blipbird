@@ -279,7 +279,6 @@
     <string name="body_clock_shift_minus">−%1$s</string>
     <string name="itinerary_body_clock_peak_later">Biggest shift: %1$s later, at %2$s</string>
     <string name="itinerary_body_clock_peak_earlier">Biggest shift: %1$s earlier, at %2$s</string>
-    <string name="itinerary_body_clock_negligible">No leg of this plan shifts your body clock enough to matter.</string>
     <string name="itinerary_body_clock_returns">Your last flight lands back on %1$s time.</string>
     <string name="itinerary_body_clock_incomplete">Some legs have no resolved route yet and are left out of this chain.</string>
     <plurals name="body_clock_negligible">
