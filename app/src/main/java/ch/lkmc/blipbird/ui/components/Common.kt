@@ -15,6 +15,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -144,8 +145,14 @@ fun providerLabel(name: String): String = when (name) {
 @Composable
 fun lookupProblemText(outcome: LookupOutcome, providers: List<String> = emptyList()): String {
     val conjunction = stringResource(R.string.provider_and)
-    val services = providers.map { providerLabel(it) }
-        .reduceOrNull { left, right -> String.format(conjunction, left, right) }
+    val named = providers.map { providerLabel(it) }
+    // "A", "A and B", "A, B and C" — folding with the conjunction instead would
+    // give "A and B and C" the day a third provider joins the chain.
+    val services = when (named.size) {
+        0 -> null
+        1 -> named.single()
+        else -> String.format(conjunction, named.dropLast(1).joinToString(", "), named.last())
+    }
     return when (outcome) {
         LookupOutcome.NO_KEY ->
             if (services != null) stringResource(R.string.lookup_problem_no_key_named, services)
@@ -160,8 +167,13 @@ fun lookupProblemText(outcome: LookupOutcome, providers: List<String> = emptyLis
             if (services != null) stringResource(R.string.lookup_problem_offline_named, services)
             else stringResource(R.string.lookup_problem_offline)
         LookupOutcome.NONRETRYABLE_ERROR ->
-            if (services != null) stringResource(R.string.lookup_problem_failed_named, services)
-            else stringResource(R.string.lookup_problem_failed)
+            // The only message that goes on to say whose key to check, so it is
+            // the only one that has to agree in number with what it just named.
+            if (services != null) {
+                pluralStringResource(R.plurals.lookup_problem_failed_named, named.size, services)
+            } else {
+                stringResource(R.string.lookup_problem_failed)
+            }
         LookupOutcome.NOT_FOUND -> stringResource(R.string.lookup_problem_not_found)
         LookupOutcome.SUCCESS -> stringResource(R.string.value_unknown)   // never rendered
     }

@@ -35,12 +35,15 @@
     <string name="lookup_problem_quota_named">%1$s lookup budget used up</string>
     <string name="lookup_problem_rate_limited_named">%1$s rate limited — will retry</string>
     <string name="lookup_problem_offline_named">%1$s unreachable — will retry</string>
-    <string name="lookup_problem_failed_named">%1$s rejected the request — check its key in Settings</string>
     <string name="lookup_problem_quota">Lookup budget used up</string>
     <string name="lookup_problem_rate_limited">Rate limited — will retry</string>
     <string name="lookup_problem_offline">Provider unreachable — will retry</string>
     <string name="lookup_problem_not_found">No flight found for this date</string>
     <string name="lookup_problem_failed">Lookup failed — check keys in Settings</string>
+    <plurals name="lookup_problem_failed_named">
+        <item quantity="one">%1$s rejected the request — check its key in Settings</item>
+        <item quantity="other">%1$s rejected the request — check their keys in Settings</item>
+    </plurals>
     <string name="archive">Archive</string>
     <string name="delete">Delete</string>
     <string name="rename">Rename</string>
