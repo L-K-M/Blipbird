@@ -29,9 +29,12 @@ review feedback under this policy:
   product decisions) — collect those as follow-up suggestions instead.
 
 At steady-state: post a short scorecard in chat (what was real, what was
-refuted, what's deferred), state that the PR is merge-ready, call
-`unsubscribe_pr_activity`, and delete any pending self check-in triggers for
-that PR. Ignore further automated review rounds after that point.
+refuted, what's deferred), then merge the PR into `main` once its build checks
+are green — the user tests `main` locally, so a merge-ready PR left open is a
+PR they can't see. Use a merge commit titled `Merge PR #NN: …` like the rest of
+the history. Then call `unsubscribe_pr_activity` and delete any pending self
+check-in triggers for that PR. Ignore further automated review rounds after
+that point.
 
 **Exceptions:** comments from human reviewers are never subject to the
 steady-state cutoff — always address them. And always unsubscribe when the PR
