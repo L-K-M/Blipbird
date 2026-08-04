@@ -489,13 +489,16 @@ private fun ItineraryHomeCard(
             }
             // One line for what used to be three: when, how many, how joined.
             // Repeated transition labels collapse — a three-leg chain of direct
-            // connections says "Direct connection" once, not twice. The pipe is
-            // deliberately tighter than the "  ·  " between fields: the labels
-            // are one sub-list inside the last field, and giving both separators
-            // equal air would read as four fields instead of three.
-            val transitionSummary = row.transitions.take(3)
+            // connections says "Direct connection" once, not twice — and the cap
+            // lands after the dedupe, so a repeated label never crowds a distinct
+            // one out of the summary. The pipe is deliberately tighter than the
+            // "  ·  " between fields: the labels are one sub-list inside the last
+            // field, and giving both separators equal air would read as four
+            // fields instead of three.
+            val transitionSummary = row.transitions
                 .map { transitionLabel(it) }
                 .distinct()
+                .take(3)
                 .takeIf { it.isNotEmpty() }
                 ?.joinToString(" | ")
             val meta = listOfNotNull(
@@ -508,7 +511,9 @@ private fun ItineraryHomeCard(
                 meta,
                 style = MaterialTheme.typography.bodySmall,
                 color = contrastAware(MaterialTheme.colorScheme.onPrimaryContainer, 0.78f),
-                maxLines = 1,
+                // Two lines, not one: on a narrow phone one line ellipsizes away
+                // the transition summary — the facts this line exists to carry.
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }

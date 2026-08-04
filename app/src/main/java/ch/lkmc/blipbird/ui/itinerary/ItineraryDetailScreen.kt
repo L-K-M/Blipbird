@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -98,6 +99,9 @@ fun ItineraryDetailScreen(
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        // The screen's h1 lives here now that the summary card
+                        // no longer repeats the title below it.
+                        modifier = Modifier.semantics { heading() },
                     )
                 },
                 navigationIcon = {

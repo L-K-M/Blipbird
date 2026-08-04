@@ -25,6 +25,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
@@ -73,6 +74,10 @@ internal fun SummaryCard(
                     routeChain ?: designators,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
+                    // A many-leg chain (or the unbounded designator fallback)
+                    // must not turn the banner into a paragraph at title size.
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).semantics { heading() },
                 )
             }

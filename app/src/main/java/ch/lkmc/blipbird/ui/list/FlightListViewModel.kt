@@ -49,7 +49,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -258,7 +257,11 @@ class FlightListViewModel @Inject constructor(
             }.takeIf { it >= 0 } ?: views.lastIndex
             ItineraryHomeRow(
                 id = itinerary.id,
-                customTitle = itinerary.name,
+                // The repository already refuses to store a blank name
+                // (ItineraryRepository trims and nulls on write), but the card's
+                // "a line only for a name the user authored" contract shouldn't
+                // rest on an invariant maintained two layers away.
+                customTitle = itinerary.name?.takeIf { it.isNotBlank() },
                 dateSpan = itinerary.dateSpan(context),
                 designators = itinerary.designatorLine(
                     limit = 4,

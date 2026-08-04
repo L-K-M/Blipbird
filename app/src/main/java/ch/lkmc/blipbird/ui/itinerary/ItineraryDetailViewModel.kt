@@ -41,9 +41,12 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import java.time.LocalDate
 import javax.inject.Inject
@@ -168,8 +171,8 @@ class ItineraryDetailViewModel @Inject constructor(
 
     /**
      * Member flight ids in spine order, re-emitting only when the *membership*
-     * changes: the graph flow re-emits for every alias or answer edit, and both
-     * consumers below only care about who is on the plan.
+     * changes: the graph flow re-emits for every alias or answer edit, and this
+     * chain's consumers only care about who is on the plan.
      */
     private val memberIds: Flow<List<Long>> = loadState
         .map { state -> (state as? ItineraryDetailLoadState.Found)?.itinerary?.legs?.map { it.flight.id }.orEmpty() }
@@ -179,8 +182,15 @@ class ItineraryDetailViewModel @Inject constructor(
      * Provider-derived state per member flight, keyed by flight id. Rebuilt only
      * on membership change — rebuilding N Room flows on every graph edit would
      * drop and re-run the whole page.
+     *
+     * The quiet lookups ride this chain's own subscription instead of a standing
+     * collector in `init`: a collector for the VM's whole life would hold
+     * `loadState`'s Room observation open long after the UI stopped collecting,
+     * silently defeating its WhileSubscribed policy. Launched, not inlined — a
+     * lookup run must never delay the page's own emissions.
      */
     private val live: Flow<Map<Long, LegLive>> = memberIds
+        .onEach(::launchQuietLookups)
         .flatMapLatest { ids ->
             if (ids.isEmpty()) flowOf(emptyMap())
             else combine(ids.map(::liveFlow)) { values -> values.associateBy { it.flightId } }
@@ -213,26 +223,42 @@ class ItineraryDetailViewModel @Inject constructor(
     /** Members already given their one quiet lookup by this screen instance. */
     private val quietLookupAttempted = mutableSetOf<Long>()
 
-    init {
-        // A member that has never resolved shows nothing at all, and a plan more
-        // than 48 h out is outside every background cadence (CadencePolicy), so
-        // nothing would fill it in either. One debounced lookup per empty leg is
-        // the difference between an itinerary that loads and one that looks
-        // broken. Collected from the membership flow rather than once at open: a
-        // leg added by a later edit arrives as a membership change and deserves
-        // the same first lookup — otherwise it sits blank until a manual
-        // pull-to-refresh, with no lookup attempt to even attribute the
-        // blankness to. Legs that already have a snapshot are left to the worker
-        // and to pull-to-refresh rather than spending a request here.
+    /** One lookup run at a time — a membership edit mid-run queues, never fans out. */
+    private val quietLookupGate = Mutex()
+
+    /**
+     * A member that has never resolved shows nothing at all, and a plan more
+     * than 48 h out is outside every background cadence (CadencePolicy), so
+     * nothing would fill it in either. One debounced lookup per empty leg is the
+     * difference between an itinerary that loads and one that looks broken.
+     * Driven by the membership flow rather than once at open: a leg added by a
+     * later edit arrives as a membership change and deserves the same first
+     * lookup — otherwise it sits blank until a manual pull-to-refresh, with no
+     * lookup attempt to even attribute the blankness to. Legs that already have
+     * a snapshot are left to the worker and to pull-to-refresh rather than
+     * spending a request here.
+     */
+    private fun launchQuietLookups(ids: List<Long>) {
         viewModelScope.launch {
-            memberIds.collect { ids ->
-                for (id in ids) {
-                    // One attempt per member per screen instance: membership
-                    // re-emits on every add/remove, and a failed lookup must not
-                    // turn each subsequent edit into a retry.
-                    if (!quietLookupAttempted.add(id)) continue
-                    if (flights.latestSnapshot(id) != null) continue
-                    refreshLegQuietly(id)
+            quietLookupGate.withLock {
+                // A member removed by an edit forfeits its mark: coming back is
+                // a deliberate re-add and earns a fresh first lookup, and the
+                // set stays bounded by the current membership.
+                quietLookupAttempted.retainAll(ids.toSet())
+                try {
+                    for (id in ids) {
+                        // One attempt per present member per screen instance:
+                        // membership re-emits on every add/remove, and a failed
+                        // lookup must not turn each subsequent edit into a retry.
+                        if (!quietLookupAttempted.add(id)) continue
+                        if (flights.latestSnapshot(id) != null) continue
+                        refreshLegQuietly(id)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // A failed eligibility read forfeits this run, not the
+                    // screen's remaining lookups; worker and refresh still cover.
                 }
             }
         }
