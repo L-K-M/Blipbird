@@ -250,6 +250,9 @@ class ItineraryDetailViewModel @Inject constructor(
                         // One attempt per present member per screen instance:
                         // membership re-emits on every add/remove, and a failed
                         // lookup must not turn each subsequent edit into a retry.
+                        // Marked before the checks on purpose — if this id's
+                        // eligibility read throws, the next run skips past it to
+                        // the members after it instead of wedging on it forever.
                         if (!quietLookupAttempted.add(id)) continue
                         if (flights.latestSnapshot(id) != null) continue
                         refreshLegQuietly(id)
@@ -259,6 +262,9 @@ class ItineraryDetailViewModel @Inject constructor(
                 } catch (_: Exception) {
                     // A failed eligibility read forfeits this run, not the
                     // screen's remaining lookups; worker and refresh still cover.
+                    // Silent like every other ViewModel swallow here — the lookup
+                    // path already records its own failure as the attributed
+                    // outcome the leg card renders.
                 }
             }
         }
