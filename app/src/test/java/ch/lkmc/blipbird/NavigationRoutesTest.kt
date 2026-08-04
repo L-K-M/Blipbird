@@ -176,6 +176,75 @@ class NavigationRoutesTest {
         assertEquals(listOf<Screen>(Screen.List), stack)
     }
 
+    /**
+     * The bug this pins: a flight dossier opened *from* an itinerary is the same
+     * kind of screen as the itinerary, so ranking by screen type made the back
+     * step read as a push — the itinerary slid in from the trailing edge.
+     */
+    @Test
+    fun backFromAFlightOpenedInsideAnItineraryIsAPop() {
+        val itinerary = Screen.ItineraryDetail(7)
+        val flight = Screen.FlightDetail(42)
+        val stack = mutableListOf(Screen.List, itinerary, flight)
+        val depths = stack.withIndex().associate { (index, screen) -> screen to index }
+
+        // Push: the flight sits one level deeper than the itinerary it came from.
+        assertTrue(navigationForward(itinerary, flight, stack, depths))
+
+        // Pop: the flight is already off the stack while it animates out, so its
+        // depth comes from the remembered sample.
+        stack.popIfTop(flight)
+        assertFalse(navigationForward(flight, itinerary, stack, depths))
+        assertEquals(1, navigationDepth(itinerary, stack, depths))
+        assertEquals(2, navigationDepth(flight, stack, depths))
+    }
+
+    @Test
+    fun ordinaryPushesAndPopsKeepTheirDirection() {
+        val itinerary = Screen.ItineraryDetail(7)
+        val stack = mutableListOf(Screen.List, itinerary)
+        val depths = stack.withIndex().associate { (index, screen) -> screen to index }
+
+        assertTrue(navigationForward(Screen.List, itinerary, stack, depths))
+        assertFalse(navigationForward(itinerary, Screen.List, stack, depths))
+    }
+
+    /** A deep link swapping one dossier for another is a replacement, not a back step. */
+    @Test
+    fun replacingAnEntryAtTheSameDepthAnimatesForward() {
+        val previous = Screen.FlightDetail(42)
+        val next = Screen.FlightDetail(43)
+        val stack = mutableListOf(Screen.List, next)
+        val depths = mapOf(Screen.List to 0, previous to 1, next to 1)
+
+        assertTrue(navigationForward(previous, next, stack, depths))
+    }
+
+    /**
+     * Depth is where a screen sits *now*, so a stack carrying the same entry twice
+     * reports the deeper one. `navigate` pops back rather than pushing a duplicate,
+     * so this cannot arise today — the test pins the contract to this function
+     * instead of to that invariant, since reading the shallower copy would animate
+     * a push as a pop.
+     */
+    @Test
+    fun depthReadsTheDeepestOccurrenceOfARepeatedScreen() {
+        val flight = Screen.FlightDetail(42)
+        val stack = listOf(Screen.List, flight, Screen.ItineraryDetail(7), flight)
+
+        assertEquals(3, navigationDepth(flight, stack, emptyMap()))
+        assertTrue(navigationForward(Screen.ItineraryDetail(7), flight, stack, emptyMap()))
+    }
+
+    /** With no sample yet (first frame after a restore) the static rank stands in. */
+    @Test
+    fun unknownDepthFallsBackToTheStaticRank() {
+        assertEquals(
+            screenRank(Screen.Settings),
+            navigationDepth(Screen.Settings, emptyList(), emptyMap()),
+        )
+    }
+
     @Test
     fun notificationInvocationIdentityIncludesSemanticSlot() {
         val status = FlightInvocation(42, "status", "event-1")

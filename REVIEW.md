@@ -53,10 +53,10 @@ the build bar (0 lint errors) holds — but worth a cheap sweep. *(S)*
   wants or suppress it project-wide; the split is the untidy part.
 - **`PluralsCandidate` ×3** — leg/flight count strings are formatted singular;
   they want `<plurals>` before any translation pass (relates to G1).
-- **`AutoboxingStateCreation`** — `ItineraryEditorScreen.kt:121` should be
-  `mutableIntStateOf`.
-- **`TypographyEllipsis`** — one literal `...` in `strings.xml` should be `…`.
 - **`UseKtx`** — `ReferenceImporter.kt:78` can use `SharedPreferences.edit {}`.
+
+`AutoboxingStateCreation` (`ItineraryEditorScreen`) and `TypographyEllipsis`
+(`itinerary_loading`) were fixed alongside the itinerary detail work.
 
 Fixed during the merge review rather than filed: the non-atomic `getOrPut`
 mutex interning in `FlightOperationLocks` (broke the per-flight serialization
@@ -89,6 +89,29 @@ below the bar for the **Open bugs** list.
   event-token distinctness is deliberate — it's what makes a tap always read as
   a fresh invocation past `MainActivity.consumedDeepLink` — so this wants
   measuring on device before changing anything. *(S)*
+
+- **IT-7 — AeroDataBox's time-family mapping still blocks its connection windows.**
+  The adapter maps `revisedTime ?: predictedTime` to *gate estimated* and
+  `runwayTime` to *runway actual*, neither of which the provider schema supports
+  (`docs/ITINERARY_PROPOSAL.md` §8.2). `TransitionEngine` therefore refuses to
+  build a window from an `aerodatabox` snapshot and says so
+  (`GATE_TIMES_UNSUPPORTED`) — correct, but it means the connection window only
+  lights up for AeroAPI users today, and AeroDataBox is first in the failover
+  chain. *Fix:* treat `revisedTime` as a gate value only when a distinct
+  `runwayTime` disambiguates it, stop mapping experimental `predictedTime` into
+  `estimated`, and stop filing `runwayTime` as an actual — with revised-,
+  predicted- and runway-only fixtures, since this also moves the phase machine's
+  `LANDED` derivation. Then add `aerodatabox` to
+  `TransitionEngine.GATE_MILESTONE_PROVIDERS`. *(M)*
+
+- **IT-8 — the confirmed occurrence pair is derived, not persisted.**
+  §8.8 wants the confirmed operational airport pair stored in Ops with a TTL, so
+  a pair that *stops* matching under the same bindings can be told apart from
+  one that was never confirmed (and can emit the narrowly scoped continuity
+  event). `TransitionEngine` re-derives continuity from the current snapshots
+  every evaluation instead: the user-visible states are right, but
+  `AIRPORTS_DO_NOT_MEET` reads as a present-tense fact rather than as a change,
+  and no continuity notification can be raised. *(M)*
 
 - **IT-6 — `canonicalOccurrences` keys on IATA-or-ICAO, not both.**
   `ItineraryRepository.save`'s duplicate-occurrence check builds
@@ -197,9 +220,14 @@ resurfacing in every review. Each notes what would flip the call.
 - **F5 — "Boarding" as a real status** — ADB `boarding`/`gateClosed` collapse
   into SCHEDULED; `strings.xml` already ships the word. *(M)*
 - **F7 — "Next flight" Glance widget.** *(M)*
-- **F10 — Layover awareness remainder** — local user-classified transitions now
-  ship with itineraries; live gate-time windows remain gated on provider rights
-  and confirmed occurrence identity. *(L)*
+- **F10 — Layover awareness remainder** — the itinerary detail screen now draws
+  the §7.6 journey spine with resolved routes, times, status, terminal/gate and
+  fetch age per leg, and `TransitionEngine` (§8.2–§8.9) derives the two
+  connection windows, their change, the remaining time after actual gate
+  arrival, airport continuity and the disruption precedence. What is left is
+  IT-7 (AeroDataBox time families, which is what gates the windows for most
+  users), IT-8 (persisted occurrence pair), the Tier 2 official-guidance
+  registry (§9.2), MCT (§8.12), and connection-change notifications (§8.10). *(M)*
 - **F12 — Per-flight notification profiles** (PLAN §12.1). *(M)*
 - **F13 — Flight log / Passport stats** (needs summary rows kept past the
   prune). *(L)*

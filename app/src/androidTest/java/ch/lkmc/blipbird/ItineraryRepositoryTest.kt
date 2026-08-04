@@ -14,6 +14,7 @@ import ch.lkmc.blipbird.core.model.SaveItineraryRequest
 import ch.lkmc.blipbird.core.model.TransitionIntent
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -131,6 +132,52 @@ class ItineraryRepositoryTest {
         }
         assertNotNull(userDb.trackedFlightDao().byId(first))
         assertNotNull(userDb.trackedFlightDao().byId(second))
+    }
+
+    /**
+     * The composer's "what happens after this flight" answer has to survive the
+     * save and every later edit of an unrelated leg — the editor used to clear it
+     * client-side, and nothing pinned that the repository itself round-trips it.
+     */
+    @Test
+    fun transitionIntentSurvivesCreationAndLaterEdits() = runBlocking {
+        val created = repository.save(
+            SaveItineraryRequest(
+                creationRequestId = "create-3",
+                itineraryId = null,
+                name = "Trip",
+                legs = listOf(
+                    newLeg("LX100").copy(transitionAfter = TransitionIntent.DIRECT_CONNECTION),
+                    newLeg("LX200").copy(transitionAfter = TransitionIntent.DESTINATION_STAY),
+                    newLeg("LX300"),
+                ),
+            )
+        )
+        val original = checkNotNull(repository.itinerary(created.itineraryId))
+        assertEquals(
+            listOf(TransitionIntent.DIRECT_CONNECTION, TransitionIntent.DESTINATION_STAY),
+            original.transitions.map { it.intent },
+        )
+
+        // Rename only: the two edges keep the answers the user gave.
+        repository.save(
+            SaveItineraryRequest(
+                creationRequestId = "edit-rename",
+                itineraryId = original.id,
+                name = "Trip renamed",
+                legs = original.legs.mapIndexed { index, leg ->
+                    existingLeg(leg.flight.id).copy(
+                        transitionAfter = original.transitions.getOrNull(index)?.intent
+                            ?: TransitionIntent.UNKNOWN,
+                    )
+                },
+            )
+        )
+        val edited = checkNotNull(repository.itinerary(original.id))
+        assertEquals(
+            listOf(TransitionIntent.DIRECT_CONNECTION, TransitionIntent.DESTINATION_STAY),
+            edited.transitions.map { it.intent },
+        )
     }
 
     private fun newLeg(designator: String) = ItineraryDraftLegInput(

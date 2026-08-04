@@ -4,8 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -129,10 +130,17 @@ fun GroupExistingFlightsScreen(
             )
         },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        BoxWithConstraints(
+            Modifier.padding(padding).fillMaxSize(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            // Same narrow-screen trade as the composer: gutter width goes back to
+            // the content when there isn't much of it (§7.16). Off the spine's own
+            // measurements so this screen can't drift from the one below it.
+            val metrics = spineMetrics(compact = maxWidth < COMPACT_WIDTH)
             LazyColumn(
                 modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                contentPadding = PaddingValues(metrics.screenPadding),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
@@ -166,7 +174,7 @@ fun GroupExistingFlightsScreen(
                         ),
                     ) {
                         Row(
-                            Modifier.padding(16.dp),
+                            Modifier.padding(metrics.cardPadding),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
