@@ -3,8 +3,10 @@ package ch.lkmc.blipbird.ui.itinerary
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -15,8 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material.icons.filled.UnfoldMore
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,7 +28,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.TimeCertainty
@@ -43,6 +42,11 @@ import ch.lkmc.blipbird.ui.components.elapsedText
  * One edge of the spine: what [TransitionEngine] could derive for the gap
  * between two legs, leading with the factual state and only then with a
  * duration (§7.7).
+ *
+ * Deliberately not a card. This is what happens *between* two flights, so it
+ * reads as connective tissue — a hairline running from the card above to the one
+ * below, with the detail hanging off it — rather than as a third object competing
+ * with the flights it joins.
  */
 @Composable
 internal fun TransitionRow(
@@ -54,37 +58,35 @@ internal fun TransitionRow(
     onIntent: () -> Unit,
     onApplySuggestion: (TransitionIntent) -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.Top) {
-        Connector(metrics.gutter)
-        Spacer(Modifier.width(metrics.railGap))
-        Card(
-            modifier = Modifier.fillMaxWidth().itineraryBorder(18.dp),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = itinerarySurface(0.42f)),
-        ) {
-            Column(Modifier.padding(metrics.cardPadding)) {
-                TransitionHeader(transition, enabled, onIntent)
-                Spacer(Modifier.height(6.dp))
-                when (transition.intent) {
-                    TransitionIntent.DIRECT_CONNECTION -> ConnectionBody(
-                        transition = transition,
-                        enabled = enabled,
-                        onBooking = onBooking,
-                        onBaggage = onBaggage,
-                    )
-                    TransitionIntent.DESTINATION_STAY -> BreakBody(
-                        transition = transition,
-                        label = R.string.transition_stay_break,
-                        body = R.string.transition_stay_body,
-                    )
-                    TransitionIntent.SURFACE_TRANSFER -> SurfaceBody(transition)
-                    TransitionIntent.UNKNOWN -> UnsetBody(
-                        transition = transition,
-                        enabled = enabled,
-                        onIntent = onIntent,
-                        onApplySuggestion = onApplySuggestion,
-                    )
-                }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = metrics.connectorInset)
+            .height(IntrinsicSize.Min),
+    ) {
+        Connector()
+        Column(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp)) {
+            TransitionHeader(transition, enabled, onIntent)
+            Spacer(Modifier.height(4.dp))
+            when (transition.intent) {
+                TransitionIntent.DIRECT_CONNECTION -> ConnectionBody(
+                    transition = transition,
+                    enabled = enabled,
+                    onBooking = onBooking,
+                    onBaggage = onBaggage,
+                )
+                TransitionIntent.DESTINATION_STAY -> BreakBody(
+                    transition = transition,
+                    label = R.string.transition_stay_break,
+                    body = R.string.transition_stay_body,
+                )
+                TransitionIntent.SURFACE_TRANSFER -> SurfaceBody(transition)
+                TransitionIntent.UNKNOWN -> UnsetBody(
+                    transition = transition,
+                    enabled = enabled,
+                    onIntent = onIntent,
+                    onApplySuggestion = onApplySuggestion,
+                )
             }
         }
     }
@@ -443,17 +445,16 @@ private fun UnsetBody(
     }
 }
 
-/** The vertical run of the spine between two legs. */
+/**
+ * The vertical run of the spine between two legs. It spans the whole row, so it
+ * meets the card above and the card below and the three read as one journey.
+ */
 @Composable
-private fun Connector(gutter: Dp) {
-    Box(Modifier.width(gutter).height(CONNECTOR_HEIGHT), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .width(4.dp)
-                .height(CONNECTOR_HEIGHT)
-                .background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))
-        )
-    }
+private fun Connector() {
+    Box(
+        Modifier
+            .width(2.dp)
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(1.dp))
+    )
 }
-
-private val CONNECTOR_HEIGHT = 64.dp

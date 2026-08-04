@@ -1,6 +1,5 @@
 package ch.lkmc.blipbird.ui.itinerary
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -54,6 +53,9 @@ import ch.lkmc.blipbird.core.model.BaggagePlan
 import ch.lkmc.blipbird.core.model.BookingArrangement
 import ch.lkmc.blipbird.core.model.TransitionIntent
 import ch.lkmc.blipbird.ui.components.BirdRefreshIndicator
+
+/** Air between the header cards, and between two legs with no edge of their own. */
+private val SECTION_GAP = 12.dp
 
 /**
  * The journey spine (`docs/ITINERARY_PROPOSAL.md` §7.6): ordered leg rows joined
@@ -156,44 +158,57 @@ fun ItineraryDetailScreen(
                     // shrink rather than squeezing the content into a column too
                     // narrow to hold a route row.
                     val metrics = spineMetrics(compact = maxWidth < COMPACT_WIDTH)
+                    // No inter-item arrangement: a leg card and the transition
+                    // below it must touch, so the connector meets both and the
+                    // three read as one journey. Everything else brings its own
+                    // bottom margin.
                     LazyColumn(
                         modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth(),
                         contentPadding = PaddingValues(metrics.screenPadding),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         if (error != null) {
                             item("error") {
                                 Text(
                                     error.orEmpty(),
                                     color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+                                    modifier = Modifier
+                                        .padding(bottom = SECTION_GAP)
+                                        .semantics { liveRegion = LiveRegionMode.Assertive },
                                 )
                             }
                         }
                         item("summary") {
-                            SummaryCard(
-                                title = graph.displayTitle(context),
-                                dateSpan = graph.dateSpan(context),
-                                routeChain = state.routeChain,
-                                designators = graph.designatorLine(
-                                    separator = " ${stringResource(R.string.itinerary_designator_separator)} ",
-                                ),
-                                padding = metrics.cardPadding,
-                            )
-                        }
-                        state.bodyClock?.let { trip ->
-                            item("body-clock") { ItineraryBodyClockCard(trip) }
-                        }
-                        if (state.awaitingFirstSnapshot) {
-                            item("live-state") {
-                                LiveDetailsNotice(
-                                    hasStatusKey = state.hasStatusKey,
+                            Column(Modifier.padding(bottom = SECTION_GAP)) {
+                                SummaryCard(
+                                    title = graph.displayTitle(context),
+                                    dateSpan = graph.dateSpan(context),
+                                    routeChain = state.routeChain,
+                                    designators = graph.designatorLine(
+                                        separator = " ${stringResource(R.string.itinerary_designator_separator)} ",
+                                    ),
                                     padding = metrics.cardPadding,
-                                    onOpenSettings = onOpenSettings,
                                 )
                             }
                         }
-                        state.legs.forEach { leg ->
+                        state.bodyClock?.let { trip ->
+                            item("body-clock") {
+                                Column(Modifier.padding(bottom = SECTION_GAP)) {
+                                    ItineraryBodyClockCard(trip)
+                                }
+                            }
+                        }
+                        if (state.awaitingFirstSnapshot) {
+                            item("live-state") {
+                                Column(Modifier.padding(bottom = SECTION_GAP)) {
+                                    LiveDetailsNotice(
+                                        hasStatusKey = state.hasStatusKey,
+                                        padding = metrics.cardPadding,
+                                        onOpenSettings = onOpenSettings,
+                                    )
+                                }
+                            }
+                        }
+                        state.legs.forEachIndexed { index, leg ->
                             item("leg-${leg.legId}") {
                                 LegRow(
                                     leg = leg,
@@ -201,7 +216,8 @@ fun ItineraryDetailScreen(
                                     onOpen = { onOpenFlight(leg.flightId) },
                                 )
                             }
-                            state.transitions.firstOrNull { it.inboundLegId == leg.legId }?.let { transition ->
+                            val transition = state.transitions.firstOrNull { it.inboundLegId == leg.legId }
+                            if (transition != null) {
                                 item("transition-${transition.transitionId}") {
                                     TransitionRow(
                                         transition = transition,
@@ -215,9 +231,13 @@ fun ItineraryDetailScreen(
                                         },
                                     )
                                 }
+                            } else if (index < state.legs.lastIndex) {
+                                // A pair with no edge of its own still needs air
+                                // between the two cards.
+                                item("gap-${leg.legId}") { Spacer(Modifier.height(SECTION_GAP)) }
                             }
                         }
-                        item("bottom-space") { Spacer(Modifier.height(16.dp)) }
+                        item("bottom-space") { Spacer(Modifier.height(24.dp)) }
                     }
                 }
             }

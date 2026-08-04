@@ -99,6 +99,7 @@
     <string name="itinerary_live_no_key_title">Connect an approved status source</string>
     <string name="itinerary_live_no_key_body">Routes, times and connection windows need a status API key. The itinerary itself stays exactly as you entered it.</string>
     <string name="itinerary_open_settings">Open data sources</string>
+    <string name="itinerary_leg_index">Leg %1$d</string>
     <string name="itinerary_route_pending">Route and times aren\'t resolved yet.</string>
     <string name="itinerary_occurrence_mismatch">The latest lookup found a different departure date for this flight number, so it isn\'t used here.</string>
     <string name="itinerary_fetched_ago">Fetched %1$s ago</string>
