@@ -98,6 +98,19 @@ class FlightPhaseMachineTest {
         assertEquals(FlightPhaseMachine.NextEvent.DEPARTS_IN, view.nextEventLabel)
     }
 
+    @Test fun `an on-time flight is not declared departed inside the grace window`() {
+        // The cutoff moved the no-delay path too: this used to flip to DEPARTED on
+        // the first second past schedule. Holding ON_TIME under "Departing…" for
+        // the grace window is the deliberate half of that, so pin it — a refactor
+        // restoring isBefore(now) would otherwise pass the whole suite.
+        val view = FlightPhaseMachine.derive(
+            snapshot(status = FlightStatus.ON_TIME, schedDep = NOW.minus(Duration.ofMinutes(10))),
+            null, NOW,
+        )
+        assertEquals(FlightStatus.ON_TIME, view.status)
+        assertEquals(FlightPhaseMachine.NextEvent.DEPARTS_IN, view.nextEventLabel)
+    }
+
     @Test fun `small slip below five minutes is not a delay`() {
         val view = FlightPhaseMachine.derive(
             snapshot(estDep = NOW.plus(Duration.ofHours(2)).plusSeconds(120)), null, NOW,
