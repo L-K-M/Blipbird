@@ -20,6 +20,24 @@ object FlightPhaseMachine {
     val CHECK_IN_LEAD: Duration = Duration.ofHours(3)
     val APPROACH_WINDOW: Duration = Duration.ofMinutes(45)
 
+    /**
+     * How long past a best-known departure/arrival the app keeps calling the
+     * event live. Inside the window a provider that has not yet filed the OUT/IN
+     * is merely slow; past it, it has stopped confirming, and saying so beats
+     * holding the moment open.
+     *
+     * Only [DEPARTURE_GRACE] moves a phase, and it splits the timeline with no
+     * seam: at the threshold instant itself the flight is still departing, and
+     * the copy agrees. [ARRIVAL_GRACE] bounds the countdown line alone — a
+     * flight past its ETA with no IN filed is either down and unreported or
+     * still flying, and asserting a landing on silence would fire arrival
+     * notifications and stop tracking on no evidence. EN_ROUTE under "Arrival
+     * unconfirmed · 3h" is not a contradiction: the badge reports the phase,
+     * the line reports how long the provider has been quiet.
+     */
+    val DEPARTURE_GRACE: Duration = Duration.ofMinutes(20)
+    val ARRIVAL_GRACE: Duration = Duration.ofMinutes(45)
+
     data class View(
         val status: FlightStatus,
         /** Delay at departure, when computable and positive. */
@@ -58,6 +76,10 @@ object FlightPhaseMachine {
             !lastFix.at.isAfter(now.plusSeconds(60)) &&
             Duration.between(lastFix.at, now).abs() < Duration.ofMinutes(30)
 
+        // One instant, two arms: DELAYED holds up to it, DEPARTED takes over past
+        // it. Naming it keeps them a partition even if the window later varies.
+        val depCutoff = now.minus(DEPARTURE_GRACE)
+
         val status = when (snapshot.status) {
             FlightStatus.CANCELLED -> FlightStatus.CANCELLED
             FlightStatus.DIVERTED -> FlightStatus.DIVERTED
@@ -72,9 +94,10 @@ object FlightPhaseMachine {
                     else FlightStatus.EN_ROUTE
                 }
                 snapshot.status == FlightStatus.DEPARTED -> FlightStatus.DEPARTED
-                depDelay != null -> FlightStatus.DELAYED
+                depDelay != null && bestDep != null &&
+                    !bestDep.isBefore(depCutoff) -> FlightStatus.DELAYED
                 snapshot.status == FlightStatus.UNKNOWN && schedDep == null -> FlightStatus.UNKNOWN
-                bestDep != null && bestDep.isBefore(now) -> FlightStatus.DEPARTED
+                bestDep != null && bestDep.isBefore(depCutoff) -> FlightStatus.DEPARTED
                 snapshot.status == FlightStatus.SCHEDULED || snapshot.status == FlightStatus.ON_TIME ->
                     if (schedDep != null && Duration.between(now, schedDep) < Duration.ofHours(24))
                         FlightStatus.ON_TIME else FlightStatus.SCHEDULED
