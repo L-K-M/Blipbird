@@ -76,6 +76,10 @@ object FlightPhaseMachine {
             !lastFix.at.isAfter(now.plusSeconds(60)) &&
             Duration.between(lastFix.at, now).abs() < Duration.ofMinutes(30)
 
+        // One instant, two arms: DELAYED holds up to it, DEPARTED takes over past
+        // it. Naming it keeps them a partition even if the window later varies.
+        val depCutoff = now.minus(DEPARTURE_GRACE)
+
         val status = when (snapshot.status) {
             FlightStatus.CANCELLED -> FlightStatus.CANCELLED
             FlightStatus.DIVERTED -> FlightStatus.DIVERTED
@@ -91,9 +95,9 @@ object FlightPhaseMachine {
                 }
                 snapshot.status == FlightStatus.DEPARTED -> FlightStatus.DEPARTED
                 depDelay != null && bestDep != null &&
-                    !bestDep.isBefore(now.minus(DEPARTURE_GRACE)) -> FlightStatus.DELAYED
+                    !bestDep.isBefore(depCutoff) -> FlightStatus.DELAYED
                 snapshot.status == FlightStatus.UNKNOWN && schedDep == null -> FlightStatus.UNKNOWN
-                bestDep != null && bestDep.isBefore(now.minus(DEPARTURE_GRACE)) -> FlightStatus.DEPARTED
+                bestDep != null && bestDep.isBefore(depCutoff) -> FlightStatus.DEPARTED
                 snapshot.status == FlightStatus.SCHEDULED || snapshot.status == FlightStatus.ON_TIME ->
                     if (schedDep != null && Duration.between(now, schedDep) < Duration.ofHours(24))
                         FlightStatus.ON_TIME else FlightStatus.SCHEDULED

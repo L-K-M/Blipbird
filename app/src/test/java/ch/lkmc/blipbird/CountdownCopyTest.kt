@@ -1,5 +1,6 @@
 package ch.lkmc.blipbird
 
+import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.ui.components.countdownText
 import ch.lkmc.blipbird.ui.components.departsInText
 import ch.lkmc.blipbird.ui.components.landsInText
@@ -26,6 +27,11 @@ class CountdownCopyTest {
         assertEquals("Departure unconfirmed \u00b7 4h", departsInText(Duration.ofHours(-4)))
         assertEquals("Landing…", landsInText(Duration.ofMinutes(-44)))
         assertEquals("Arrival unconfirmed \u00b7 2h", landsInText(Duration.ofHours(-2)))
+        // The copy's half of the partition the phase machine asserts: at exactly
+        // the grace instant the event is still in progress on both sides of the
+        // layer split. Off the constants, so widening a window moves both.
+        assertEquals("Departing…", departsInText(FlightPhaseMachine.DEPARTURE_GRACE.negated()))
+        assertEquals("Landing…", landsInText(FlightPhaseMachine.ARRIVAL_GRACE.negated()))
     }
 
     @Test fun `zero is still a countdown, not in-progress`() {
