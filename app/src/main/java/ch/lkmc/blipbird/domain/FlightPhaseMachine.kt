@@ -23,8 +23,17 @@ object FlightPhaseMachine {
     /**
      * How long past a best-known departure/arrival the app keeps calling the
      * event live. Inside the window a provider that has not yet filed the OUT/IN
-     * is merely slow; past it, it has stopped confirming, and both the phase and
-     * the countdown copy have to say so rather than hold the moment open.
+     * is merely slow; past it, it has stopped confirming, and saying so beats
+     * holding the moment open.
+     *
+     * Only [DEPARTURE_GRACE] moves a phase, and it splits the timeline with no
+     * seam: at the threshold instant itself the flight is still departing, and
+     * the copy agrees. [ARRIVAL_GRACE] bounds the countdown line alone — a
+     * flight past its ETA with no IN filed is either down and unreported or
+     * still flying, and asserting a landing on silence would fire arrival
+     * notifications and stop tracking on no evidence. EN_ROUTE under "Arrival
+     * unconfirmed · 3h" is not a contradiction: the badge reports the phase,
+     * the line reports how long the provider has been quiet.
      */
     val DEPARTURE_GRACE: Duration = Duration.ofMinutes(20)
     val ARRIVAL_GRACE: Duration = Duration.ofMinutes(45)
@@ -82,7 +91,7 @@ object FlightPhaseMachine {
                 }
                 snapshot.status == FlightStatus.DEPARTED -> FlightStatus.DEPARTED
                 depDelay != null && bestDep != null &&
-                    bestDep.isAfter(now.minus(DEPARTURE_GRACE)) -> FlightStatus.DELAYED
+                    !bestDep.isBefore(now.minus(DEPARTURE_GRACE)) -> FlightStatus.DELAYED
                 snapshot.status == FlightStatus.UNKNOWN && schedDep == null -> FlightStatus.UNKNOWN
                 bestDep != null && bestDep.isBefore(now.minus(DEPARTURE_GRACE)) -> FlightStatus.DEPARTED
                 snapshot.status == FlightStatus.SCHEDULED || snapshot.status == FlightStatus.ON_TIME ->

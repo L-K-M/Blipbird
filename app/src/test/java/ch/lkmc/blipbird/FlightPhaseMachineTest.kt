@@ -83,6 +83,21 @@ class FlightPhaseMachineTest {
         assertEquals(FlightPhaseMachine.NextEvent.DEPARTS_IN, view.nextEventLabel)
     }
 
+    @Test fun `the grace boundary itself is still delayed, not a seam`() {
+        // The DELAYED and DEPARTED arms compare against one instant, so strict
+        // comparisons on both sides would leave the threshold matching neither
+        // and fall through to ON_TIME. They partition; they do not overlap.
+        val view = FlightPhaseMachine.derive(
+            snapshot(
+                schedDep = NOW.minus(Duration.ofMinutes(80)),
+                estDep = NOW.minus(FlightPhaseMachine.DEPARTURE_GRACE),
+            ),
+            null, NOW,
+        )
+        assertEquals(FlightStatus.DELAYED, view.status)
+        assertEquals(FlightPhaseMachine.NextEvent.DEPARTS_IN, view.nextEventLabel)
+    }
+
     @Test fun `small slip below five minutes is not a delay`() {
         val view = FlightPhaseMachine.derive(
             snapshot(estDep = NOW.plus(Duration.ofHours(2)).plusSeconds(120)), null, NOW,
