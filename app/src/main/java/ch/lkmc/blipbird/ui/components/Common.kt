@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ch.lkmc.blipbird.R
 import ch.lkmc.blipbird.core.model.FlightStatus
+import ch.lkmc.blipbird.domain.FlightPhaseMachine
 import ch.lkmc.blipbird.domain.LookupOutcome
 import ch.lkmc.blipbird.ui.theme.LocalExtendedColors
 import java.time.Duration
@@ -199,13 +200,32 @@ fun lookupProblemNeedsUser(outcome: LookupOutcome): Boolean = when (outcome) {
 /**
  * Phase countdown lines shared by list and detail. Past-due targets switch to
  * in-progress copy (DS4-V20): while the data is stale, "Departing…" is honest
- * where "Departs in 0m" reads like a frozen clock.
+ * where "Departs in 0m" reads like a frozen clock. That honesty has a shelf
+ * life — the same grace the phase machine allows. Past it the provider has
+ * simply stopped confirming, and a boarding call that never ends is worse than
+ * admitting how long we have been in the dark.
  */
-fun departsInText(untilDeparture: Duration): String =
-    if (untilDeparture.isNegative) "Departing…" else "Departs in ${countdownText(untilDeparture)}"
+fun departsInText(untilDeparture: Duration): String = phaseCountdownText(
+    untilDeparture, "Departs in", "Departing…", "Departure unconfirmed",
+    FlightPhaseMachine.DEPARTURE_GRACE,
+)
 
-fun landsInText(untilArrival: Duration): String =
-    if (untilArrival.isNegative) "Landing…" else "Lands in ${countdownText(untilArrival)}"
+fun landsInText(untilArrival: Duration): String = phaseCountdownText(
+    untilArrival, "Lands in", "Landing…", "Arrival unconfirmed",
+    FlightPhaseMachine.ARRIVAL_GRACE,
+)
+
+private fun phaseCountdownText(
+    until: Duration,
+    future: String,
+    inProgress: String,
+    unconfirmed: String,
+    grace: Duration,
+): String {
+    if (!until.isNegative) return "$future ${countdownText(until)}"
+    val overdue = until.negated()
+    return if (overdue <= grace) inProgress else "$unconfirmed · ${elapsedText(overdue)}"
+}
 
 /**
  * Digits that keep one width as they tick. Every clock time and countdown wears

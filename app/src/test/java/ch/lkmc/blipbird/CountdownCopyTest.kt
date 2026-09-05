@@ -20,6 +20,14 @@ class CountdownCopyTest {
         assertEquals("Landing…", landsInText(Duration.ofSeconds(-1)))
     }
 
+    @Test fun `in-progress copy expires once the provider stops confirming`() {
+        // "Departing…" four hours after the estimate reads live when it is not.
+        assertEquals("Departing…", departsInText(Duration.ofMinutes(-19)))
+        assertEquals("Departure unconfirmed \u00b7 4h", departsInText(Duration.ofHours(-4)))
+        assertEquals("Landing…", landsInText(Duration.ofMinutes(-44)))
+        assertEquals("Arrival unconfirmed \u00b7 2h", landsInText(Duration.ofHours(-2)))
+    }
+
     @Test fun `zero is still a countdown, not in-progress`() {
         assertEquals("Departs in 0m", departsInText(Duration.ZERO))
     }

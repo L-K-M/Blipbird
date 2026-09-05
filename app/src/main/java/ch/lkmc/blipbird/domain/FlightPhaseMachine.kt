@@ -20,6 +20,15 @@ object FlightPhaseMachine {
     val CHECK_IN_LEAD: Duration = Duration.ofHours(3)
     val APPROACH_WINDOW: Duration = Duration.ofMinutes(45)
 
+    /**
+     * How long past a best-known departure/arrival the app keeps calling the
+     * event live. Inside the window a provider that has not yet filed the OUT/IN
+     * is merely slow; past it, it has stopped confirming, and both the phase and
+     * the countdown copy have to say so rather than hold the moment open.
+     */
+    val DEPARTURE_GRACE: Duration = Duration.ofMinutes(20)
+    val ARRIVAL_GRACE: Duration = Duration.ofMinutes(45)
+
     data class View(
         val status: FlightStatus,
         /** Delay at departure, when computable and positive. */
@@ -72,9 +81,10 @@ object FlightPhaseMachine {
                     else FlightStatus.EN_ROUTE
                 }
                 snapshot.status == FlightStatus.DEPARTED -> FlightStatus.DEPARTED
-                depDelay != null -> FlightStatus.DELAYED
+                depDelay != null && bestDep != null &&
+                    bestDep.isAfter(now.minus(DEPARTURE_GRACE)) -> FlightStatus.DELAYED
                 snapshot.status == FlightStatus.UNKNOWN && schedDep == null -> FlightStatus.UNKNOWN
-                bestDep != null && bestDep.isBefore(now) -> FlightStatus.DEPARTED
+                bestDep != null && bestDep.isBefore(now.minus(DEPARTURE_GRACE)) -> FlightStatus.DEPARTED
                 snapshot.status == FlightStatus.SCHEDULED || snapshot.status == FlightStatus.ON_TIME ->
                     if (schedDep != null && Duration.between(now, schedDep) < Duration.ofHours(24))
                         FlightStatus.ON_TIME else FlightStatus.SCHEDULED

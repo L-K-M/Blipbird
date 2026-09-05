@@ -55,6 +55,34 @@ class FlightPhaseMachineTest {
         assertEquals(Duration.ofHours(1), view.depDelay)
     }
 
+    @Test fun `a delay past its own estimate stops being a delay`() {
+        // The stuck-"Departing…" regression: depDelay has no `now` term, so the
+        // DELAYED arm used to shadow the past-due fallback below it and pin the
+        // phase — and the DEPARTS_IN countdown — for as long as the estimate
+        // went un-refreshed.
+        val view = FlightPhaseMachine.derive(
+            snapshot(
+                status = FlightStatus.DELAYED,
+                schedDep = NOW.minus(Duration.ofHours(5)),
+                estDep = NOW.minus(Duration.ofHours(4)),
+            ),
+            null, NOW,
+        )
+        assertEquals(FlightStatus.DEPARTED, view.status)
+        assertEquals(FlightPhaseMachine.NextEvent.LANDS_IN, view.nextEventLabel)
+        // Magnitude and phase are orthogonal: it departed, and it departed late.
+        assertEquals(Duration.ofHours(1), view.depDelay)
+    }
+
+    @Test fun `a delay inside the grace window still reads delayed`() {
+        val view = FlightPhaseMachine.derive(
+            snapshot(schedDep = NOW.minus(Duration.ofHours(1)), estDep = NOW.minus(Duration.ofMinutes(5))),
+            null, NOW,
+        )
+        assertEquals(FlightStatus.DELAYED, view.status)
+        assertEquals(FlightPhaseMachine.NextEvent.DEPARTS_IN, view.nextEventLabel)
+    }
+
     @Test fun `small slip below five minutes is not a delay`() {
         val view = FlightPhaseMachine.derive(
             snapshot(estDep = NOW.plus(Duration.ofHours(2)).plusSeconds(120)), null, NOW,
