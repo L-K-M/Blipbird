@@ -1,5 +1,8 @@
 # Blipbird
 
+> [!IMPORTANT]
+> LLM disclosure: This codebase was written with substantial help from large language models: AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
+
 A flight companion for Android.
 
 ![screenshots.png](media-sources/screenshots.png)
